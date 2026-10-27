@@ -41,9 +41,11 @@ export default function Friends() {
             {invites.data.received.map((i) => (
               <div key={i.id} className="card row row-wrap">
                 <Avatar user={i.inviter} size={44} />
-                <div className="grow"><strong>{i.inviter.name}</strong><div className="muted small">wants to connect</div></div>
-                <button className="btn btn-small" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/accept`, 'POST'); await refresh(); })}>Accept</button>
-                <button className="btn btn-small btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/decline`, 'POST'); await refresh(); })}>Decline</button>
+                <div className="row-text"><strong>{i.inviter.name}</strong><div className="muted small">wants to connect</div></div>
+                <div className="row-actions">
+                  <button className="btn btn-small" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/accept`, 'POST'); await refresh(); })}>Accept</button>
+                  <button className="btn btn-small btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/decline`, 'POST'); await refresh(); })}>Decline</button>
+                </div>
               </div>
             ))}
           </div>
@@ -96,9 +98,11 @@ export default function Friends() {
             <h2>Pending invitations</h2>
             {invites.data.sent.map((i) => (
               <div key={i.id} className="card row row-wrap">
-                <div className="grow"><strong>{i.email}</strong></div>
-                <button className="btn btn-small btn-secondary" onClick={() => share(`${location.origin}/invite/${i.token}`)}>Share link</button>
-                <button className="btn btn-small btn-secondary" onClick={() => act.run(async () => { await api(`/invitations/${i.id}`, 'DELETE'); await invites.reload(); })}>Revoke</button>
+                <div className="row-text"><strong>{i.email}</strong></div>
+                <div className="row-actions">
+                  <button className="btn btn-small btn-secondary" onClick={() => share(`${location.origin}/invite/${i.token}`)}>Share link</button>
+                  <button className="btn btn-small btn-secondary" onClick={() => act.run(async () => { await api(`/invitations/${i.id}`, 'DELETE'); await invites.reload(); })}>Revoke</button>
+                </div>
               </div>
             ))}
           </div>
