@@ -1,0 +1,36 @@
+import { Link } from 'react-router-dom';
+import type { Bet, Friend } from '../../shared/types';
+import Avatar from './Avatar';
+import { beers, formatValue } from '../format';
+
+export function statusLabel(b: Bet, name: string): string {
+  switch (b.status) {
+    case 'awaiting_guess':
+      return b.iAmCreator ? `Waiting for ${name}'s guess` : 'Your guess is needed';
+    case 'active':
+      return 'In play';
+    case 'awaiting_confirmation':
+      return b.outcomeProposedByMe ? `Waiting for ${name} to confirm` : 'Confirm the outcome';
+    case 'settled':
+      return b.winnerId === null ? 'Draw, no beer' : b.winnerId === b.otherUserId ? `${name} won` : 'You won';
+    default:
+      return b.status;
+  }
+}
+
+export default function BetCard({ bet, friend }: { bet: Bet; friend?: Friend }) {
+  const name = friend?.name ?? 'Friend';
+  return (
+    <Link to={`/bets/${bet.id}`} className={`card bet ${bet.needsMyAction ? 'needs-action' : ''}`}>
+      {friend && <Avatar user={friend} size={36} />}
+      <div className="bet-main">
+        <div className="bet-q">{bet.question}</div>
+        <div className="muted small">
+          vs {name} · {statusLabel(bet, name)}
+          {bet.status === 'settled' && bet.outcome !== null && ` · ${formatValue(bet.kind, bet.outcome)}`}
+        </div>
+      </div>
+      {bet.allIn && <span className="pill">All-in {beers(bet.stake)}</span>}
+    </Link>
+  );
+}

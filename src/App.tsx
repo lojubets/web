@@ -1,0 +1,55 @@
+import { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import type { Me } from '../shared/types';
+import { api } from './api';
+import Layout from './components/Layout';
+import { MeContext } from './hooks';
+import BetDetail from './pages/BetDetail';
+import Bets from './pages/Bets';
+import FriendDetail from './pages/FriendDetail';
+import Friends from './pages/Friends';
+import InviteLanding from './pages/InviteLanding';
+import Login from './pages/Login';
+import NewBet from './pages/NewBet';
+import Profile from './pages/Profile';
+
+export default function App() {
+  const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = loading
+  const location = useLocation();
+
+  const load = () =>
+    api<Me>('/me')
+      .then(setMe)
+      .catch(() => setMe(null));
+  useEffect(() => {
+    load();
+  }, []);
+
+  if (me === undefined) return <p className="center muted">Loading…</p>;
+
+  return (
+    <Routes>
+      <Route path="/login" element={me ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} />} />
+      <Route
+        element={
+          me ? (
+            <MeContext.Provider value={{ me, reload: load }}>
+              <Layout />
+            </MeContext.Provider>
+          ) : (
+            <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />
+          )
+        }
+      >
+        <Route index element={<Bets />} />
+        <Route path="bets/new" element={<NewBet />} />
+        <Route path="bets/:id" element={<BetDetail />} />
+        <Route path="friends" element={<Friends />} />
+        <Route path="friends/:id" element={<FriendDetail />} />
+        <Route path="profile" element={<Profile />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
