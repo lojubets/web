@@ -9,7 +9,8 @@ export default function Bets() {
   const byId = new Map(friends.data?.map((f) => [f.id, f]));
   const list = bets.data ?? [];
   const yourMove = list.filter((b) => b.needsMyAction);
-  const inPlay = list.filter((b) => b.status !== 'settled' && !b.needsMyAction);
+  const headsUp = list.filter((b) => b.tippingSoon && !b.needsMyAction);
+  const inPlay = list.filter((b) => b.status !== 'settled' && !b.needsMyAction && !b.tippingSoon);
   const settled = list.filter((b) => b.status === 'settled');
 
   const section = (title: string, items: Bet[]) =>
@@ -39,6 +40,7 @@ export default function Bets() {
       )}
       {!bets.loading && friends.data?.length ? list.length === 0 && <p className="muted center">No bets yet. Start one!</p> : null}
       {section('Your move', yourMove)}
+      {section('Tipping point approaching ⏰', headsUp)}
       {section('In play', inPlay)}
       {section('Settled', settled)}
     </>

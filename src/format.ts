@@ -1,4 +1,7 @@
-import type { BetKind } from '../shared/types';
+import { formatDuration } from '../shared/duration';
+import type { BetKind, BetParams, InstantParams, NumberParams } from '../shared/types';
+
+export { formatValue, formatMoment } from '../shared/format';
 
 export const beers = (n: number) => `${n} 🍺`;
 
@@ -7,8 +10,28 @@ export function balanceText(name: string, balance: number): string {
   return balance > 0 ? `${name} owes you ${beers(balance)}` : `You owe ${name} ${beers(-balance)}`;
 }
 
-export function formatValue(kind: BetKind, v: string | null): string {
-  if (v === null) return '—';
-  if (kind === 'number') return v;
-  return new Date(`${v}T00:00:00Z`).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+/** The rules of a bet as short phrases, e.g. ["Whole numbers only", "At least 0 and less than 10"]. */
+export function describeRules(kind: BetKind, params: BetParams): string[] {
+  if (kind === 'duration') return ['A duration, e.g. 3:05 or 3 hours 5 minutes'];
+  if (kind === 'number') {
+    const p = params as NumberParams;
+    const out = [p.integer ? 'Whole numbers only' : 'Whole or decimal numbers'];
+    const lo = p.min === null ? null : `${p.minExclusive ? 'more than' : 'at least'} ${p.min}`;
+    const hi = p.max === null ? null : `${p.maxExclusive ? 'less than' : 'at most'} ${p.max}`;
+    if (lo || hi) out.push([lo, hi].filter(Boolean).join(' and '));
+    return out;
+  }
+  const p = params as InstantParams;
+  const out = [p.precision === 'day' ? 'A date' : 'A date and time'];
+  if (p.allowPast) out.push('Past dates allowed');
+  else out.push(p.minLeadMinutes > 0 ? `At least ${formatDuration(p.minLeadMinutes * 60)} in the future when guessing` : 'Future only');
+  return out;
+}
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** UTC ISO timestamp -> value for <input type="datetime-local"> in the viewer's time zone. */
+export function toLocalInput(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

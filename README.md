@@ -11,9 +11,20 @@ Bets between friends. Closest guess wins, and the prize is always one beer.
 
 1. Sign in, set a name and profile picture.
 2. Invite a friend by email. They get a link (emailed if Resend is configured, otherwise you share it). Bets are only possible between connected users.
-3. **Create a bet:** a question, a type (*number* or *date*) and your guess. Your guess stays hidden until your friend locks in theirs.
+3. **Create a bet:** a question, an answer type and your guess. Your guess stays hidden until your friend locks in theirs. Answer types and their rules (applied to both players' guesses):
+   - **Number:** whole numbers only or decimals too; optional minimum and maximum, each inclusive or exclusive (negatives are allowed unless the minimum forbids them).
+   - **Duration:** `3:05` (h:mm), `1:02:03`, or `3 hours and 5 minutes`.
+   - **Date or time:** date or date-and-time; whether past dates are allowed; and a minimum lead time ("at least now + 2 hours", checked when each player guesses).
 4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one beer; equal distance is a draw.
 5. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
+
+### Tipping point
+
+For a future-dated bet, once the midpoint of the two guesses has passed and the event still hasn't happened, the later guess is closer whatever happens, so the bet settles automatically in its favour (identical guesses draw). Players see the tipping point on the bet, get a heads-up section on the home screen, and (if email is configured) an email about 2 days before and another when it resolves. Notes:
+
+- It only applies when past dates are *not* allowed. If the event may already have happened, there's nothing to infer.
+- A bet with a pending result proposal is never auto-settled; confirm or reject the proposal first. If the event did happen before the tipping point, enter the result before then.
+- Settlement happens the moment anyone looks at the bet (so it's exact); the daily cron only sends the emails.
 
 Balances are derived from settled bets, so there is no separate ledger to keep in sync.
 
@@ -51,6 +62,10 @@ Email/password and Microsoft accounts must verify their address (a one-time link
 
 
 Resend's free tier needs a verified domain to email anyone other than your own address. Without `RESEND_API_KEY`, verification emails can't be delivered (in dev the link is printed to the API console), and the app creates invitations with a share link instead (native share sheet on phones), which works fine for a handful of friends.
+
+### Reminders cron
+
+`vercel.json` schedules `/api/cron` daily (the most Vercel's free Hobby plan allows). Set `CRON_SECRET` in Vercel and it is sent automatically. For finer-grained reminders, point any free pinger (e.g. cron-job.org) at `/api/cron` with an `Authorization: Bearer <CRON_SECRET>` header.
 
 ## Layout
 

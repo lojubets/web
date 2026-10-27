@@ -2,12 +2,14 @@ import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Bet, BetKind, Friend } from '../../shared/types';
 import { api } from '../api';
+import RulesEditor, { EMPTY_RULES, draftToParams, type RulesDraft } from '../components/RulesEditor';
 import ValueInput from '../components/ValueInput';
 import { useAction, useFetch } from '../hooks';
 
 const KINDS: { kind: BetKind; title: string; hint: string }[] = [
-  { kind: 'number', title: 'A number', hint: 'e.g. how many goals?' },
-  { kind: 'date', title: 'A date', hint: 'e.g. when will it happen?' },
+  { kind: 'number', title: 'A number', hint: 'How many goals?' },
+  { kind: 'duration', title: 'A duration', hint: 'How long will it take?' },
+  { kind: 'instant', title: 'A date or time', hint: 'When will it happen?' },
 ];
 
 export default function NewBet() {
@@ -18,6 +20,8 @@ export default function NewBet() {
   const [kind, setKind] = useState<BetKind>('number');
   const [question, setQuestion] = useState('');
   const [guess, setGuess] = useState('');
+  const [rules, setRules] = useState<RulesDraft>(EMPTY_RULES);
+  const betParams = draftToParams(kind, rules);
   const { busy, error, run } = useAction();
   const selected = friendId || friends?.[0]?.id || '';
 
@@ -32,7 +36,7 @@ export default function NewBet() {
         onSubmit={(e) => {
           e.preventDefault();
           run(async () => {
-            const bet = await api<Bet>('/bets', 'POST', { opponentId: selected, question, kind, guess });
+            const bet = await api<Bet>('/bets', 'POST', { opponentId: selected, question, kind, params: betParams, guess });
             nav(`/bets/${bet.id}`);
           });
         }}
@@ -49,7 +53,7 @@ export default function NewBet() {
           <span>Question</span>
           <input value={question} maxLength={200} placeholder="When will Infantino resign?" onChange={(e) => setQuestion(e.target.value)} required />
         </label>
-        <div className="segmented" role="radiogroup" aria-label="Answer type">
+        <div className="segmented three" role="radiogroup" aria-label="Answer type">
           {KINDS.map((k) => (
             <button type="button" key={k.kind} role="radio" aria-checked={kind === k.kind} className={kind === k.kind ? 'on' : ''} onClick={() => { setKind(k.kind); setGuess(''); }}>
               <strong>{k.title}</strong>
@@ -57,7 +61,8 @@ export default function NewBet() {
             </button>
           ))}
         </div>
-        <ValueInput kind={kind} value={guess} onChange={setGuess} label="Your guess (hidden until they answer)" />
+        <RulesEditor kind={kind} rules={rules} onChange={setRules} />
+        <ValueInput kind={kind} params={betParams} value={guess} onChange={setGuess} label="Your guess (hidden until they answer)" />
         {error && <p className="error">{error}</p>}
         <button className="btn" disabled={busy || !selected}>Propose bet · 1 🍺</button>
       </form>

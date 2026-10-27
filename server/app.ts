@@ -2,12 +2,14 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { AppConfig, Bet, BetKind, BetStatus, Friend, Invitation, Me, UserSummary } from '../shared/types.js';
+import type { AppConfig, Bet, Friend, Invitation, Me, UserSummary } from '../shared/types.js';
 import { authRouter, enabledProviders, requireAuth } from './auth.js';
-import { balanceFor, decide, normalizeValue } from './betLogic.js';
+import { balanceFor, buildParams, decide, loadParams, normalizeAnswer } from './betLogic.js';
+import { settleDueBets, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
 import { env } from './env.js';
+import { runCron } from './reminders.js';
 import { sendVerification } from './verification.js';
 
 const app = express();
@@ -30,6 +32,13 @@ app.get('/api/config', (_req, res) => {
   res.json(cfg);
 });
 app.use('/api/auth', authRouter);
+
+// Called daily by Vercel Cron (which sends `Authorization: Bearer $CRON_SECRET`), or by any external pinger.
+app.get('/api/cron', async (req, res) => {
+  const secret = process.env.CRON_SECRET;
+  if (secret ? req.get('authorization') !== `Bearer ${secret}` : env.isProd) return res.status(secret ? 401 : 503).json({ error: 'Unauthorized' });
+  res.json(await runCron());
+});
 
 app.get('/api/invitations/token/:token', async (req, res) => {
   const r = row(
@@ -202,25 +211,8 @@ app.delete('/api/invitations/:id', async (req, res) => {
 
 // ---------- bets ----------
 
-interface BetRow {
-  id: string;
-  creator_id: string;
-  opponent_id: string;
-  question: string;
-  kind: BetKind;
-  status: BetStatus;
-  creator_guess: string;
-  opponent_guess: string | null;
-  outcome: string | null;
-  outcome_proposed_by: string | null;
-  winner_id: string | null;
-  all_in: number;
-  stake: number;
-  created_at: number;
-  settled_at: number | null;
-}
-
 async function loadBets(me: string): Promise<BetRow[]> {
+  await settleDueBets({ userId: me });
   const r = await db.execute({
     sql: `SELECT * FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status != 'cancelled' ORDER BY created_at DESC`,
     args: [me, me],
@@ -252,10 +244,13 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
   const anotherAllInOpen = allBets.some(
     (x) => x.id !== b.id && x.all_in && otherOf(x, me) === other && (x.status === 'active' || x.status === 'awaiting_confirmation'),
   );
+  const tp = b.status === 'active' ? tippingPointOf(b) : null;
+  const now = Date.now();
   return {
     id: b.id,
     question: b.question,
     kind: b.kind,
+    params: loadParams(b.kind, b.params),
     status: b.status,
     otherUserId: other,
     iAmCreator,
@@ -267,6 +262,9 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     winnerId: b.winner_id,
     allIn: !!b.all_in,
     stake: b.stake,
+    settledBy: b.status === 'settled' ? (b.settled_by === 'tipping_point' ? 'tipping_point' : 'outcome') : null,
+    tippingPoint: tp,
+    tippingSoon: tp !== null && tp > now && tp - now <= 48 * 3_600_000,
     needsMyAction,
     canAllIn: b.status === 'active' && !b.all_in && debt > 0 && !anotherAllInOpen,
     allInStake: Math.max(debt, 0),
@@ -326,22 +324,24 @@ app.get('/api/bets/:id', async (req, res) => {
   if (b) await respondWithBet(res, b.id);
 });
 
-const kindSchema = z.enum(['number', 'date']);
+const kindSchema = z.enum(['number', 'duration', 'instant']);
 
 app.post('/api/bets', async (req, res) => {
   const body = z
-    .object({ opponentId: z.string(), question: z.string().trim().min(3).max(200), kind: kindSchema, guess: z.string() })
+    .object({ opponentId: z.string(), question: z.string().trim().min(3).max(200), kind: kindSchema, params: z.unknown().optional(), guess: z.string() })
     .safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Give the bet a question (3–200 characters) and your guess' });
   const { opponentId, question, kind } = body.data;
-  const guess = normalizeValue(kind, body.data.guess);
-  if (!guess) return res.status(400).json({ error: kind === 'date' ? 'Enter a valid date' : 'Enter a valid number' });
+  const params = buildParams(kind, body.data.params);
+  if (!params.ok) return res.status(400).json({ error: params.error });
+  const guess = normalizeAnswer(kind, params.value, body.data.guess, { now: Date.now(), role: 'guess' });
+  if (!guess.ok) return res.status(400).json({ error: guess.error });
   if (!(await areConnected(uid(res), opponentId))) return res.status(403).json({ error: 'You can only bet with connected friends' });
   const id = randomUUID();
   await db.execute({
-    sql: `INSERT INTO bets (id, creator_id, opponent_id, question, kind, status, creator_guess, created_at)
-          VALUES (?, ?, ?, ?, ?, 'awaiting_guess', ?, ?)`,
-    args: [id, uid(res), opponentId, question, kind, guess, Date.now()],
+    sql: `INSERT INTO bets (id, creator_id, opponent_id, question, kind, params, status, creator_guess, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'awaiting_guess', ?, ?)`,
+    args: [id, uid(res), opponentId, question, kind, JSON.stringify(params.value), guess.value, Date.now()],
   });
   await respondWithBet(res, id, 201);
 });
@@ -350,9 +350,9 @@ app.post('/api/bets/:id/guess', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
   if (b.opponent_id !== uid(res) || b.status !== 'awaiting_guess') return res.status(409).json({ error: "You can't guess on this bet right now" });
-  const guess = normalizeValue(b.kind, String(req.body?.guess ?? ''));
-  if (!guess) return res.status(400).json({ error: 'Invalid guess' });
-  await db.execute({ sql: `UPDATE bets SET opponent_guess = ?, status = 'active' WHERE id = ?`, args: [guess, b.id] });
+  const guess = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.guess ?? ''), { now: Date.now(), role: 'guess' });
+  if (!guess.ok) return res.status(400).json({ error: guess.error });
+  await db.execute({ sql: `UPDATE bets SET opponent_guess = ?, status = 'active' WHERE id = ?`, args: [guess.value, b.id] });
   await respondWithBet(res, b.id);
 });
 
@@ -368,11 +368,11 @@ app.post('/api/bets/:id/propose', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
   if (b.status !== 'active') return res.status(409).json({ error: "The outcome can't be proposed right now" });
-  const outcome = normalizeValue(b.kind, String(req.body?.outcome ?? ''));
-  if (!outcome) return res.status(400).json({ error: 'Invalid outcome' });
+  const outcome = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.outcome ?? ''), { now: Date.now(), role: 'outcome' });
+  if (!outcome.ok) return res.status(400).json({ error: outcome.error });
   await db.execute({
     sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, status = 'awaiting_confirmation' WHERE id = ?`,
-    args: [outcome, uid(res), b.id],
+    args: [outcome.value, uid(res), b.id],
   });
   await respondWithBet(res, b.id);
 });
@@ -392,7 +392,7 @@ app.post('/api/bets/:id/confirm', async (req, res) => {
   const verdict = decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
   const winner = verdict === 'draw' ? null : verdict === 'creator' ? b.creator_id : b.opponent_id;
   await db.execute({
-    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ? WHERE id = ?`,
+    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = 'outcome' WHERE id = ?`,
     args: [winner, Date.now(), b.id],
   });
   await respondWithBet(res, b.id);

@@ -3,6 +3,11 @@ import type { Bet, Friend } from '../../shared/types';
 import Avatar from './Avatar';
 import { beers, formatValue } from '../format';
 
+const until = (ms: number) => {
+  const h = Math.max(1, Math.round((ms - Date.now()) / 3_600_000));
+  return h < 48 ? `${h} h` : `${Math.round(h / 24)} d`;
+};
+
 export function statusLabel(b: Bet, name: string): string {
   switch (b.status) {
     case 'awaiting_guess':
@@ -27,9 +32,11 @@ export default function BetCard({ bet, friend }: { bet: Bet; friend?: Friend }) 
         <div className="bet-q">{bet.question}</div>
         <div className="muted small">
           vs {name} · {statusLabel(bet, name)}
-          {bet.status === 'settled' && bet.outcome !== null && ` · ${formatValue(bet.kind, bet.outcome)}`}
+          {bet.status === 'settled' && bet.outcome !== null && ` · ${formatValue(bet.kind, bet.params, bet.outcome)}`}
+          {bet.status === 'settled' && bet.settledBy === 'tipping_point' && ' · tipping point'}
         </div>
       </div>
+      {bet.tippingSoon && bet.tippingPoint && <span className="pill warn">⏰ {until(bet.tippingPoint)}</span>}
       {bet.allIn && <span className="pill">All-in {beers(bet.stake)}</span>}
     </Link>
   );

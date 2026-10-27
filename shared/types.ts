@@ -1,4 +1,26 @@
-export type BetKind = 'number' | 'date';
+export type BetKind = 'number' | 'duration' | 'instant';
+
+/** Rules for a numeric answer. Applied to guesses, not to the real-world outcome. */
+export interface NumberParams {
+  integer: boolean;
+  min: number | null;
+  max: number | null;
+  minExclusive: boolean;
+  maxExclusive: boolean;
+}
+
+/** Rules for a date or date-and-time answer. */
+export interface InstantParams {
+  /** 'day' answers are YYYY-MM-DD; 'minute' answers are UTC ISO timestamps. */
+  precision: 'day' | 'minute';
+  /** When false, the event is in the future, which also enables the tipping point. */
+  allowPast: boolean;
+  /** Guesses must be at least this far in the future when placed (only when !allowPast). */
+  minLeadMinutes: number;
+}
+
+export type DurationParams = Record<string, never>;
+export type BetParams = NumberParams | InstantParams | DurationParams;
 
 export type BetStatus =
   | 'awaiting_guess' // creator has guessed, opponent has not
@@ -30,6 +52,7 @@ export interface Bet {
   id: string;
   question: string;
   kind: BetKind;
+  params: BetParams;
   status: BetStatus;
   otherUserId: string;
   iAmCreator: boolean;
@@ -42,6 +65,14 @@ export interface Bet {
   winnerId: string | null;
   allIn: boolean;
   stake: number;
+  /** Settled by outcome, or by the tipping point passing with the event still pending. */
+  settledBy: 'outcome' | 'tipping_point' | null;
+  /**
+   * Future-dated bets only: once this moment passes with the event still pending, the later guess
+   * is guaranteed to be closer and wins automatically.
+   */
+  tippingPoint: number | null;
+  tippingSoon: boolean;
   needsMyAction: boolean;
   canAllIn: boolean;
   /** Beers I'd put on the line if I went all-in now. */

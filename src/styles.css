@@ -93,3 +93,13 @@ input, select { width: 100%; min-height: 48px; padding: 0 14px; border-radius: 1
 .tabbar a.active { color: var(--text); font-weight: 700; }
 .tabbar a.active span { filter: none; opacity: 1; }
 .badge { position: absolute; top: 4px; left: calc(50% + 10px); background: var(--bad); color: #fff; border-radius: 99px; font-size: 0.7rem; min-width: 18px; padding: 0 5px; text-align: center; }
+
+.segmented.three { grid-template-columns: 1fr; }
+@media (min-width: 400px) { .segmented.three { grid-template-columns: repeat(3, 1fr); } }
+.check { display: flex; align-items: center; gap: 10px; min-height: 36px; }
+.check input { width: 22px; min-height: 22px; height: 22px; accent-color: var(--accent); }
+.bound { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+.bound select { width: auto; }
+.bound .check { padding-bottom: 6px; }
+.rules { margin: -8px 0 0; }
+.pill.warn { background: color-mix(in srgb, var(--bad) 20%, transparent); }

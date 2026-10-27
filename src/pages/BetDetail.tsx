@@ -4,7 +4,7 @@ import type { Bet, Friend } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import ValueInput from '../components/ValueInput';
-import { beers, formatValue } from '../format';
+import { beers, describeRules, formatMoment, formatValue } from '../format';
 import { useAction, useFetch } from '../hooks';
 
 export default function BetDetail() {
@@ -28,7 +28,9 @@ export default function BetDetail() {
       setValue('');
     });
 
-  const fv = (v: string | null) => formatValue(b.kind, v);
+  const fv = (v: string | null) => formatValue(b.kind, b.params, v);
+  const later = b.kind === 'instant' && b.myGuess !== null && b.theirGuess !== null ? (b.myGuess > b.theirGuess ? 'me' : b.myGuess < b.theirGuess ? 'them' : 'both') : null;
+  const byTipping = b.settledBy === 'tipping_point';
   const iWon = b.winnerId !== null && b.winnerId !== b.otherUserId;
 
   return (
@@ -41,6 +43,8 @@ export default function BetDetail() {
         <Avatar user={friend} size={28} /> vs {friend.name}
       </Link>
 
+      <p className="muted small rules">{describeRules(b.kind, b.params).join(' · ')}</p>
+
       <div className="guesses">
         <div className="card guess">
           <span className="muted small">Your guess</span>
@@ -51,6 +55,17 @@ export default function BetDetail() {
           <strong>{b.theirGuess === null ? '🤫 hidden' : fv(b.theirGuess)}</strong>
         </div>
       </div>
+
+      {b.tippingPoint !== null && b.status === 'active' && (
+        <div className={`card stack ${b.tippingSoon ? 'needs-action' : ''}`}>
+          <strong>⏰ Tipping point: {formatMoment(b.tippingPoint, b.params)}</strong>
+          <span className="muted small">
+            {later === 'both'
+              ? 'You guessed the same, so this ends in a draw whatever happens.'
+              : `If the event hasn't happened by then, ${later === 'me' ? 'your' : `${friend.name}'s`} guess is guaranteed to be closer and wins automatically. If it already happened, enter the result before then.`}
+          </span>
+        </div>
+      )}
 
       {b.outcome !== null && (
         <div className="card guess">
@@ -63,6 +78,7 @@ export default function BetDetail() {
 
       {b.status === 'settled' && (
         <p className={`banner ${b.winnerId === null ? '' : iWon ? 'win' : 'lose'}`}>
+          {byTipping && 'Tipping point passed with nothing happening. '}
           {b.winnerId === null
             ? "Dead heat, nobody owes anything."
             : iWon
@@ -73,7 +89,7 @@ export default function BetDetail() {
 
       {b.status === 'awaiting_guess' && !b.iAmCreator && (
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
-          <ValueInput kind={b.kind} value={value} onChange={setValue} label="Your guess" />
+          <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
           <button className="btn" disabled={act.busy}>Lock in my guess</button>
         </form>
       )}
@@ -88,7 +104,7 @@ export default function BetDetail() {
 
       {b.status === 'active' && (
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/propose', { outcome: value }); }}>
-          <ValueInput kind={b.kind} value={value} onChange={setValue} label="It happened! What was the actual result?" />
+          <ValueInput kind={b.kind} params={b.params} role="outcome" value={value} onChange={setValue} label="It happened! What was the actual result?" />
           <button className="btn" disabled={act.busy}>Propose result</button>
         </form>
       )}

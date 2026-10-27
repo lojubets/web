@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 const mails: { to: string; text: string }[] = [];
 vi.mock('./email.js', () => ({
@@ -137,5 +137,89 @@ describe('email verification', () => {
 
     expect((await eve.get('/api/me')).body.emailVerified).toBe(true);
     expect((await eve.get('/api/invitations')).body.received).toHaveLength(1);
+  });
+});
+
+describe('bet rules and tipping point', () => {
+  const DAY = 86_400_000;
+  let ann: ReturnType<typeof request.agent>;
+  let bob: ReturnType<typeof request.agent>;
+  let bobId: string;
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  beforeAll(async () => {
+    ann = await login('Fay');
+    bob = await login('Gus');
+    bobId = (await bob.get('/api/me')).body.id;
+    const { body } = await ann.post('/api/invitations').send({ email: 'gus@example.com' });
+    await bob.post(`/api/invitations/token/${body.link.split('/invite/')[1]}/accept`).expect(200);
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  const create = (over: object) =>
+    ann.post('/api/bets').send({ opponentId: bobId, question: 'When will it happen?', kind: 'instant', ...over });
+
+  it('enforces numeric rules on both players\' guesses', async () => {
+    const params = { integer: true, min: 0, max: 10, maxExclusive: true };
+    await create({ kind: 'number', params, guess: '2.5' }).expect(400);
+    await create({ kind: 'number', params, guess: '10' }).expect(400);
+    const { body } = await create({ kind: 'number', params, guess: '4' }).expect(201);
+    expect(body.params).toMatchObject(params);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: '-1' }).expect(400);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: '7' }).expect(200);
+  });
+
+  it('duration bets compare by closeness', async () => {
+    const { body } = await create({ kind: 'duration', guess: '3:05' }).expect(201);
+    expect(body.myGuess).toBe('11100');
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: '2 hours' }).expect(200);
+    await ann.post(`/api/bets/${body.id}/propose`).send({ outcome: '3 hours' }).expect(200);
+    const done = await bob.post(`/api/bets/${body.id}/confirm`).expect(200);
+    expect(done.body.winnerId).not.toBe(bobId); // Fay (3:05) was closer to 3:00
+  });
+
+  it('rejects past times and short lead time for future-dated bets', async () => {
+    const params = { precision: 'minute', allowPast: false, minLeadMinutes: 120 };
+    await create({ params, guess: iso(Date.now() + 3_600_000) }).expect(400);
+    await create({ params, guess: iso(Date.now() - DAY) }).expect(400);
+    await create({ params, guess: iso(Date.now() + 3 * 3_600_000) }).expect(201);
+  });
+
+  it('settles automatically after the tipping point, and reminds beforehand', async () => {
+    const t0 = Date.now();
+    const params = { precision: 'minute', allowPast: false, minLeadMinutes: 0 };
+    const { body } = await create({ params, guess: iso(t0 + 10 * DAY) }).expect(201);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: iso(t0 + 20 * DAY) }).expect(200);
+
+    const active = (await ann.get(`/api/bets/${body.id}`)).body;
+    expect(active.status).toBe('active');
+    expect(active.tippingPoint).toBeGreaterThan(t0 + 15 * DAY);
+    expect(active.tippingSoon).toBe(false);
+
+    // ~1 day before the tipping point: the cron sends reminders, once
+    const before = mails.length;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(t0 + 14.5 * DAY);
+    expect((await request(app).get('/api/cron')).body.remindersSent).toBe(1);
+    expect(mails.length - before).toBe(2);
+    expect(mails.at(-1)!.text).toMatch(/Tipping point/);
+    expect((await request(app).get('/api/cron')).body.remindersSent).toBe(0);
+    expect((await ann.get(`/api/bets/${body.id}`)).body.tippingSoon).toBe(true);
+
+    // after it: the later guess (Gus) has won, nothing else needed
+    vi.setSystemTime(t0 + 16 * DAY);
+    const settled = (await ann.get(`/api/bets/${body.id}`)).body;
+    expect(settled).toMatchObject({ status: 'settled', settledBy: 'tipping_point', winnerId: bobId });
+    const cron = (await request(app).get('/api/cron')).body;
+    expect(cron.resolvedNotices).toBe(1);
+    expect(mails.at(-1)!.text).toMatch(/guaranteed to be closer/);
+    expect((await request(app).get('/api/cron')).body.resolvedNotices).toBe(0);
+  });
+
+  it('past-allowed bets have no tipping point', async () => {
+    const { body } = await create({ params: { precision: 'day', allowPast: true }, guess: '2020-01-01' }).expect(201);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: '2021-01-01' }).expect(200);
+    expect((await ann.get(`/api/bets/${body.id}`)).body.tippingPoint).toBeNull();
   });
 });
