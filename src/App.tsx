@@ -12,6 +12,7 @@ import InviteLanding from './pages/InviteLanding';
 import Login from './pages/Login';
 import Merge from './pages/Merge';
 import NewBet from './pages/NewBet';
+import Privacy from './pages/Privacy';
 import Profile from './pages/Profile';
 import Styleguide from './pages/Styleguide';
 import VerifyEmail from './pages/VerifyEmail';
@@ -45,6 +46,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={me ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/privacy" element={<Privacy />} />
       <Route path="/styleguide" element={<Styleguide />} />
       <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} locked={locked} />} />
       <Route
