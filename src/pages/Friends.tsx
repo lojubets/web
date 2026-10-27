@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import type { Friend, Invitation } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
-import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { balanceText } from '../format';
 import { useAction, useFetch, useMe } from '../hooks';
 
@@ -21,7 +20,7 @@ export default function Friends() {
   const refresh = () => Promise.all([friends.reload(), invites.reload()]);
 
   const share = async (link: string, to?: string) => {
-    const text = `Let's bet a beer on Lojubets: ${link}`;
+    const text = `Let's bet a lonkero on Lojubets: ${link}`;
     if (navigator.share) {
       try { await navigator.share({ text, url: link }); return; } catch { return; }
     }
@@ -33,7 +32,6 @@ export default function Friends() {
   return (
     <>
       <header className="header"><h1>Friends</h1></header>
-      <VerifyEmailBanner />
 
       {invites.data?.received.length ? (
         <section>
@@ -83,7 +81,7 @@ export default function Friends() {
         >
           <input type="email" placeholder="friend@example.com" value={email} disabled={!canInvite} onChange={(e) => setEmail(e.target.value)} required />
           <button className="btn" disabled={invite.busy || !canInvite}>Send invitation</button>
-          {!canInvite && <p className="muted small">Verify your email address (above) before inviting friends.</p>}
+          {!canInvite && <p className="muted small">Your account has no email address, so you can't send invitations.</p>}
           {invite.error && <p className="error">{invite.error}</p>}
         </form>
         {result && (

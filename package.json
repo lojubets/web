@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Bets between friends. The prize is always one beer.",
+  "description": "Bets between friends. The prize is always one lonkero.",
   "scripts": {
     "dev": "npm run dev:local",
     "dev:local": "concurrently --kill-others-on-fail -n api,web -c yellow,cyan \"npm:api:local\" \"npm:web\"",

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import { useAction } from '../hooks';
 
@@ -12,11 +12,11 @@ export default function VerifyEmail() {
   return (
     <div className="page login">
       <div className="hero">
-        <div className="hero-beer">{done ? '✅' : '✉️'}</div>
+        <div className="hero-emoji">{done ? '✅' : '✉️'}</div>
         {done ? (
           <>
             <h1>Email verified</h1>
-            <Link className="btn" to="/">Continue to Lojubets</Link>
+            <a className="btn" href="/">Continue to Lojubets</a>
           </>
         ) : (
           <>

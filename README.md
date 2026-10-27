@@ -1,6 +1,8 @@
-# Lojubets 🍺
+<img src="icons/web/pwa-icon-192.png" alt="" width="72" align="right">
 
-Bets between friends. Closest guess wins, and the prize is always one beer.
+# Lojubets
+
+Bets between friends. Closest guess wins, and the prize is always one lonkero (the Finnish nickname for a long drink).
 
 - **Frontend:** React + TypeScript (Vite), mobile-first
 - **Backend:** Express + TypeScript, served as a single Vercel serverless function under `/api`
@@ -15,7 +17,7 @@ Bets between friends. Closest guess wins, and the prize is always one beer.
    - **Number:** whole numbers only or decimals too; optional minimum and maximum, each inclusive or exclusive (negatives are allowed unless the minimum forbids them).
    - **Duration:** `3:05` (h:mm), `1:02:03`, or `3 hours and 5 minutes`.
    - **Date or time:** date or date-and-time; whether past dates are allowed; and a minimum lead time ("at least now + 2 hours", checked when each player guesses).
-4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one beer; equal distance is a draw.
+4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one lonkero; equal distance is a draw.
 5. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
 
 ### Tipping point

@@ -20,9 +20,9 @@ export default function Login() {
   return (
     <div className="page login">
       <div className="hero">
-        <div className="hero-beer">🍺</div>
+        <img className="hero-can" src="/can-256.png" width="112" height="112" alt="" />
         <h1>Lojubets</h1>
-        <p className="muted">Settle it with a friend. Closest guess wins a beer.</p>
+        <p className="muted">Settle it with a friend. Closest guess wins a lonkero.</p>
       </div>
       {params.get('error') && <p className="error">{params.get('error')}</p>}
       <div className="stack">

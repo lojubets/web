@@ -45,7 +45,7 @@ export interface Me extends UserSummary {
 }
 
 export interface Friend extends UserSummary {
-  /** Beers the friend owes me; negative means I owe them. */
+  /** Lonkeros the friend owes me; negative means I owe them. */
   balance: number;
   openBets: number;
   needsMyAction: number;
@@ -82,7 +82,7 @@ export interface Bet {
   tippingPassed: boolean;
   needsMyAction: boolean;
   canAllIn: boolean;
-  /** Beers I'd put on the line if I went all-in now. */
+  /** Lonkeros I'd put on the line if I went all-in now. */
   allInStake: number;
   createdAt: number;
   settledAt: number | null;

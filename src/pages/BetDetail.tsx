@@ -4,7 +4,7 @@ import type { Bet, Friend } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import ValueInput from '../components/ValueInput';
-import { beers, describeRules, formatMoment, formatValue } from '../format';
+import { describeRules, formatMoment, formatValue, lonkeros } from '../format';
 import { useAction, useFetch } from '../hooks';
 
 export default function BetDetail() {
@@ -76,7 +76,7 @@ export default function BetDetail() {
         </div>
       )}
 
-      {b.allIn && <p className="banner allin">🔥 All-in: double or nothing for {beers(b.stake)}</p>}
+      {b.allIn && <p className="banner allin">🔥 All-in: double or nothing for {lonkeros(b.stake)}</p>}
 
       {b.status === 'settled' && (
         <p className={`banner ${b.winnerId === null ? '' : iWon ? 'win' : 'lose'}`}>
@@ -84,8 +84,8 @@ export default function BetDetail() {
           {b.winnerId === null
             ? "Dead heat, nobody owes anything."
             : iWon
-              ? `You won ${beers(b.stake)}! ${friend.name} owes you.`
-              : `${friend.name} won. You owe ${beers(b.stake)}.`}
+              ? `You won ${lonkeros(b.stake)}! ${friend.name} owes you.`
+              : `${friend.name} won. You owe ${lonkeros(b.stake)}.`}
         </p>
       )}
 
@@ -141,9 +141,9 @@ export default function BetDetail() {
         <div className="card allin-offer stack">
           <strong>You're in the red. Feeling lucky?</strong>
           <span className="muted small">
-            Go all-in: this bet is worth {beers(b.allInStake)} instead of 1. Win and you're back to even, lose and you owe {beers(b.allInStake * 2)}.
+            Go all-in: this bet is worth {lonkeros(b.allInStake)} instead of 1. Win and you're back to even, lose and you owe {lonkeros(b.allInStake * 2)}.
           </span>
-          <button className="btn btn-danger" disabled={act.busy} onClick={() => confirm(`Double or nothing on ${beers(b.allInStake)}?`) && post('/all-in')}>
+          <button className="btn btn-danger" disabled={act.busy} onClick={() => confirm(`Double or nothing on ${lonkeros(b.allInStake)}?`) && post('/all-in')}>
             🔥 Go all-in
           </button>
         </div>

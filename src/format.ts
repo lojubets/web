@@ -3,11 +3,12 @@ import type { BetKind, BetParams, InstantParams, NumberParams } from '../shared/
 
 export { formatValue, formatMoment } from '../shared/format';
 
-export const beers = (n: number) => `${n} 🍺`;
+// The one place that decides how a count of lonkeros reads ("1 lonkero", "3 lonkeros").
+export const lonkeros = (n: number) => `${n} ${n === 1 ? 'lonkero' : 'lonkeros'}`;
 
 export function balanceText(name: string, balance: number): string {
   if (balance === 0) return `You and ${name} are even`;
-  return balance > 0 ? `${name} owes you ${beers(balance)}` : `You owe ${name} ${beers(-balance)}`;
+  return balance > 0 ? `${name} owes you ${lonkeros(balance)}` : `You owe ${name} ${lonkeros(-balance)}`;
 }
 
 /** The rules of a bet as short phrases, e.g. ["Whole numbers only", "At least 0 and less than 10"]. */

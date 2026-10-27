@@ -24,21 +24,32 @@ export default function App() {
       .catch(() => setMe(null));
   useEffect(() => {
     load();
+    // Verifying happens in another tab; pick it up when the user comes back.
+    const onVisible = () => document.visibilityState === 'visible' && load();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
   }, []);
 
   if (me === undefined) return <p className="center muted">Loading…</p>;
+
+  // Until an unverified email is confirmed, the only place to be is the profile page.
+  const locked = !!me && !!me.email && !me.emailVerified;
 
   return (
     <Routes>
       <Route path="/login" element={me ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} />} />
+      <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} locked={locked} />} />
       <Route
         element={
           me ? (
-            <MeContext.Provider value={{ me, reload: load }}>
-              <Layout />
-            </MeContext.Provider>
+            locked && location.pathname !== '/profile' ? (
+              <Navigate to="/profile" replace />
+            ) : (
+              <MeContext.Provider value={{ me, reload: load }}>
+                <Layout locked={locked} />
+              </MeContext.Provider>
+            )
           ) : (
             <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />
           )

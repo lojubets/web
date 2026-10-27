@@ -74,6 +74,17 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   return r && { ...summary(r), email: r.email, emailVerified: !!r.email_verified, profileName: r.profile_name ?? '' };
 }
 
+/**
+ * Friends, invitations and bets unlock once the account's email is verified. (An account with no email
+ * at all can never verify, so it isn't locked out of the rest of the app.)
+ */
+async function requireVerifiedEmail(_req: Request, res: Response, next: express.NextFunction) {
+  const u = await getUser(uid(res));
+  if (u?.email && !u.emailVerified) return res.status(403).json({ error: 'Verify your email address first', code: 'email_not_verified' });
+  next();
+}
+app.use(['/api/friends', '/api/invitations', '/api/bets'], requireVerifiedEmail);
+
 async function areConnected(a: string, b: string) {
   const [x, y] = pair(a, b);
   return (await db.execute({ sql: 'SELECT 1 FROM connections WHERE user_a = ? AND user_b = ?', args: [x, y] })).rows.length > 0;
@@ -225,7 +236,7 @@ async function loadBets(me: string): Promise<BetRow[]> {
 
 const otherOf = (b: BetRow, me: string) => (b.creator_id === me ? b.opponent_id : b.creator_id);
 
-/** Beers each friend owes me, derived from settled bets. */
+/** Lonkeros each friend owes me, derived from settled bets. */
 function balances(me: string, bets: BetRow[]): Map<string, number> {
   const by = new Map<string, { winnerId: string | null; stake: number }[]>();
   for (const b of bets) {

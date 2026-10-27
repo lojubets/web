@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Bet, Friend } from '../../shared/types';
 import Avatar from './Avatar';
-import { beers, formatValue } from '../format';
+import { formatValue, lonkeros } from '../format';
 
 const until = (ms: number) => {
   const h = Math.max(1, Math.round((ms - Date.now()) / 3_600_000));
@@ -18,7 +18,7 @@ export function statusLabel(b: Bet, name: string): string {
       if (b.proposalKind === 'not_happened') return b.outcomeProposedByMe ? `Waiting for ${name} to agree it hasn't happened` : "Confirm it hasn't happened";
       return b.outcomeProposedByMe ? `Waiting for ${name} to confirm` : 'Confirm the outcome';
     case 'settled':
-      return b.winnerId === null ? 'Draw, no beer' : b.winnerId === b.otherUserId ? `${name} won` : 'You won';
+      return b.winnerId === null ? 'Draw, no lonkero' : b.winnerId === b.otherUserId ? `${name} won` : 'You won';
     default:
       return b.status;
   }
@@ -38,7 +38,7 @@ export default function BetCard({ bet, friend }: { bet: Bet; friend?: Friend }) 
         </div>
       </div>
       {bet.tippingSoon && bet.tippingPoint && <span className="pill warn">⏰ {until(bet.tippingPoint)}</span>}
-      {bet.allIn && <span className="pill">All-in {beers(bet.stake)}</span>}
+      {bet.allIn && <span className="pill">All-in {lonkeros(bet.stake)}</span>}
     </Link>
   );
 }

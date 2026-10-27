@@ -9,6 +9,15 @@ vi.mock('./email.js', () => ({
 }));
 import app from './app.js';
 
+/** Registers with email/password and completes verification via the emailed link. */
+const verifiedUser = async (email: string) => {
+  const a = request.agent(app);
+  await a.post('/api/auth/register').send({ email, password: 'correct horse' }).expect(201);
+  const token = mails.filter((m) => m.to === email).at(-1)!.text.match(/token=([\w-]+)/)![1];
+  await request(app).post('/api/auth/verify-email').send({ token }).expect(200);
+  return a;
+};
+
 const login = async (name: string) => {
   const a = request.agent(app);
   await a.post('/api/auth/dev').send({ name, email: `${name.toLowerCase()}@example.com` }).expect(200);
@@ -60,7 +69,7 @@ describe('bets between friends', () => {
 
   const balanceOnAnn = async () => (await ann.get('/api/friends')).body[0].balance as number;
 
-  it('settles a bet: closer guess wins one beer', async () => {
+  it('settles a bet: closer guess wins one lonkero', async () => {
     const id = await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' });
     const { body } = await settle(id, '3');
     expect(body.winnerId).toBe(annId);
@@ -68,7 +77,7 @@ describe('bets between friends', () => {
   });
 
   it('all-in: only the debtor, double or nothing', async () => {
-    // Bob owes Ann 1 beer. Make it 3 by winning two more for Ann.
+    // Bob owes Ann 1 lonkero. Make it 3 by winning two more for Ann.
     for (let i = 0; i < 2; i++) await settle(await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' }), '3');
     expect(await balanceOnAnn()).toBe(3);
 
@@ -129,8 +138,7 @@ describe('email/password accounts', () => {
 
   it('friends see a nameless user by their email', async () => {
     const inviter = await login('Pat');
-    const nameless = request.agent(app);
-    await nameless.post('/api/auth/register').send({ email: 'nameless@example.com', password: 'correct horse' }).expect(201);
+    const nameless = await verifiedUser('nameless@example.com');
     const { body } = await inviter.post('/api/invitations').send({ email: 'nameless@example.com' });
     await nameless.post(`/api/invitations/token/${body.link.split('/invite/')[1]}/accept`).expect(200);
     expect((await inviter.get('/api/friends')).body[0]).toMatchObject({ name: 'nameless@example.com' });
@@ -148,7 +156,7 @@ describe('email verification', () => {
     expect((await eve.get('/api/me')).body.emailVerified).toBe(false);
 
     await inviter.post('/api/invitations').send({ email: 'eve@example.com' }).expect(201);
-    expect((await eve.get('/api/invitations')).body.received).toHaveLength(0); // unverified: not matched
+    await eve.get('/api/invitations').expect(403); // locked until verified
 
     const token = tokenFrom('eve@example.com'); // sent automatically at registration
     await eve.post('/api/me/verify-email').expect(429); // resend is throttled
@@ -320,10 +328,37 @@ describe('inviting requires a verified email', () => {
     await jo.post('/api/auth/register').send({ email: 'jo@example.com', password: 'correct horse' }).expect(201);
     const refused = await jo.post('/api/invitations').send({ email: 'friend@example.com' }).expect(403);
     expect(refused.body.error).toMatch(/Verify your email/);
-    expect((await jo.get('/api/invitations')).body.sent).toHaveLength(0);
+    await jo.get('/api/invitations').expect(403);
 
     const token = mails.filter((m) => m.to === 'jo@example.com').at(-1)!.text.match(/token=([\w-]+)/)![1];
     await request(app).post('/api/auth/verify-email').send({ token }).expect(200);
     await jo.post('/api/invitations').send({ email: 'friend@example.com' }).expect(201);
+  });
+});
+
+describe('unverified accounts are locked to their profile', () => {
+  it('can use /me and verification, but not friends, bets or invitations, until verified', async () => {
+    const kim = request.agent(app);
+    await kim.post('/api/auth/register').send({ email: 'kim@example.com', password: 'correct horse' }).expect(201);
+
+    await kim.get('/api/me').expect(200);
+    await kim.put('/api/me').send({ name: 'Kim' }).expect(200);
+    for (const path of ['/api/friends', '/api/bets', '/api/invitations']) {
+      const r = await kim.get(path).expect(403);
+      expect(r.body.code).toBe('email_not_verified');
+    }
+    await kim.post('/api/bets').send({ opponentId: 'x', question: 'Nope', kind: 'number', guess: '1' }).expect(403);
+
+    // accepting an invitation link needs a verified email too, but previewing it doesn't
+    const host = await login('Lou');
+    const { body } = await host.post('/api/invitations').send({ email: 'kim@example.com' });
+    const token = body.link.split('/invite/')[1];
+    await request(app).get(`/api/invitations/token/${token}`).expect(200);
+    await kim.post(`/api/invitations/token/${token}/accept`).expect(403);
+
+    const verify = mails.filter((m) => m.to === 'kim@example.com').at(-1)!.text.match(/token=([\w-]+)/)![1];
+    await request(app).post('/api/auth/verify-email').send({ token: verify }).expect(200);
+    await kim.get('/api/friends').expect(200);
+    await kim.post(`/api/invitations/token/${token}/accept`).expect(200);
   });
 });

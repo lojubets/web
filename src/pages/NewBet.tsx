@@ -64,7 +64,7 @@ export default function NewBet() {
         <RulesEditor kind={kind} rules={rules} onChange={setRules} />
         <ValueInput kind={kind} params={betParams} value={guess} onChange={setGuess} label="Your guess (hidden until they answer)" />
         {error && <p className="error">{error}</p>}
-        <button className="btn" disabled={busy || !selected}>Propose bet · 1 🍺</button>
+        <button className="btn" disabled={busy || !selected}>Propose bet · 1 lonkero</button>
       </form>
     </>
   );

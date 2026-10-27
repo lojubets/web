@@ -9,7 +9,7 @@ const MESSAGES: Record<string, string> = {
   failed: "We couldn't send the email. Try again later.",
 };
 
-/** Shown to accounts whose email is unverified: they can't receive invitations by email until it is. */
+/** Shown to accounts whose email is unverified: friends and bets stay locked until it is confirmed. */
 export default function VerifyEmailBanner() {
   const { me } = useMe();
   const [msg, setMsg] = useState<string | null>(null);
@@ -31,9 +31,7 @@ export default function VerifyEmailBanner() {
   return (
     <div className="card stack">
       <strong>Verify your email</strong>
-      <span className="muted small">
-        Confirm {me.email} to receive invitations sent to that address. Invite links work without it.
-      </span>
+      <span className="muted small">We sent a confirmation link to {me.email}. Open it, then come back here.</span>
       <button className="btn btn-secondary" disabled={busy} onClick={send}>Send verification email</button>
       {msg && <span className="small">{msg}</span>}
     </div>

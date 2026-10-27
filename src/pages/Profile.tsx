@@ -24,6 +24,15 @@ export default function Profile() {
   return (
     <>
       <header className="header"><h1>Profile</h1></header>
+      {me.email && !me.emailVerified && (
+        <div className="card stack">
+          <strong className="row"><img src="/can-64.png" width="28" height="28" alt="" />Welcome to Lojubets!</strong>
+          <span>
+            Once you've verified your email address, you can connect with friends and wage bets. Until then, this profile page is all there is.
+            You can set your display name and picture in the meantime.
+          </span>
+        </div>
+      )}
       <VerifyEmailBanner />
       <div className="profile-head">
         <button className="avatar-btn" onClick={() => file.current?.click()} aria-label="Change profile picture">
