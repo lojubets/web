@@ -38,6 +38,18 @@
   flex: 1;
   min-width: 0;
 }
+/* Text plus actions in one row: the actions stay together, and drop to their own line when the text needs the room
+   (instead of the text shrinking away underneath them). */
+.row-text {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.row-actions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
 
 .header {
   display: flex;
