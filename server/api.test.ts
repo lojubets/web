@@ -362,3 +362,96 @@ describe('unverified accounts are locked to their profile', () => {
     await kim.post(`/api/invitations/token/${token}/accept`).expect(200);
   });
 });
+
+describe('cancelling and calling a bet off', () => {
+  let kai: ReturnType<typeof request.agent>;
+  let lin: ReturnType<typeof request.agent>;
+  let linId: string;
+
+  beforeAll(async () => {
+    kai = await login('Kai');
+    lin = await login('Lin');
+    linId = (await lin.get('/api/me')).body.id;
+    const { body } = await kai.post('/api/invitations').send({ email: 'lin@example.com' });
+    await lin.post(`/api/invitations/token/${body.link.split('/invite/')[1]}/accept`).expect(200);
+  });
+
+  const newBet = async (question = 'Goals?') =>
+    (await kai.post('/api/bets').send({ opponentId: linId, question, kind: 'number', guess: '2' }).expect(201)).body.id as string;
+  const activeBet = async (question?: string) => {
+    const id = await newBet(question);
+    await lin.post(`/api/bets/${id}/guess`).send({ guess: '5' }).expect(200);
+    return id;
+  };
+  const balance = async () => (await kai.get('/api/friends')).body[0].balance as number;
+
+  it('can be cancelled only until the other player has locked in a guess, by either player', async () => {
+    const byCreator = await newBet();
+    await kai.post(`/api/bets/${byCreator}/cancel`).expect(200);
+
+    const declined = await newBet();
+    await lin.post(`/api/bets/${declined}/cancel`).expect(200); // the opponent declining
+
+    const locked = await activeBet();
+    await kai.post(`/api/bets/${locked}/cancel`).expect(409);
+    await lin.post(`/api/bets/${locked}/cancel`).expect(409);
+  });
+
+  it('cannot propose a tie before both have locked in', async () => {
+    const id = await newBet();
+    await kai.post(`/api/bets/${id}/propose-tie`).expect(409);
+    await lin.post(`/api/bets/${id}/propose-tie`).expect(409);
+  });
+
+  it('is called off when both agree: no winner, and the bet stays in the history', async () => {
+    const id = await activeBet();
+    const proposed = (await kai.post(`/api/bets/${id}/propose-tie`).expect(200)).body;
+    expect(proposed).toMatchObject({ status: 'awaiting_confirmation', proposalKind: 'tie', outcomeProposedByMe: true, needsMyAction: false });
+    expect((await lin.get(`/api/bets/${id}`)).body).toMatchObject({ proposalKind: 'tie', outcomeProposedByMe: false, needsMyAction: true });
+
+    await kai.post(`/api/bets/${id}/confirm`).expect(409); // can't agree with yourself
+    const done = (await lin.post(`/api/bets/${id}/confirm`).expect(200)).body;
+    expect(done).toMatchObject({ status: 'settled', settledBy: 'tie', winnerId: null, proposalKind: null });
+    expect((await kai.get('/api/bets')).body.some((b: any) => b.id === id)).toBe(true);
+  });
+
+  it('either player can propose it, and the other can refuse, which puts the bet back in play', async () => {
+    const id = await activeBet();
+    await lin.post(`/api/bets/${id}/propose-tie`).expect(200);
+    await lin.post(`/api/bets/${id}/reject`).expect(409); // the proposer can't reject their own
+    const back = (await kai.post(`/api/bets/${id}/reject`).expect(200)).body;
+    expect(back).toMatchObject({ status: 'active', proposalKind: null });
+
+    // and it can be settled normally afterwards
+    await kai.post(`/api/bets/${id}/propose`).send({ outcome: '2' }).expect(200);
+    expect((await lin.post(`/api/bets/${id}/confirm`).expect(200)).body).toMatchObject({ settledBy: 'outcome', winnerId: expect.any(String) });
+  });
+
+  it('while a tie is pending, nobody can propose a result or another tie', async () => {
+    const id = await activeBet();
+    await kai.post(`/api/bets/${id}/propose-tie`).expect(200);
+    await lin.post(`/api/bets/${id}/propose`).send({ outcome: '3' }).expect(409);
+    await lin.post(`/api/bets/${id}/propose-tie`).expect(409);
+    await kai.post(`/api/bets/${id}/propose-tie`).expect(409);
+  });
+
+  it('leaves balances alone, even for an all-in, and frees the all-in slot', async () => {
+    // Lin owes Kai 1 lonkero
+    const won = await activeBet();
+    await kai.post(`/api/bets/${won}/propose`).send({ outcome: '2' }).expect(200);
+    await lin.post(`/api/bets/${won}/confirm`).expect(200);
+    const before = await balance();
+    expect(before).toBeGreaterThan(0);
+
+    const allIn = await activeBet();
+    await lin.post(`/api/bets/${allIn}/all-in`).expect(200);
+    const second = await activeBet('Second');
+    expect((await lin.get(`/api/bets/${second}`)).body.canAllIn).toBe(false); // one all-in at a time
+
+    await lin.post(`/api/bets/${allIn}/propose-tie`).expect(200);
+    const done = (await kai.post(`/api/bets/${allIn}/confirm`).expect(200)).body;
+    expect(done).toMatchObject({ settledBy: 'tie', winnerId: null, allIn: true });
+    expect(await balance()).toBe(before);
+    expect((await lin.get(`/api/bets/${second}`)).body.canAllIn).toBe(true);
+  });
+});

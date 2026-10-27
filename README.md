@@ -18,7 +18,8 @@ Bets between friends. Closest guess wins, and the prize is always one lonkero (t
    - **Duration:** `3:05` (h:mm), `1:02:03`, or words like `3 hours and 5 minutes`, `25 days`, `12 weeks`, `3 months and 2 days`. A month counts as 30 days and a year as 365; `m` means minutes.
    - **Date or time:** date or date-and-time; whether past dates are allowed; and a minimum lead time ("at least now + 2 hours", checked when each player guesses).
 4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one lonkero; equal distance is a draw.
-5. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
+5. **Cancelling and ties:** a bet can be cancelled by either player only until the other has locked in a guess (the opponent declining it, or the creator withdrawing it). Once you've both guessed, either of you can **propose a tie**; if the other agrees, the bet is called off with no winner (it stays in the history, and no balance changes, an all-in stake included). If they refuse, the bet carries on.
+6. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
 
 ### Tipping point
 

@@ -68,10 +68,10 @@ export interface Bet {
   winnerId: string | null;
   allIn: boolean;
   stake: number;
-  /** Settled by a confirmed outcome, or by both players confirming the event hadn't happened by the tipping point. */
-  settledBy: 'outcome' | 'tipping_point' | null;
+  /** Settled by a confirmed outcome, by both players confirming the event hadn't happened by the tipping point, or by both agreeing to call it off as a tie. */
+  settledBy: 'outcome' | 'tipping_point' | 'tie' | null;
   /** What the pending proposal says: a result, or "the event hasn't happened yet". */
-  proposalKind: 'outcome' | 'not_happened' | null;
+  proposalKind: 'outcome' | 'not_happened' | 'tie' | null;
   /**
    * Future-dated bets only: once this moment passes with the event still pending, the later guess
    * is guaranteed to be closer. The players are asked whether the event has happened; nothing is assumed.

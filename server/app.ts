@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { AppConfig, Bet, Friend, Invitation, Me, UserSummary } from '../shared/types.js';
 import { authRouter, enabledProviders, requireAuth } from './auth.js';
 import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
-import { tippingPointOf, type BetRow } from './bets.js';
+import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
 import { env } from './env.js';
@@ -280,11 +280,11 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     winnerId: b.winner_id,
     allIn: !!b.all_in,
     stake: b.stake,
-    settledBy: b.status === 'settled' ? (b.settled_by === 'tipping_point' ? 'tipping_point' : 'outcome') : null,
+    settledBy: b.status === 'settled' ? (b.settled_by === 'tipping_point' || b.settled_by === 'tie' ? b.settled_by : 'outcome') : null,
     tippingPoint: tp,
     tippingSoon: tp !== null && tp > now && tp - now <= 48 * 3_600_000,
     tippingPassed,
-    proposalKind: b.status === 'awaiting_confirmation' ? (b.outcome === null ? 'not_happened' : 'outcome') : null,
+    proposalKind: proposalOf(b),
     needsMyAction,
     canAllIn: b.status === 'active' && !b.all_in && debt > 0 && !anotherAllInOpen,
     allInStake: Math.max(debt, 0),
@@ -391,7 +391,7 @@ app.post('/api/bets/:id/propose', async (req, res) => {
   const outcome = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.outcome ?? ''), { now: Date.now(), role: 'outcome' });
   if (!outcome.ok) return res.status(400).json({ error: outcome.error });
   await db.execute({
-    sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, status = 'awaiting_confirmation' WHERE id = ?`,
+    sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, proposal = 'outcome', status = 'awaiting_confirmation' WHERE id = ?`,
     args: [outcome.value, uid(res), b.id],
   });
   await respondWithBet(res, b.id);
@@ -401,7 +401,7 @@ app.post('/api/bets/:id/reject', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
   if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by === uid(res)) return res.status(409).json({ error: 'Nothing to reject' });
-  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
+  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, proposal = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
   await respondWithBet(res, b.id);
 });
 
@@ -409,15 +409,30 @@ app.post('/api/bets/:id/confirm', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
   if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by === uid(res)) return res.status(409).json({ error: 'Nothing to confirm' });
-  // No outcome means the proposal was "the event hasn't happened by the tipping point": the later guess wins.
-  const notHappened = b.outcome === null;
-  const verdict = notHappened
-    ? tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!)
-    : decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
-  const winner = verdict === 'draw' ? null : verdict === 'creator' ? b.creator_id : b.opponent_id;
+  const kind = proposalOf(b);
+  let winner: string | null = null;
+  if (kind !== 'tie') {
+    // "Not happened" = the event hadn't happened by the tipping point, so the later guess wins.
+    const verdict =
+      kind === 'not_happened' ? tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!) : decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
+    winner = verdict === 'draw' ? null : verdict === 'creator' ? b.creator_id : b.opponent_id;
+  }
+  // A tie is called off by agreement: it ends with no winner, so nobody's balance changes (an all-in stake included).
   await db.execute({
-    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = ? WHERE id = ?`,
-    args: [winner, Date.now(), notHappened ? 'tipping_point' : 'outcome', b.id],
+    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = ?, proposal = NULL WHERE id = ?`,
+    args: [winner, Date.now(), kind === 'tie' ? 'tie' : kind === 'not_happened' ? 'tipping_point' : 'outcome', b.id],
+  });
+  await respondWithBet(res, b.id);
+});
+
+// Both players have locked in but can't settle it: either may propose calling the bet off, if the other agrees.
+app.post('/api/bets/:id/propose-tie', async (req, res) => {
+  const b = await betFor(req, res);
+  if (!b) return;
+  if (b.status !== 'active') return res.status(409).json({ error: "A tie can only be proposed once you've both locked in your guesses" });
+  await db.execute({
+    sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, proposal = 'tie', status = 'awaiting_confirmation' WHERE id = ?`,
+    args: [uid(res), b.id],
   });
   await respondWithBet(res, b.id);
 });
@@ -429,7 +444,7 @@ app.post('/api/bets/:id/not-happened', async (req, res) => {
   const tp = b.status === 'active' ? tippingPointOf(b) : null;
   if (tp === null || Date.now() < tp) return res.status(409).json({ error: "The tipping point hasn't passed yet" });
   await db.execute({
-    sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, status = 'awaiting_confirmation' WHERE id = ?`,
+    sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, proposal = 'not_happened', status = 'awaiting_confirmation' WHERE id = ?`,
     args: [uid(res), b.id],
   });
   await respondWithBet(res, b.id);

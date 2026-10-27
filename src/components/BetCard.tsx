@@ -16,9 +16,11 @@ export function statusLabel(b: Bet, name: string): string {
     case 'active':
       return b.tippingPassed ? 'Has it happened yet?' : 'In play';
     case 'awaiting_confirmation':
+      if (b.proposalKind === 'tie') return b.outcomeProposedByMe ? `Waiting for ${name} to agree to a tie` : 'Agree to call it off?';
       if (b.proposalKind === 'not_happened') return b.outcomeProposedByMe ? `Waiting for ${name} to agree it hasn't happened` : "Confirm it hasn't happened";
       return b.outcomeProposedByMe ? `Waiting for ${name} to confirm` : 'Confirm the outcome';
     case 'settled':
+      if (b.settledBy === 'tie') return 'Called off by agreement';
       return b.winnerId === null ? 'Draw, no lonkero' : b.winnerId === b.otherUserId ? `${name} won` : 'You won';
     default:
       return b.status;

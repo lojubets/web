@@ -79,7 +79,14 @@ export default function BetDetail() {
 
       {b.allIn && <div className="banner banner-dare"><Icon name="flame" size={22} /><span>All-in: double or nothing for {lonkeros(b.stake)}</span></div>}
 
-      {b.status === 'settled' && (
+      {b.status === 'settled' && b.settledBy === 'tie' && (
+        <div className="banner">
+          <Icon name="check" size={22} />
+          <span>Called off by agreement. Nobody owes anything.</span>
+        </div>
+      )}
+
+      {b.status === 'settled' && b.settledBy !== 'tie' && (
         <div className={`banner ${b.winnerId === null ? '' : iWon ? 'banner-win' : 'banner-owe'}`}>
           <Icon name={iWon ? 'trophy' : 'can'} size={22} />
           <span>
@@ -120,8 +127,25 @@ export default function BetDetail() {
         </form>
       )}
 
+      {b.status === 'active' && (
+        <div className="stack">
+          <p className="muted small">Can't agree who was closer? Propose a tie. If {friend.name} agrees, the bet is called off and nobody owes anything.</p>
+          <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/propose-tie')}>Propose a tie</button>
+        </div>
+      )}
+
       {b.status === 'awaiting_confirmation' &&
-        (b.proposalKind === 'not_happened' ? (
+        (b.proposalKind === 'tie' ? (
+          b.outcomeProposedByMe ? (
+            <p className="muted">Waiting for {friend.name} to agree to call the bet off as a tie.</p>
+          ) : (
+            <div className="stack">
+              <p>{friend.name} proposes a tie: call the bet off, and nobody owes anything. Agree?</p>
+              <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>Yes, call it off</button>
+              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>No, keep it going</button>
+            </div>
+          )
+        ) : b.proposalKind === 'not_happened' ? (
           b.outcomeProposedByMe ? (
             <p className="muted">Waiting for {friend.name} to agree that the event hasn't happened yet.</p>
           ) : (

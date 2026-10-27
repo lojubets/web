@@ -80,6 +80,8 @@ async function migrate() {
   const cols = (await db.execute('PRAGMA table_info(bets)')).rows.map((r) => r.name);
   if (!cols.includes('params')) await db.execute('ALTER TABLE bets ADD COLUMN params TEXT');
   if (!cols.includes('settled_by')) await db.execute('ALTER TABLE bets ADD COLUMN settled_by TEXT');
+  // What a pending proposal says: 'outcome' | 'not_happened' | 'tie' (older rows: inferred from outcome)
+  if (!cols.includes('proposal')) await db.execute('ALTER TABLE bets ADD COLUMN proposal TEXT');
   // 'date' bets became 'instant' bets with day precision and no restrictions
   await db.execute(`UPDATE bets SET kind = 'instant', params = '{"precision":"day","allowPast":true,"minLeadMinutes":0}' WHERE kind = 'date'`);
   await db.execute(`UPDATE bets SET settled_by = 'outcome' WHERE status = 'settled' AND settled_by IS NULL`);
