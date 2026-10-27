@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
@@ -18,13 +19,24 @@ async function toAvatarDataUrl(file: File, size = 256): Promise<string> {
 export default function Profile() {
   const { me, reload } = useMe();
   const [name, setName] = useState(me.profileName);
+  // Follow the account's name when it changes underneath us (after a merge, for instance)
+  useEffect(() => {
+    setName(me.profileName);
+  }, [me.profileName]);
   const file = useRef<HTMLInputElement>(null);
   const act = useAction();
   const [saved, setSaved] = useState(false);
+  const merged = useSearchParams()[0].get('merged');
 
   return (
     <>
       <header className="header"><h1>Profile</h1></header>
+      {merged && (
+        <div className="banner banner-win">
+          <Icon name="check" size={22} />
+          <span>Accounts merged. You can sign in with either account's login from now on.</span>
+        </div>
+      )}
       {me.email && !me.emailVerified && (
         <div className="card accent stack">
           <h2>Welcome to Lojubets!</h2>
@@ -76,10 +88,32 @@ export default function Profile() {
           <input value={name} maxLength={60} placeholder={me.email ?? 'Your name'} onChange={(e) => setName(e.target.value)} />
           {!me.profileName && <small className="muted">Until you set one, your friends see {me.email ? 'your email address' : 'you as "Friend"'}.</small>}
         </label>
-        {me.email && <p className="muted small">Signed in as {me.email}{me.emailVerified ? ' (verified ✓)' : ' (not verified)'}</p>}
         <button className="btn" disabled={act.busy || name.trim() === me.profileName}>{saved ? <><Icon name="check" size={18} />Saved</> : 'Save'}</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>
+      {me.emails.length > 0 && (
+        <section className="stack">
+          <h2>Email addresses</h2>
+          {me.emails.map((e) => (
+            <div className="row row-wrap" key={e.email}>
+              <span className="grow">
+                <strong>{e.email}</strong> <span className="muted small">{e.verified ? '(verified ✓)' : '(not verified)'}</span>
+              </span>
+              {e.primary && <span className="pill">Primary</span>}
+            </div>
+          ))}
+        </section>
+      )}
+      {me.emailVerified && (
+        <section className="card stack">
+          <h2>Merge accounts</h2>
+          <p className="muted small">
+            Signed up twice, with different logins or emails? Merge the other account into this one: your friends, bets and sign-in
+            methods all end up here, and you choose which email, name and photo to keep.
+          </p>
+          <Link className="btn btn-secondary" to="/merge">Merge accounts</Link>
+        </section>
+      )}
       <button
         className="btn btn-secondary"
         onClick={async () => {

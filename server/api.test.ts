@@ -455,3 +455,164 @@ describe('cancelling and calling a bet off', () => {
     expect((await lin.get(`/api/bets/${second}`)).body.canAllIn).toBe(true);
   });
 });
+
+describe('merging accounts', () => {
+  type Agent = ReturnType<typeof request.agent>;
+  const PW = 'correct horse';
+  const id = async (a: Agent) => (await a.get('/api/me')).body.id as string;
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+  /** `inviter` invites `invitee` by email, who accepts: they are now friends. */
+  async function befriend(inviter: Agent, invitee: Agent, inviteeEmail: string) {
+    const { body } = await inviter.post('/api/invitations').send({ email: inviteeEmail }).expect(201);
+    await invitee.post(`/api/invitations/token/${body.link.split('/invite/')[1]}/accept`).expect(200);
+  }
+  /** One settled bet; `creator` wins when `creatorWins`, otherwise the opponent does. */
+  async function play(creator: Agent, opponent: Agent, creatorWins: boolean) {
+    const oppId = await id(opponent);
+    const bet = (await creator.post('/api/bets').send({ opponentId: oppId, question: 'Goals?', kind: 'number', guess: creatorWins ? '2' : '9' }).expect(201)).body.id;
+    await opponent.post(`/api/bets/${bet}/guess`).send({ guess: creatorWins ? '9' : '2' }).expect(200);
+    await creator.post(`/api/bets/${bet}/propose`).send({ outcome: '3' }).expect(200);
+    await opponent.post(`/api/bets/${bet}/confirm`).expect(200);
+    return bet as string;
+  }
+  const merge = (a: Agent, b: { email: string; password?: string }) =>
+    a.post('/api/merge/password').send({ email: b.email, password: b.password ?? PW });
+
+  it('moves everything to the signed-in account, keeps both emails, and every login works', async () => {
+    const a = await login('Mia'); // dev login: mia@example.com, verified
+    await a.put('/api/me').send({ name: 'Mia' }).expect(200);
+    const b = await verifiedUser('mia.work@example.com'); // email/password, verified
+    await b.put('/api/me').send({ name: 'Mia (work)' }).expect(200);
+    await b.put('/api/me/avatar').send({ dataUrl: PNG }).expect(200);
+    const cleo = await login('Cleo');
+
+    // Both are friends with Cleo and have a settled bet with her: Cleo owes A one, B owes Cleo one
+    await befriend(a, cleo, 'cleo@example.com');
+    await befriend(b, cleo, 'cleo@example.com');
+    await play(a, cleo, true);
+    await play(cleo, b, true);
+    // A and B are also friends with a settled bet between them
+    await befriend(a, b, 'mia.work@example.com');
+    await play(a, b, true);
+
+    const aId = await id(a);
+    await merge(a, { email: 'mia.work@example.com' }).expect(200);
+    const preview = (await a.get('/api/merge/preview').expect(200)).body;
+    expect(preview.blockers).toEqual([]);
+    expect(preview.betsBetween).toBe(1);
+    expect(preview.a).toMatchObject({ id: aId, profileName: 'Mia', primaryEmail: 'mia@example.com', friends: 2 });
+    expect(preview.b).toMatchObject({ profileName: 'Mia (work)', primaryEmail: 'mia.work@example.com', hasAvatar: true });
+    await a.get('/api/merge/avatar/b').expect(200).expect('Content-Type', /image\/png/);
+
+    await a.post('/api/merge/confirm').send({ email: 'b', name: 'b', photo: 'b' }).expect(200);
+
+    // The signed-in account survives, wearing B's email, name and photo, with both addresses on record
+    const me = (await a.get('/api/me').expect(200)).body;
+    expect(me).toMatchObject({ id: aId, email: 'mia.work@example.com', profileName: 'Mia (work)', hasAvatar: true, emailVerified: true });
+    expect(me.emails).toEqual([
+      { email: 'mia.work@example.com', verified: true, primary: true },
+      { email: 'mia@example.com', verified: true, primary: false },
+    ]);
+
+    // Friends and bets are combined: Cleo once, the two accounts' bets with her, and balances add up (+1 -1)
+    const friends = (await a.get('/api/friends')).body;
+    expect(friends).toHaveLength(1);
+    expect(friends[0]).toMatchObject({ name: 'Cleo', balance: 0 });
+    expect((await a.get('/api/bets')).body).toHaveLength(2); // the bet between A and B is gone
+
+    // The old account's session is dead, but both of its logins now sign in to the merged account
+    await b.get('/api/me').expect(401);
+    const viaPassword = request.agent(app);
+    await viaPassword.post('/api/auth/login').send({ email: 'mia.work@example.com', password: PW }).expect(200);
+    expect(await id(viaPassword)).toBe(aId);
+    const viaDev = request.agent(app);
+    await viaDev.post('/api/auth/dev').send({ name: 'Mia', email: 'mia@example.com' }).expect(200);
+    expect(await id(viaDev)).toBe(aId);
+    // the merge ticket was single use
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(404);
+  });
+
+  it('can keep the other choices: A\'s email, name and no photo; the other address stays as a secondary', async () => {
+    const a = await login('Noa');
+    await a.put('/api/me').send({ name: 'Noa' }).expect(200);
+    await a.put('/api/me/avatar').send({ dataUrl: PNG }).expect(200);
+    const b = await login('Noab'); // another dev login = another account
+    await b.put('/api/me').send({ name: 'Noa Two' }).expect(200);
+
+    await a.post('/api/merge/dev').send({ email: 'noab@example.com' }).expect(200);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(200);
+
+    const me = (await a.get('/api/me')).body;
+    expect(me).toMatchObject({ email: 'noa@example.com', profileName: 'Noa', hasAvatar: false });
+    expect(me.emails.map((e: any) => [e.email, e.primary])).toEqual([['noa@example.com', true], ['noab@example.com', false]]);
+
+    // An invitation to the secondary address reaches the merged account
+    const inviter = await login('Ivo');
+    await inviter.post('/api/invitations').send({ email: 'noab@example.com' }).expect(201);
+    const received = (await a.get('/api/invitations')).body.received;
+    expect(received).toHaveLength(1);
+    // ...and the secondary address counts as the account's own (no inviting yourself)
+    await a.post('/api/invitations').send({ email: 'noab@example.com' }).expect(400);
+  });
+
+  it('requires both emails to be verified, and says so', async () => {
+    const a = await login('Pia');
+    const unverified = request.agent(app);
+    await unverified.post('/api/auth/register').send({ email: 'pia.old@example.com', password: PW }).expect(201);
+
+    await merge(a, { email: 'pia.old@example.com' }).expect(200);
+    const preview = (await a.get('/api/merge/preview').expect(200)).body;
+    expect(preview.blockers.join(' ')).toMatch(/isn't verified/);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(409);
+    // nothing moved
+    expect(await id(unverified)).toBeTruthy();
+  });
+
+  it('refuses while the two accounts have an unfinished bet with each other', async () => {
+    const a = await login('Rex');
+    const b = await verifiedUser('rex.alt@example.com');
+    await befriend(a, b, 'rex.alt@example.com');
+    const bId = await id(b);
+    await a.post('/api/bets').send({ opponentId: bId, question: 'Between us', kind: 'number', guess: '1' }).expect(201);
+
+    await merge(a, { email: 'rex.alt@example.com' }).expect(200);
+    const preview = (await a.get('/api/merge/preview').expect(200)).body;
+    expect(preview.blockers.join(' ')).toMatch(/unfinished bet/);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(409);
+  });
+
+  it('only works with a real second login, not your own and not a wrong password', async () => {
+    const a = await verifiedUser('sam@example.com');
+    await merge(a, { email: 'sam@example.com' }).expect(400); // that's you
+    await merge(a, { email: 'sam@example.com', password: 'wrong password' }).expect(401);
+    await merge(a, { email: 'nobody@example.com' }).expect(401);
+    await a.get('/api/merge/preview').expect(404); // no ticket was issued
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(404);
+    await request(app).get('/api/merge/preview').expect(401); // signed in is required
+  });
+
+  it('a ticket only works for the account it was issued to', async () => {
+    const a = await verifiedUser('una@example.com');
+    const b = await verifiedUser('una.alt@example.com');
+    const cookies = (res: { headers: Record<string, any> }) => (res.headers['set-cookie'] as string[]).map((c) => c.split(';')[0]);
+
+    const ticket = cookies(await merge(a, { email: 'una.alt@example.com' }).expect(200));
+    const intruder = cookies(await request(app).post('/api/auth/dev').send({ name: 'Uma', email: 'uma@example.com' }).expect(200));
+    const stolen = [...intruder, ...ticket.filter((c) => c.startsWith('merge='))];
+
+    await request(app).get('/api/merge/preview').set('Cookie', stolen).expect(404);
+    await request(app).post('/api/merge/confirm').set('Cookie', stolen).send({ email: 'a', name: 'a', photo: 'none' }).expect(404);
+    expect(await id(b)).toBeTruthy(); // still its own account
+  });
+
+  it('can be cancelled before confirming', async () => {
+    const a = await login('Tia');
+    const b = await login('Tiab');
+    await a.post('/api/merge/dev').send({ email: 'tiab@example.com' }).expect(200);
+    await a.get('/api/merge/preview').expect(200);
+    await a.delete('/api/merge').expect(200);
+    await a.get('/api/merge/preview').expect(404);
+    expect(await id(b)).toBeTruthy(); // untouched
+  });
+});

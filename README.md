@@ -20,6 +20,12 @@ Bets between friends. Closest guess wins, and the prize is always one lonkero (t
 4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one lonkero; equal distance is a draw.
 5. **Cancelling and ties:** a bet can be cancelled by either player only until the other has locked in a guess (the opponent declining it, or the creator withdrawing it). Once you've both guessed, either of you can **propose a tie**; if the other agrees, the bet is called off with no winner (it stays in the history, and no balance changes, an all-in stake included). If they refuse, the bet carries on.
 6. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
+7. **Merging accounts:** signed up twice (say with Google and with an email and password)? On the Profile page choose **Merge accounts**, sign in to the other account (you stay signed in as this one), then choose whose email address, display name and photo the merged account keeps. Rules:
+   - **Both accounts need a verified email address.** Both addresses stay on record, each with its verification status, and an invitation sent to either one reaches the merged account.
+   - **Every login keeps working.** After the merge, the other account's Google, Microsoft, Apple or email/password login signs in to the merged account.
+   - **Friends and bets are combined.** A friend both accounts had appears once, and balances with them add up. Unfinished bets *between* the two accounts block the merge until they're finished or cancelled; finished ones are removed (a bet with yourself is meaningless).
+   - The other account is deleted, and its sessions stop working. The whole merge is one database transaction: it happens completely or not at all.
+   - Signing in to the other account through a provider only works for an account that already exists; it never creates one. No new Google/Microsoft/Apple configuration is needed.
 
 ### Tipping point
 

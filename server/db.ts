@@ -24,6 +24,21 @@ const schema = [
     user_id TEXT NOT NULL,
     PRIMARY KEY (provider, subject)
   )`,
+  // Every email address an account has, with its own verification status. users.email is the primary one.
+  `CREATE TABLE IF NOT EXISTS user_emails (
+    user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    verified INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, email)
+  )`,
+  `CREATE INDEX IF NOT EXISTS user_emails_email ON user_emails (email)`,
+  // Password per login (the email it was registered with), so a merged account can keep several.
+  `CREATE TABLE IF NOT EXISTS password_credentials (
+    subject TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL
+  )`,
+  // Superseded by password_credentials; kept so the migration below can read old rows.
   `CREATE TABLE IF NOT EXISTS credentials (
     user_id TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL
@@ -85,6 +100,15 @@ async function migrate() {
   // 'date' bets became 'instant' bets with day precision and no restrictions
   await db.execute(`UPDATE bets SET kind = 'instant', params = '{"precision":"day","allowPast":true,"minLeadMinutes":0}' WHERE kind = 'date'`);
   await db.execute(`UPDATE bets SET settled_by = 'outcome' WHERE status = 'settled' AND settled_by IS NULL`);
+  // Multi-email and per-login passwords (idempotent: INSERT OR IGNORE never overwrites)
+  await db.execute(
+    `INSERT OR IGNORE INTO user_emails (user_id, email, verified, created_at)
+     SELECT id, lower(email), email_verified, created_at FROM users WHERE email IS NOT NULL AND email != ''`,
+  );
+  await db.execute(
+    `INSERT OR IGNORE INTO password_credentials (subject, password_hash)
+     SELECT i.subject, c.password_hash FROM credentials c JOIN identities i ON i.user_id = c.user_id AND i.provider = 'password'`,
+  );
 }
 
 let ready: Promise<void> | undefined;
