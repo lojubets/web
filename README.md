@@ -86,7 +86,7 @@ The dev login is never available in production, whatever `DEV_LOGIN` says. Watch
    | `DATABASE_URL` | `file:local.db` (the default; a SQLite file in the project folder) | the `libsql://…turso.io` URL from `turso db show --url` |
    | `DATABASE_AUTH_TOKEN` | not needed, leave empty | the token from `turso db tokens create` |
 
-   A `libsql://` URL without the token fails with an authentication error. The token is a secret: put it in Vercel's environment variables, never in git. To try Turso from your machine, put the same two values in `.env.cloud` and run `npm run dev:cloud`.
+   The app refuses to start with a `libsql://` URL and no token. The token is a secret: put it in Vercel's environment variables, never in git. To try Turso from your machine, put the same two values in `.env.cloud` and run `npm run dev:cloud`.
 3. Import the repo in Vercel and set the [production variables](#production) above.
 4. Register the redirect URI `APP_URL/api/auth/<google|microsoft|apple>/callback` with each provider.
 
