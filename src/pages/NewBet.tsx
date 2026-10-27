@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import type { Bet, BetKind, Friend } from '../../shared/types';
 import { api } from '../api';
 import RulesEditor, { EMPTY_RULES, draftToParams, type RulesDraft } from '../components/RulesEditor';
+import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { useAction, useFetch } from '../hooks';
 
@@ -28,9 +29,9 @@ export default function NewBet() {
   return (
     <>
       <header className="header">
-        <Link to="/" className="back">‹ Back</Link>
-        <h1>New bet</h1>
+        <Link to="/" className="back"><Icon name="chevron-left" size={22} />Back</Link>
       </header>
+      <h1>New bet</h1>
       <form
         className="stack"
         onSubmit={(e) => {

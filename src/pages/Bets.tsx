@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Bet, Friend } from '../../shared/types';
 import BetCard from '../components/BetCard';
+import Icon from '../components/Icon';
 import { useFetch } from '../hooks';
 
 export default function Bets() {
@@ -29,18 +30,19 @@ export default function Bets() {
     <>
       <header className="header">
         <h1>Bets</h1>
-        {friends.data?.length ? <Link className="btn btn-small" to="/bets/new">+ New bet</Link> : null}
+        {friends.data?.length ? <Link className="btn btn-small" to="/bets/new"><Icon name="plus" size={18} />New bet</Link> : null}
       </header>
       {bets.error && <p className="error">{bets.error}</p>}
       {!bets.loading && friends.data?.length === 0 && (
         <div className="card empty">
+          <img className="empty-can" src="/can-256.png" width="80" height="80" alt="" />
           <p>Bets are between friends. Invite someone to get started.</p>
           <Link className="btn" to="/friends">Invite a friend</Link>
         </div>
       )}
-      {!bets.loading && friends.data?.length ? list.length === 0 && <p className="muted center">No bets yet. Start one!</p> : null}
+      {!bets.loading && friends.data?.length ? list.length === 0 && <div className="empty"><img className="empty-can" src="/can-256.png" width="80" height="80" alt="" /><p>No bets yet. Start one!</p></div> : null}
       {section('Your move', yourMove)}
-      {section('Tipping point approaching ⏰', headsUp)}
+      {section('Tipping point approaching', headsUp)}
       {section('In play', inPlay)}
       {section('Settled', settled)}
     </>

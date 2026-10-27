@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Bet, Friend } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
+import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { describeRules, formatMoment, formatValue, lonkeros } from '../format';
 import { useAction, useFetch } from '../hooks';
@@ -36,10 +37,10 @@ export default function BetDetail() {
   return (
     <>
       <header className="header">
-        <Link to="/" className="back">‹ Bets</Link>
+        <Link to="/" className="back"><Icon name="chevron-left" size={22} />Bets</Link>
       </header>
       <h1 className="question">{b.question}</h1>
-      <Link to={`/friends/${friend.id}`} className="versus muted">
+      <Link to={`/friends/${friend.id}`} className="versus">
         <Avatar user={friend} size={28} /> vs {friend.name}
       </Link>
 
@@ -52,13 +53,13 @@ export default function BetDetail() {
         </div>
         <div className="card guess">
           <span className="muted small">{friend.name}</span>
-          <strong>{b.theirGuess === null ? '🤫 hidden' : fv(b.theirGuess)}</strong>
+          {b.theirGuess === null ? <span className="hidden-guess"><Icon name="lock" size={18} />Hidden</span> : <strong>{fv(b.theirGuess)}</strong>}
         </div>
       </div>
 
       {b.tippingPoint !== null && b.status === 'active' && (
         <div className={`card stack ${b.tippingSoon || b.tippingPassed ? 'needs-action' : ''}`}>
-          <strong>⏰ {b.tippingPassed ? 'Tipping point passed' : 'Tipping point'}: {formatMoment(b.tippingPoint, b.params)}</strong>
+          <strong className="row"><Icon name="clock" size={22} />{b.tippingPassed ? 'Tipping point passed' : 'Tipping point'}: {formatMoment(b.tippingPoint, b.params)}</strong>
           <span className="muted small">
             {later === 'both'
               ? 'You guessed the same, so this ends in a draw whatever happens.'
@@ -76,17 +77,20 @@ export default function BetDetail() {
         </div>
       )}
 
-      {b.allIn && <p className="banner allin">🔥 All-in: double or nothing for {lonkeros(b.stake)}</p>}
+      {b.allIn && <div className="banner banner-dare"><Icon name="flame" size={22} /><span>All-in: double or nothing for {lonkeros(b.stake)}</span></div>}
 
       {b.status === 'settled' && (
-        <p className={`banner ${b.winnerId === null ? '' : iWon ? 'win' : 'lose'}`}>
+        <div className={`banner ${b.winnerId === null ? '' : iWon ? 'banner-win' : 'banner-owe'}`}>
+          <Icon name={iWon ? 'trophy' : 'can'} size={22} />
+          <span>
           {byTipping && "You both confirmed the event hadn't happened by the tipping point. "}
           {b.winnerId === null
             ? "Dead heat, nobody owes anything."
             : iWon
               ? `You won ${lonkeros(b.stake)}! ${friend.name} owes you.`
               : `${friend.name} won. You owe ${lonkeros(b.stake)}.`}
-        </p>
+          </span>
+        </div>
       )}
 
       {b.status === 'awaiting_guess' && !b.iAmCreator && (
@@ -139,12 +143,12 @@ export default function BetDetail() {
 
       {b.canAllIn && (
         <div className="card allin-offer stack">
-          <strong>You're in the red. Feeling lucky?</strong>
+          <strong className="row"><Icon name="flame" size={22} />You're in the red. Feeling lucky?</strong>
           <span className="muted small">
             Go all-in: this bet is worth {lonkeros(b.allInStake)} instead of 1. Win and you're back to even, lose and you owe {lonkeros(b.allInStake * 2)}.
           </span>
           <button className="btn btn-danger" disabled={act.busy} onClick={() => confirm(`Double or nothing on ${lonkeros(b.allInStake)}?`) && post('/all-in')}>
-            🔥 Go all-in
+            <Icon name="flame" size={20} />Go all-in
           </button>
         </div>
       )}

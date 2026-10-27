@@ -12,11 +12,16 @@ import InviteLanding from './pages/InviteLanding';
 import Login from './pages/Login';
 import NewBet from './pages/NewBet';
 import Profile from './pages/Profile';
+import Styleguide from './pages/Styleguide';
 import VerifyEmail from './pages/VerifyEmail';
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = loading
   const location = useLocation();
+  // A new screen starts at the top, as on a native app.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   const load = () =>
     api<Me>('/me')
@@ -39,6 +44,7 @@ export default function App() {
     <Routes>
       <Route path="/login" element={me ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/styleguide" element={<Styleguide />} />
       <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} locked={locked} />} />
       <Route
         element={

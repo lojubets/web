@@ -1,28 +1,41 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { useFetch } from '../hooks';
 import type { Friend } from '../../shared/types';
+import { useFetch } from '../hooks';
+import Icon from './Icon';
+import Wave from './Wave';
 
 export default function Layout({ locked }: { locked: boolean }) {
   const { data: friends } = useFetch<Friend[]>(locked ? null : '/friends');
   const actions = friends?.reduce((n, f) => n + f.needsMyAction, 0) ?? 0;
   return (
     <>
+      <header className="masthead">
+        <div className="masthead-inner">
+          <img src="/can-64.png" alt="" />
+          <span className="wordmark">Lojubets</span>
+        </div>
+      </header>
+      <Wave />
       <main className="page">
         <Outlet />
       </main>
-      <nav className="tabbar">
+      <nav className="tabbar" aria-label="Main">
         {!locked && (
           <>
             <NavLink to="/" end>
-              <span><img src="/can-64.png" alt="" /></span>Bets{actions > 0 && <b className="badge">{actions}</b>}
+              <span className="tab-icon"><Icon name="can" size={24} /></span>
+              Bets
+              {actions > 0 && <b className="badge" aria-label={`${actions} waiting for you`}>{actions}</b>}
             </NavLink>
             <NavLink to="/friends">
-              <span>👥</span>Friends
+              <span className="tab-icon"><Icon name="friends" size={24} /></span>
+              Friends
             </NavLink>
           </>
         )}
         <NavLink to="/profile">
-          <span>🙂</span>Profile
+          <span className="tab-icon"><Icon name="user" size={24} /></span>
+          Profile
         </NavLink>
       </nav>
     </>

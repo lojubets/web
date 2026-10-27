@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import type { AppConfig } from '../../shared/types';
 import { api } from '../api';
+import Wave from '../components/Wave';
 import { useAction, useFetch } from '../hooks';
 
 const LABELS = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' } as const;
@@ -18,68 +19,74 @@ export default function Login() {
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
   return (
-    <div className="page login">
-      <div className="hero">
+    <>
+      <section className="hero">
         <img className="hero-can" src="/can-256.png" width="112" height="112" alt="" />
         <h1>Lojubets</h1>
-        <p className="muted">Settle it with a friend. Closest guess wins a lonkero.</p>
-      </div>
-      {params.get('error') && <p className="error">{params.get('error')}</p>}
-      <div className="stack">
-        {config?.providers.map((p) => (
-          <a key={p} className="btn btn-secondary" href={`/api/auth/${p}?next=${encodeURIComponent(next)}`}>
-            Continue with {LABELS[p]}
-          </a>
-        ))}
-        {config && config.providers.length === 0 && !config.devLogin && (
-          <p className="muted center">No sign-in providers are configured yet.</p>
-        )}
-      </div>
-      <form
-        className="card stack"
-        onSubmit={(e) => {
-          e.preventDefault();
-          pw.run(async () => {
-            await api(mode === 'login' ? '/auth/login' : '/auth/register', 'POST', { email, password });
-            location.href = next;
-          });
-        }}
-      >
-        <strong>{mode === 'login' ? 'Sign in with email' : 'Create an account'}</strong>
-        <input type="email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <input
-          type="password"
-          placeholder={mode === 'register' ? 'Password (min 8 characters)' : 'Password'}
-          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          minLength={8}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-        />
-        <button className="btn" disabled={pw.busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
-        {pw.error && <p className="error">{pw.error}</p>}
-        <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
-          {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
-        </button>
-      </form>
-      {config?.devLogin && (
+        <p>Settle it with a friend. Closest guess wins a lonkero.</p>
+      </section>
+      <Wave />
+      <main className="page auth-page">
+        {params.get('error') && <p className="error">{params.get('error')}</p>}
         <form
-          className="card stack"
+          className="stack"
           onSubmit={(e) => {
             e.preventDefault();
-            run(async () => {
-              await api('/auth/dev', 'POST', { name, email });
+            pw.run(async () => {
+              await api(mode === 'login' ? '/auth/login' : '/auth/register', 'POST', { email, password });
               location.href = next;
             });
           }}
         >
-          <strong>Dev login</strong>
-          <input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
-          <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <button className="btn" disabled={busy}>Sign in (development only)</button>
-          {error && <p className="error">{error}</p>}
+          <h2>{mode === 'login' ? 'Sign in' : 'Create an account'}</h2>
+          <input type="email" aria-label="Email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <input
+            type="password"
+            aria-label="Password"
+            placeholder={mode === 'register' ? 'Password (min 8 characters)' : 'Password'}
+            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            minLength={8}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <button className="btn" disabled={pw.busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
+          {pw.error && <p className="error">{pw.error}</p>}
+          <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
+            {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+          </button>
         </form>
-      )}
-    </div>
+
+        {config && config.providers.length > 0 && (
+          <section className="stack">
+            <p className="eyebrow center">Or continue with</p>
+            {config.providers.map((p) => (
+              <a key={p} className="btn btn-secondary" href={`/api/auth/${p}?next=${encodeURIComponent(next)}`}>
+                {LABELS[p]}
+              </a>
+            ))}
+          </section>
+        )}
+
+        {config?.devLogin && (
+          <form
+            className="card stack"
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(async () => {
+                await api('/auth/dev', 'POST', { name, email });
+                location.href = next;
+              });
+            }}
+          >
+            <p className="eyebrow">Development only</p>
+            <input aria-label="Name" placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
+            <input type="email" aria-label="Email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <button className="btn btn-secondary" disabled={busy}>Dev login</button>
+            {error && <p className="error">{error}</p>}
+          </form>
+        )}
+      </main>
+    </>
   );
 }

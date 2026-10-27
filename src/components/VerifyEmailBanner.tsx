@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { api, ApiError } from '../api';
 import { useMe } from '../hooks';
+import Icon from './Icon';
 
 const MESSAGES: Record<string, string> = {
   sent: 'Verification email sent. Check your inbox.',
@@ -29,8 +30,8 @@ export default function VerifyEmailBanner() {
   };
 
   return (
-    <div className="card stack">
-      <strong>Verify your email</strong>
+    <div className="card accent stack">
+      <strong className="row"><Icon name="mail" size={22} />Verify your email</strong>
       <span className="muted small">We sent a confirmation link to {me.email}. Open it, then come back here.</span>
       <button className="btn btn-secondary" disabled={busy} onClick={send}>Send verification email</button>
       {msg && <span className="small">{msg}</span>}

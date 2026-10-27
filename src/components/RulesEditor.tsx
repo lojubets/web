@@ -40,7 +40,9 @@ interface Props {
 
 export default function RulesEditor({ kind, rules, onChange }: Props) {
   const set = (patch: Partial<RulesDraft>) => onChange({ ...rules, ...patch });
-  useEffect(() => onChange({ ...EMPTY_RULES }), [kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    onChange({ ...EMPTY_RULES });
+  }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (kind === 'duration') return <p className="muted small">Answers like <b>3:05</b> or <b>3 hours 5 minutes</b>.</p>;
 
@@ -63,7 +65,7 @@ export default function RulesEditor({ kind, rules, onChange }: Props) {
 
   return (
     <div className="card stack">
-      <div className="segmented" role="radiogroup" aria-label="Precision">
+      <div className="segmented two" role="radiogroup" aria-label="Precision">
         {(['day', 'minute'] as const).map((p) => (
           <button type="button" key={p} role="radio" aria-checked={rules.precision === p} className={rules.precision === p ? 'on' : ''} onClick={() => set({ precision: p })}>
             <strong>{p === 'day' ? 'Date' : 'Date & time'}</strong>

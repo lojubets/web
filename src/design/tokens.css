@@ -1,0 +1,159 @@
+/*
+ * Lojubets design tokens: the single source of truth for the visual language.
+ * Rules for using them live in docs/brand-guide.md. Pairings are enforced by src/design/contrast.test.ts.
+ *
+ * Two layers:
+ *   1. Palette  (--yellow-500 ...)  raw brand values; never used directly in components.
+ *   2. Roles    (--action-bg ...)   what components use; light and dark mode remap these.
+ */
+
+:root {
+  /* ---------- 1. Palette ---------- */
+
+  /* The three brand colors, from the pineapple can */
+  --yellow-500: #fdd815; /* Pineapple */
+  --green-500: #4d9942; /* Leaf */
+  --navy-900: #082754; /* Navy (the brand's "black") */
+
+  /* Yellow family */
+  --yellow-600: #e0bc00; /* pressed */
+  --yellow-300: #fee766; /* hover / highlights */
+  --cream-100: #fff3ce; /* warm tint panels (from the icon set) */
+  --cream-50: #fffbeb; /* page background */
+
+  /* Green family */
+  --green-700: #2e6b26; /* the only green that may be small text on light surfaces */
+  --green-300: #8fd085; /* green text on navy */
+  --green-100: #e3f1e0; /* green tint */
+
+  /* Navy family */
+  --navy-800: #0e3366; /* raised surface on navy */
+  --navy-700: #1b4276;
+  --navy-600: #4a5e80; /* muted text on light */
+  --navy-500: #5f7396; /* control borders on light (>= 3:1) */
+  --navy-200: #c9d2e1; /* hairlines */
+  --navy-100: #e7ebf2;
+  --white: #ffffff;
+
+  /* Functional, not brand: errors and destructive confirmation only */
+  --signal-700: #b3261e;
+  --signal-300: #ff9b94;
+  --signal-100: #fbe7e5;
+
+  /* ---------- 2. Roles (light) ---------- */
+  --surface-page: var(--cream-50);
+  --surface-card: var(--white);
+  --surface-tint: var(--cream-100);
+  --surface-brand: var(--navy-900); /* masthead, hero, tab bar */
+  --on-brand: var(--cream-50);
+  --on-brand-muted: #b7c3d9;
+  --accent-on-brand: var(--yellow-500); /* yellow on navy: wordmark, active tab, headlines */
+
+  --text: var(--navy-900);
+  --text-muted: var(--navy-600);
+  --text-positive: var(--green-700);
+  --text-danger: var(--signal-700);
+  --text-link: var(--navy-900);
+
+  --border: var(--navy-200);
+  --border-control: var(--navy-500);
+  --border-strong: var(--navy-900);
+
+  --action-bg: var(--yellow-500);
+  --action-bg-hover: var(--yellow-300);
+  --action-bg-pressed: var(--yellow-600);
+  --action-fg: var(--navy-900);
+  --action-border: var(--navy-900);
+  --action-shadow: var(--navy-900);
+
+  --positive-bg: var(--green-100);
+  --positive-fg: var(--green-700);
+  --negative-bg: var(--yellow-500); /* owing is "attention", not "error" */
+  --negative-fg: var(--navy-900);
+  --danger-bg: var(--signal-100);
+  --danger-fg: var(--signal-700);
+  --neutral-bg: var(--navy-100);
+  --neutral-fg: var(--text);
+  --avatar-bg: var(--navy-900);
+  --avatar-fg: var(--yellow-500);
+
+  --focus-ring: var(--navy-900);
+  --focus-halo: var(--yellow-500);
+
+  /* ---------- Typography ---------- */
+  --font-display: 'Fredoka Variable', 'Fredoka', ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif;
+  --font-text: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --text-display: 2.25rem; /* 36 */
+  --text-h1: 1.75rem; /* 28 */
+  --text-h2: 1.25rem; /* 20 */
+  --text-h3: 1.0625rem; /* 17 */
+  --text-body: 1rem; /* 16: also the minimum for inputs, so iOS never zooms */
+  --text-small: 0.875rem; /* 14 */
+  --text-caption: 0.75rem; /* 12 */
+
+  /* ---------- Space (4px grid) ---------- */
+  --space-1: 0.25rem; /* 4  */
+  --space-2: 0.5rem; /* 8  related things */
+  --space-3: 0.75rem; /* 12 */
+  --space-4: 1rem; /* 16 page gutter, default stack */
+  --space-5: 1.5rem; /* 24 */
+  --space-6: 2rem; /* 32 between groups / sections */
+  --space-7: 3rem; /* 48 */
+  --space-8: 4rem; /* 64 */
+  --space-9: 6rem; /* 96 */
+
+  /* ---------- Shape, edge, elevation, motion ---------- */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.875rem;
+  --radius-lg: 1.25rem;
+  --radius-pill: 999px;
+  --border-width: 2px;
+  --shadow-press: 0 3px 0 0 var(--action-shadow); /* the "can on the table" lift */
+  --tap: 3rem; /* 48px minimum target */
+  --content-width: 32.5rem; /* 520px */
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration: 150ms;
+}
+
+/* ---------- Roles (dark): navy becomes the canvas ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --surface-page: var(--navy-900);
+    --surface-card: var(--navy-800);
+    --surface-tint: var(--navy-700);
+    --surface-brand: #05183a; /* a step below the canvas so the masthead and tab bar still read */
+    --on-brand: var(--cream-50);
+
+    --text: var(--cream-50);
+    --text-muted: #b7c3d9;
+    --text-positive: var(--green-300);
+    --text-danger: var(--signal-300);
+    --text-link: var(--yellow-500);
+
+    --border: #2b4a7c;
+    --border-control: #7f93b5;
+    --border-strong: var(--cream-50);
+
+    --action-border: var(--yellow-500);
+    --action-shadow: #000a1f;
+
+    --positive-bg: #1c4a22;
+    --positive-fg: var(--green-300);
+    --negative-bg: var(--yellow-500);
+    --danger-bg: #4a1a1c;
+    --danger-fg: var(--signal-300);
+    --neutral-bg: var(--navy-700);
+    --avatar-bg: var(--yellow-500);
+    --avatar-fg: var(--navy-900);
+
+    --focus-ring: var(--yellow-500);
+    --focus-halo: var(--navy-900);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration: 0ms;
+  }
+}

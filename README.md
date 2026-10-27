@@ -113,11 +113,16 @@ Resend's free tier needs a verified domain to email anyone other than your own a
 
 `vercel.json` schedules `/api/cron` daily to send the tipping-point emails (the most Vercel's free Hobby plan allows). Set `CRON_SECRET` in Vercel and it is sent automatically. For finer-grained reminders, point any free pinger (e.g. cron-job.org) at `/api/cron` with an `Authorization: Bearer <CRON_SECRET>` header.
 
+## Design
+
+The look is documented as a design system. Start with the **[brand guide](docs/brand-guide.md)** (colors and what they mean, typography, negative space, components, voice), then see it live at **`/styleguide`** in the running app. The tokens are in [`src/design/tokens.css`](src/design/tokens.css) and `npm test` enforces the contrast rules (including dark mode), so a color change that breaks a pairing fails the build.
+
 ## Layout
 
 ```
 api/index.ts    Vercel entry point (exports the Express app)
 server/         Express app, auth, db schema, bet rules (+ tests)
 shared/types.ts API types shared by both sides
-src/            React app
+src/            React app (src/design = tokens and component styles)
+docs/           brand guide
 ```

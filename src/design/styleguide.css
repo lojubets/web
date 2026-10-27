@@ -1,0 +1,18 @@
+/* Only used by the /styleguide page. */
+.sg h2 { margin-top: var(--space-2); }
+.sg-swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3); }
+.sg-swatch { border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--border); background: var(--surface-card); }
+.sg-chip { height: 4.5rem; display: flex; align-items: flex-end; padding: var(--space-2) var(--space-3); font: 700 var(--text-small) / 1 var(--font-display); }
+.sg-chip.big { height: 7rem; font-size: 1.125rem; }
+.sg-meta { padding: var(--space-2) var(--space-3); font-size: var(--text-caption); line-height: 1.4; color: var(--text-muted); }
+.sg-meta code, .sg-code { font: 500 0.75rem / 1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+.sg-specimen { display: flex; flex-direction: column; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
+.sg-space { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-small); }
+.sg-space i { display: block; height: 1rem; background: var(--yellow-500); border: 2px solid var(--navy-900); border-radius: var(--radius-sm); }
+.sg-icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
+.sg-icons figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); font-size: var(--text-caption); color: var(--text-muted); }
+.sg-preview { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); background: var(--surface-page); }
+.sg-preview .hero { padding-top: var(--space-6); }
+.tabbar.sg-tabbar { position: static; border-radius: var(--radius-lg); overflow: hidden; }
+.sg-do { border-left: 6px solid var(--green-500); padding-left: var(--space-3); }
+.sg-dont { border-left: 6px solid var(--signal-700); padding-left: var(--space-3); }

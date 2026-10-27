@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Friend, Invitation } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
+import Icon from '../components/Icon';
 import { balanceText } from '../format';
 import { useAction, useFetch, useMe } from '../hooks';
 
@@ -38,8 +39,8 @@ export default function Friends() {
           <h2>Invitations for you</h2>
           <div className="stack">
             {invites.data.received.map((i) => (
-              <div key={i.id} className="card row">
-                <Avatar user={i.inviter} />
+              <div key={i.id} className="card row row-wrap">
+                <Avatar user={i.inviter} size={44} />
                 <div className="grow"><strong>{i.inviter.name}</strong><div className="muted small">wants to connect</div></div>
                 <button className="btn btn-small" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/accept`, 'POST'); await refresh(); })}>Accept</button>
                 <button className="btn btn-small btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/decline`, 'POST'); await refresh(); })}>Decline</button>
@@ -53,10 +54,10 @@ export default function Friends() {
         <div className="stack">
           {friends.data?.map((f) => (
             <Link key={f.id} to={`/friends/${f.id}`} className={`card row ${f.needsMyAction ? 'needs-action' : ''}`}>
-              <Avatar user={f} />
+              <Avatar user={f} size={44} />
               <div className="grow">
                 <strong>{f.name}</strong>
-                <div className={`small ${f.balance > 0 ? 'good' : f.balance < 0 ? 'bad' : 'muted'}`}>{balanceText(f.name, f.balance)}</div>
+                <div className="small"><span className={f.balance > 0 ? 'owed' : f.balance < 0 ? 'owe' : 'muted'}>{balanceText(f.name, f.balance)}</span></div>
               </div>
               {f.openBets > 0 && <span className="pill">{f.openBets} open</span>}
             </Link>
@@ -87,14 +88,14 @@ export default function Friends() {
         {result && (
           <div className="card stack">
             <span>{result.emailSent ? `Invitation emailed to ${result.email}.` : `Invitation created for ${result.email}. Send them this link:`}</span>
-            <button className="btn btn-secondary" onClick={() => share(result.link)}>{copied ? 'Link copied ✓' : 'Share invite link'}</button>
+            <button className="btn btn-secondary" onClick={() => share(result.link)}>{copied ? <><Icon name="check" size={18} />Link copied</> : 'Share invite link'}</button>
           </div>
         )}
         {invites.data?.sent.length ? (
           <div className="stack pending">
-            <h2>Pending</h2>
+            <h2>Pending invitations</h2>
             {invites.data.sent.map((i) => (
-              <div key={i.id} className="card row">
+              <div key={i.id} className="card row row-wrap">
                 <div className="grow"><strong>{i.email}</strong></div>
                 <button className="btn btn-small btn-secondary" onClick={() => share(`${location.origin}/invite/${i.token}`)}>Share link</button>
                 <button className="btn btn-small btn-secondary" onClick={() => act.run(async () => { await api(`/invitations/${i.id}`, 'DELETE'); await invites.reload(); })}>Revoke</button>
