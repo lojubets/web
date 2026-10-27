@@ -17,6 +17,15 @@ const localDatabase = databaseUrl.startsWith('file:') || databaseUrl === ':memor
 if (isProd && localDatabase) throw new Error('DATABASE_URL must be a libsql:// Turso URL in production');
 if (!localDatabase && !process.env.DATABASE_AUTH_TOKEN) throw new Error('DATABASE_AUTH_TOKEN is required with a remote DATABASE_URL');
 
+/** A production deployment whose public URL is still a localhost address sends sign-in redirects to the user's own machine. */
+export function publicUrlProblem(appUrl: string, production: boolean): string | null {
+  if (!production || !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(appUrl)) return null;
+  return (
+    `APP_URL is set to ${appUrl}, but this is a production deployment, so sign-in would redirect to localhost. ` +
+    'Set APP_URL to the public URL (for example https://your-app.vercel.app) in the Vercel environment variables, then redeploy.'
+  );
+}
+
 export const env = {
   isProd,
   databaseUrl,

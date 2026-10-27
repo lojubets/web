@@ -104,6 +104,9 @@ export default function BetDetail() {
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
           <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
           <button className="btn" disabled={act.busy}>Lock in my guess</button>
+          <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/bets/${b.id}/cancel`, 'POST'); nav('/'); })}>
+            Decline bet
+          </button>
         </form>
       )}
       {b.status === 'awaiting_guess' && b.iAmCreator && (

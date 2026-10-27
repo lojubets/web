@@ -4,7 +4,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { SignJWT, jwtVerify, createRemoteJWKSet, importPKCS8, type JWTPayload } from 'jose';
 import { z } from 'zod';
 import { db } from './db.js';
-import { env } from './env.js';
+import { env, publicUrlProblem } from './env.js';
 import { consumeVerification, sendVerification } from './verification.js';
 
 type ProviderId = 'google' | 'microsoft' | 'apple';
@@ -254,6 +254,8 @@ authRouter.post('/logout', (_req, res) => {
 authRouter.get('/:provider', async (req, res) => {
   const p = providers()[req.params.provider as ProviderId];
   if (!p) return res.status(404).send('Unknown or unconfigured provider');
+  const misconfigured = publicUrlProblem(env.appUrl, env.isProd);
+  if (misconfigured) return res.status(500).send(misconfigured); // say so, instead of redirecting through Google to localhost
   const state = randomBytes(16).toString('hex');
   const nonce = randomBytes(16).toString('hex');
   const next = safeNext(req.query.next);

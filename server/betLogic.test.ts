@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { describeReading, formatDurationLong, parseDuration, readDuration } from '../shared/duration.js';
 import type { InstantParams, NumberParams } from '../shared/types.js';
+import { publicUrlProblem } from './env.js';
 import { balanceFor, buildParams, decide, normalizeAnswer, tippingPoint, tippingVerdict } from './betLogic.js';
 
 const NOW = Date.parse('2027-03-01T12:00:00Z');
@@ -173,6 +174,17 @@ describe('tipping point', () => {
       const outcome = new Date(tp + days * 86_400_000).toISOString();
       expect(decide('instant', '2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z', outcome)).toBe('opponent');
     }
+  });
+});
+
+describe('publicUrlProblem', () => {
+  it('flags a localhost APP_URL in production only', () => {
+    for (const url of ['http://localhost:5173', 'http://127.0.0.1:3000', 'https://localhost', 'http://[::1]:5173']) {
+      expect(publicUrlProblem(url, true)).toMatch(/APP_URL is set to .* redirect to localhost/);
+      expect(publicUrlProblem(url, false)).toBeNull(); // fine in development
+    }
+    expect(publicUrlProblem('https://web-lkoskela.vercel.app', true)).toBeNull();
+    expect(publicUrlProblem('https://localhost.example.com', true)).toBeNull();
   });
 });
 
