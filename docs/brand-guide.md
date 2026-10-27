@@ -190,7 +190,7 @@ All live on `/styleguide`. Summary of the rules:
 
 **Cards:** `--surface-card`, 1 px hairline, radius 20, 16-20 px padding. A tappable card shows a chevron or has a clear title; "your move" cards get a yellow 2 px navy-bordered badge, not a colored background.
 
-**Interpretation preview:** whenever the app turns free text into a value (durations today), it echoes the result under the field as **"We read this as ..."** with every unit spelled out, in a calm tint, with the converted total when units had to be converted. If the input is genuinely ambiguous (a bare `m`, which means minutes), the preview switches to a yellow attention box with a one-line fix. Never show only an abbreviation ("= 92 d") as confirmation.
+**Interpretation preview:** whenever the app turns free text into a value (durations today), it echoes the result under the field as **"= 3 months and 2 days (92 days in total)"**, with every unit spelled out and the converted total when units had to be converted. It lives in the field's **helper-text slot and replaces the hint** while the user types; the slot has one fixed height, so the form never jumps. If the input is genuinely ambiguous (a bare `m`, which means minutes), the slot turns yellow and adds a one-line fix. Never abbreviate units in confirmations ("= 92 d"); the same goes for durations anywhere else in the UI ("2 hours", not "2 h").
 
 **Chips and pills:** radius pill, 12-14 px text, Inter 700. Positive = green-100 + Leaf-700; owing / "your move" = yellow + navy; neutral = navy-100 + navy.
 

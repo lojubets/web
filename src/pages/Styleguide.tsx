@@ -92,8 +92,10 @@ export default function Styleguide() {
           <button type="button" role="radio" aria-checked="false"><strong>Date &amp; time</strong></button>
         </div>
         <p className="error"><Icon name="alert" size={20} />Must be a whole number</p>
-        <span className="preview"><Icon name="check" size={20} /><span><span className="small">We read this as</span><strong>3 months and 2 days</strong><span className="small">92 days in total</span></span></span>
-        <span className="preview warn"><Icon name="alert" size={20} /><span><span className="small">We read this as</span><strong>3 minutes</strong><span className="small">"m" means minutes. For months, write "months" or "mo".</span></span></span>
+        <small className="slot slot-hint">Like 3:05, 25 days or 3 months and 2 days</small>
+        <small className="slot slot-read"><Icon name="check" size={16} /><span>= <b>3 months and 2 days</b> (92 days in total)</span></small>
+        <small className="slot slot-warn"><Icon name="alert" size={16} /><span>= <b>3 minutes</b> "m" means minutes. For months, write "months" or "mo".</span></small>
+        <small className="slot slot-error"><Icon name="alert" size={16} /><span>Can't read that as a duration.</span></small>
       </section>
 
       <section>

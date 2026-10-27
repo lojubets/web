@@ -656,40 +656,42 @@ a.card::after {
   vertical-align: middle;
 }
 
-/* ---------- Interpretation preview ---------- */
+/* ---------- Helper slot: hint, then interpretation ---------- */
 
-.preview {
+/* One slot, one height: hint, reading, warning and error all fit in it, so nothing below the field moves. */
+.slot {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
+  gap: var(--space-2);
+  box-sizing: border-box;
+  min-height: 3.75rem; /* two lines of text plus padding and border */
+  padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid transparent;
   border-radius: var(--radius-md);
-  background: var(--surface-tint);
-  font-weight: 400;
+  font-size: var(--text-small);
+  line-height: 1.4;
+  color: var(--text-muted);
 }
-.preview > .icon {
+.slot .icon {
   margin-top: 0.125rem;
+}
+.slot-read {
+  color: var(--text);
+  background: var(--surface-tint);
+  border-color: var(--border);
+}
+.slot-read .icon {
   color: var(--text-positive);
 }
-.preview > span {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  min-width: 0;
-}
-.preview strong {
-  font: 700 1.125rem / 1.25 var(--font-display);
-  overflow-wrap: anywhere;
-}
 /* A bare "m" is the one genuinely ambiguous input: make it impossible to miss. */
-.preview.warn {
+.slot-warn {
+  color: var(--negative-fg);
   background: var(--negative-bg);
-  color: var(--negative-fg);
-  border: var(--border-width) solid var(--navy-900);
+  border-color: var(--navy-900);
 }
-.preview.warn > .icon {
-  color: var(--negative-fg);
+.slot-error {
+  color: var(--text-danger);
+  font-weight: 500;
 }
 
 /* ---------- Instructions with examples ---------- */

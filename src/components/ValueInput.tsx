@@ -19,9 +19,9 @@ export default function ValueInput({ kind, params, value, onChange, label, role 
     <label className="field">
       <span>{label}</span>
       {kind === 'number' && <NumberField params={params as NumberParams} value={value} onChange={onChange} role={role} />}
-      {kind === 'duration' && <DurationField value={value} onChange={onChange} />}
+      {kind === 'duration' && <DurationField value={value} onChange={onChange} hint={hint} />}
       {kind === 'instant' && <InstantField params={params as InstantParams} value={value} onChange={onChange} role={role} />}
-      {hint && <small className="muted">{hint}</small>}
+      {kind !== 'duration' && hint && <small className="muted">{hint}</small>}
     </label>
   );
 }
@@ -41,30 +41,38 @@ function NumberField({ params, value, onChange, role }: { params: NumberParams; 
   );
 }
 
-/** Echoes how the text was understood, with units spelled out, so "3m" can't silently become 3 minutes when 3 months was meant. */
-function DurationField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/**
+ * One fixed-height slot under the field: the helper text while it's empty, then how the text was read, with
+ * units spelled out, so "3m" can't silently become 3 minutes when 3 months was meant. Same height in every
+ * state, so the form doesn't jump while you type.
+ */
+function DurationField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint: string | null }) {
   const typed = value.trim() !== '';
   const reading = typed ? readDuration(value) : null;
   const shown = reading && describeReading(reading);
+  const state = !typed ? 'hint' : !reading ? 'error' : reading.bareM ? 'warn' : 'read';
   return (
     <>
       <input type="text" placeholder="e.g. 3:05, 25 days, 12 weeks" value={value} onChange={(e) => onChange(e.target.value)} required />
-      {typed && !reading && (
-        <span className="error" role="status">
-          <Icon name="alert" size={20} />Can't read that as a duration. Try 3:05, 25 days or 3 months and 2 days
-        </span>
-      )}
-      {shown && (
-        <span className={`preview ${reading!.bareM ? 'warn' : ''}`} role="status" aria-live="polite">
-          <Icon name={reading!.bareM ? 'alert' : 'check'} size={20} />
-          <span>
-            <span className="small">We read this as</span>
-            <strong>{shown.text}</strong>
-            {shown.total && <span className="small">{shown.total} in total</span>}
-            {reading!.bareM && <span className="small">"m" means minutes. For months, write "months" or "mo".</span>}
-          </span>
-        </span>
-      )}
+      <small className={`slot slot-${state}`} role="status" aria-live="polite">
+        {state === 'hint' && hint}
+        {state === 'error' && (
+          <>
+            <Icon name="alert" size={16} />
+            <span>Can't read that as a duration. Try 3:05, 25 days or 3 months and 2 days.</span>
+          </>
+        )}
+        {shown && (
+          <>
+            <Icon name={reading!.bareM ? 'alert' : 'check'} size={16} />
+            <span>
+              = <b>{shown.text}</b>
+              {shown.total && ` (${shown.total} in total)`}
+              {reading!.bareM && <> "m" means minutes. For months, write "months" or "mo".</>}
+            </span>
+          </>
+        )}
+      </small>
     </>
   );
 }

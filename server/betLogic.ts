@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { formatDuration, parseDuration } from '../shared/duration.js';
+import { formatDurationLong, parseDuration } from '../shared/duration.js';
 import type { BetKind, BetParams, InstantParams, NumberParams } from '../shared/types.js';
 
 const MIN_MS = 60_000;
@@ -117,7 +117,7 @@ export function normalizeAnswer(kind: BetKind, params: BetParams, raw: string, c
     const earliest = ctx.now + p.minLeadMinutes * MIN_MS;
     const tooEarly = p.precision === 'day' ? t < floorDay(earliest) : t < earliest;
     if (tooEarly) {
-      return fail(p.minLeadMinutes > 0 ? `Guess a time at least ${formatDuration(p.minLeadMinutes * 60)} from now` : "Dates in the past aren't allowed for this bet");
+      return fail(p.minLeadMinutes > 0 ? `Guess a time at least ${formatDurationLong(p.minLeadMinutes * 60)} from now` : "Dates in the past aren't allowed for this bet");
     }
   }
   if (ctx.role === 'outcome') {

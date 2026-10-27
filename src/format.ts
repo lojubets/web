@@ -1,4 +1,4 @@
-import { formatDuration } from '../shared/duration';
+import { formatDurationLong } from '../shared/duration';
 import type { BetKind, BetParams, InstantParams, NumberParams } from '../shared/types';
 
 export { formatValue, formatMoment } from '../shared/format';
@@ -25,7 +25,7 @@ export function describeRules(kind: BetKind, params: BetParams): string[] {
   const p = params as InstantParams;
   const out = [p.precision === 'day' ? 'A date' : 'A date and time'];
   if (p.allowPast) out.push('Past dates allowed');
-  else out.push(p.minLeadMinutes > 0 ? `At least ${formatDuration(p.minLeadMinutes * 60)} in the future when guessing` : 'Future only');
+  else out.push(p.minLeadMinutes > 0 ? `At least ${formatDurationLong(p.minLeadMinutes * 60)} in the future when guessing` : 'Future only');
   return out;
 }
 

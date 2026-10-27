@@ -92,19 +92,3 @@ export function describeReading(r: DurationReading): { text: string; total: stri
   const converted = r.parts.some((p) => ['year', 'month', 'week'].includes(p.unit) || !Number.isInteger(p.amount));
   return { text, total: converted ? formatDurationLong(r.seconds) : null };
 }
-
-/** 11100 -> "3 h 5 min" (compact; the guess screens use formatDurationLong) */
-export function formatDuration(totalSeconds: number): string {
-  const s = Math.round(totalSeconds);
-  if (s === 0) return '0 min';
-  const parts: string[] = [];
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  const sec = s % 60;
-  if (d) parts.push(`${d} d`);
-  if (h) parts.push(`${h} h`);
-  if (m) parts.push(`${m} min`);
-  if (sec) parts.push(`${sec} s`);
-  return parts.join(' ');
-}

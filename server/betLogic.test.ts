@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { describeReading, formatDuration, formatDurationLong, parseDuration, readDuration } from '../shared/duration.js';
+import { describeReading, formatDurationLong, parseDuration, readDuration } from '../shared/duration.js';
 import type { InstantParams, NumberParams } from '../shared/types.js';
 import { balanceFor, buildParams, decide, normalizeAnswer, tippingPoint, tippingVerdict } from './betLogic.js';
 
@@ -95,11 +95,6 @@ describe('durations', () => {
     expect(formatDurationLong(86400 + 3600)).toBe('1 day 1 hour');
     expect(formatDurationLong(0)).toBe('0 minutes');
   });
-  it('formats', () => {
-    expect(formatDuration(11100)).toBe('3 h 5 min');
-    expect(formatDuration(0)).toBe('0 min');
-    expect(formatDuration(92 * 86400)).toBe('92 d');
-  });
   it('is normalised to seconds and compared by distance', () => {
     expect(guess('duration', {}, '3:05')).toEqual({ ok: true, value: '11100' });
     expect(decide('duration', '7200', '12000', '11100')).toBe('opponent');
@@ -117,7 +112,7 @@ describe('date and time rules', () => {
   });
   it('enforces a minimum lead time (now + 2 hours)', () => {
     const p = inst({ minLeadMinutes: 120 });
-    expect(err(guess('instant', p, '2027-03-01T13:59:00Z'))).toBe('Guess a time at least 2 h from now');
+    expect(err(guess('instant', p, '2027-03-01T13:59:00Z'))).toBe('Guess a time at least 2 hours from now');
     expect(guess('instant', p, '2027-03-01T14:00:00Z').ok).toBe(true);
   });
   it('day precision: today is fine, yesterday is not', () => {
