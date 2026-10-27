@@ -1,11 +1,11 @@
-import { formatDuration } from './duration.js';
+import { formatDurationLong } from './duration.js';
 import type { BetKind, BetParams, InstantParams } from './types.js';
 
 /** Human-readable answer. Pass timeZone 'UTC' on the server; the browser uses the viewer's zone. */
 export function formatValue(kind: BetKind, params: BetParams, v: string | null, timeZone?: string): string {
   if (v === null) return '—';
   if (kind === 'number') return v;
-  if (kind === 'duration') return formatDuration(Number(v));
+  if (kind === 'duration') return formatDurationLong(Number(v));
   if ((params as InstantParams).precision === 'day') {
     return new Date(`${v}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
   }

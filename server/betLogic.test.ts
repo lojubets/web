@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatDuration, parseDuration } from '../shared/duration.js';
+import { describeReading, formatDuration, formatDurationLong, parseDuration, readDuration } from '../shared/duration.js';
 import type { InstantParams, NumberParams } from '../shared/types.js';
 import { balanceFor, buildParams, decide, normalizeAnswer, tippingPoint, tippingVerdict } from './betLogic.js';
 
@@ -69,6 +69,31 @@ describe('durations', () => {
   });
   it('rejects junk and bare numbers', () => {
     for (const bad of ['', '90', 'soon', '3:75', '3 parsecs', '5 minutes later', '150 years']) expect(parseDuration(bad)).toBeNull();
+  });
+  it('reads text back as spelled-out units, so mistakes are visible', () => {
+    const say = (text: string) => describeReading(readDuration(text)!);
+    expect(say('3m')).toEqual({ text: '3 minutes', total: null });
+    expect(say('3 months')).toEqual({ text: '3 months', total: '90 days' });
+    expect(say('1 month')).toEqual({ text: '1 month', total: '30 days' });
+    expect(say('3 months and 2 days')).toEqual({ text: '3 months and 2 days', total: '92 days' });
+    expect(say('12 weeks').total).toBe('84 days');
+    expect(say('1.5 hours')).toEqual({ text: '1.5 hours', total: '1 hour 30 minutes' });
+    expect(say('3:05')).toEqual({ text: '3 hours and 5 minutes', total: null });
+    expect(say('1:02:03').text).toBe('1 hour, 2 minutes and 3 seconds');
+    expect(say('0:30').text).toBe('30 minutes');
+    expect(say('1 year, 2 months and 3 weeks').text).toBe('1 year, 2 months and 3 weeks');
+  });
+  it('flags a bare "m" (minutes) but not months, mo or min', () => {
+    expect(readDuration('3m')!.bareM).toBe(true);
+    expect(readDuration('1h 30m')!.bareM).toBe(true);
+    for (const ok of ['3 months', '3mo', '3 min', '3 minutes', '3:05', '25 days']) expect(readDuration(ok)!.bareM).toBe(false);
+    expect(readDuration('soon')).toBeNull();
+  });
+  it('spells durations out in full for display', () => {
+    expect(formatDurationLong(11100)).toBe('3 hours 5 minutes');
+    expect(formatDurationLong(92 * 86400)).toBe('92 days');
+    expect(formatDurationLong(86400 + 3600)).toBe('1 day 1 hour');
+    expect(formatDurationLong(0)).toBe('0 minutes');
   });
   it('formats', () => {
     expect(formatDuration(11100)).toBe('3 h 5 min');

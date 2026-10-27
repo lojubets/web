@@ -656,6 +656,42 @@ a.card::after {
   vertical-align: middle;
 }
 
+/* ---------- Interpretation preview ---------- */
+
+.preview {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  font-weight: 400;
+}
+.preview > .icon {
+  margin-top: 0.125rem;
+  color: var(--text-positive);
+}
+.preview > span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+.preview strong {
+  font: 700 1.125rem / 1.25 var(--font-display);
+  overflow-wrap: anywhere;
+}
+/* A bare "m" is the one genuinely ambiguous input: make it impossible to miss. */
+.preview.warn {
+  background: var(--negative-bg);
+  color: var(--negative-fg);
+  border: var(--border-width) solid var(--navy-900);
+}
+.preview.warn > .icon {
+  color: var(--negative-fg);
+}
+
 /* ---------- Instructions with examples ---------- */
 
 .examples {

@@ -1,6 +1,7 @@
-import { parseDuration, formatDuration } from '../../shared/duration';
+import { describeReading, readDuration } from '../../shared/duration';
 import type { BetKind, BetParams, InstantParams, NumberParams } from '../../shared/types';
 import { describeRules, toLocalInput } from '../format';
+import Icon from './Icon';
 
 interface Props {
   kind: BetKind;
@@ -40,12 +41,30 @@ function NumberField({ params, value, onChange, role }: { params: NumberParams; 
   );
 }
 
+/** Echoes how the text was understood, with units spelled out, so "3m" can't silently become 3 minutes when 3 months was meant. */
 function DurationField({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  const seconds = value.trim() ? parseDuration(value) : null;
+  const typed = value.trim() !== '';
+  const reading = typed ? readDuration(value) : null;
+  const shown = reading && describeReading(reading);
   return (
     <>
       <input type="text" placeholder="e.g. 3:05, 25 days, 12 weeks" value={value} onChange={(e) => onChange(e.target.value)} required />
-      {value.trim() && <small className={seconds === null ? 'error' : 'muted'}>{seconds === null ? "Can't read that as a duration. Try 3:05, 25 days or 3 months and 2 days" : `= ${formatDuration(seconds)}`}</small>}
+      {typed && !reading && (
+        <span className="error" role="status">
+          <Icon name="alert" size={20} />Can't read that as a duration. Try 3:05, 25 days or 3 months and 2 days
+        </span>
+      )}
+      {shown && (
+        <span className={`preview ${reading!.bareM ? 'warn' : ''}`} role="status" aria-live="polite">
+          <Icon name={reading!.bareM ? 'alert' : 'check'} size={20} />
+          <span>
+            <span className="small">We read this as</span>
+            <strong>{shown.text}</strong>
+            {shown.total && <span className="small">{shown.total} in total</span>}
+            {reading!.bareM && <span className="small">"m" means minutes. For months, write "months" or "mo".</span>}
+          </span>
+        </span>
+      )}
     </>
   );
 }

@@ -190,6 +190,8 @@ All live on `/styleguide`. Summary of the rules:
 
 **Cards:** `--surface-card`, 1 px hairline, radius 20, 16-20 px padding. A tappable card shows a chevron or has a clear title; "your move" cards get a yellow 2 px navy-bordered badge, not a colored background.
 
+**Interpretation preview:** whenever the app turns free text into a value (durations today), it echoes the result under the field as **"We read this as ..."** with every unit spelled out, in a calm tint, with the converted total when units had to be converted. If the input is genuinely ambiguous (a bare `m`, which means minutes), the preview switches to a yellow attention box with a one-line fix. Never show only an abbreviation ("= 92 d") as confirmation.
+
 **Chips and pills:** radius pill, 12-14 px text, Inter 700. Positive = green-100 + Leaf-700; owing / "your move" = yellow + navy; neutral = navy-100 + navy.
 
 **Banners:** one line of meaning plus an icon. Win = green, owing/attention = yellow, error = signal. Always text + icon, never color alone.
