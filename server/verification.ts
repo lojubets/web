@@ -44,6 +44,7 @@ export async function consumeVerification(token: string): Promise<boolean> {
   await db.batch(
     [
       { sql: 'UPDATE users SET email_verified = 1 WHERE id = ? AND lower(email) = ?', args: [row.user_id, row.email] },
+      { sql: 'UPDATE user_emails SET verified = 1 WHERE user_id = ? AND email = ?', args: [row.user_id, row.email] },
       { sql: 'DELETE FROM email_verifications WHERE user_id = ?', args: [row.user_id] },
     ],
     'write',

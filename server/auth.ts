@@ -99,19 +99,47 @@ async function startSession(res: Response, userId: string) {
   res.cookie('session', token, { ...cookieBase, sameSite: 'lax', maxAge: SESSION_DAYS * 86_400_000 });
 }
 
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+/** The signed-in user's id, or null (no cookie, expired, or the account no longer exists). */
+export async function readSessionUser(req: Request): Promise<string | null> {
   try {
     const token = req.cookies?.session;
-    if (!token) throw new Error('no session');
+    if (!token) return null;
     const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
     const user = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [payload.sub!] });
-    if (!user.rows.length) throw new Error('unknown user');
-    res.locals.userId = payload.sub as string;
-    next();
+    return user.rows.length ? (payload.sub as string) : null;
   } catch {
-    res.status(401).json({ error: 'Not signed in' });
+    return null;
   }
 }
+
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const userId = await readSessionUser(req);
+  if (!userId) return res.status(401).json({ error: 'Not signed in' });
+  res.locals.userId = userId;
+  next();
+}
+
+// ---------- merge tickets ----------
+// While signed in as account A, proving you can sign in to account B yields a short-lived ticket naming both.
+// It never replaces the session: the signed-in account stays A throughout.
+
+const MERGE_MINUTES = 10;
+
+export async function issueMergeTicket(res: Response, a: string, b: string) {
+  const ticket = await new SignJWT({ a, b }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime(`${MERGE_MINUTES}m`).sign(secret);
+  res.cookie('merge', ticket, { ...cookieBase, sameSite: 'lax', maxAge: MERGE_MINUTES * 60_000 });
+}
+
+export async function readMergeTicket(req: Request): Promise<{ a: string; b: string } | null> {
+  try {
+    const { payload } = await jwtVerify(req.cookies?.merge ?? '', secret, { algorithms: ['HS256'] });
+    return typeof payload.a === 'string' && typeof payload.b === 'string' ? { a: payload.a, b: payload.b } : null;
+  } catch {
+    return null;
+  }
+}
+
+export const clearMergeTicket = (res: Response) => res.clearCookie('merge', { ...cookieBase, sameSite: 'lax' });
 
 // ---------- users ----------
 
@@ -133,10 +161,10 @@ async function findOrCreateUser(opts: {
   let created = false;
   if (opts.linkByEmail && opts.email && opts.emailVerified) {
     const byEmail = await db.execute({
-      sql: 'SELECT id FROM users WHERE lower(email) = lower(?) AND email_verified = 1',
+      sql: 'SELECT user_id FROM user_emails WHERE email = lower(?) AND verified = 1',
       args: [opts.email],
     });
-    if (byEmail.rows.length) userId = byEmail.rows[0].id as string;
+    if (byEmail.rows.length) userId = byEmail.rows[0].user_id as string;
   }
   if (!userId) {
     userId = randomUUID();
@@ -147,6 +175,12 @@ async function findOrCreateUser(opts: {
       sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, ?, ?, ?)',
       args: [userId, opts.email ?? null, opts.emailVerified ? 1 : 0, name, Date.now()],
     });
+    if (opts.email) {
+      await db.execute({
+        sql: 'INSERT OR IGNORE INTO user_emails (user_id, email, verified, created_at) VALUES (?, lower(?), ?, ?)',
+        args: [userId, opts.email, opts.emailVerified ? 1 : 0, Date.now()],
+      });
+    }
   }
   await db.execute({
     sql: 'INSERT INTO identities (provider, subject, user_id) VALUES (?, ?, ?)',
@@ -159,7 +193,7 @@ async function findOrCreateUser(opts: {
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
-async function hashPassword(pw: string): Promise<string> {
+export async function hashPassword(pw: string): Promise<string> {
   const salt = randomBytes(16);
   return `${salt.toString('hex')}:${(await scryptAsync(pw, salt, 64)).toString('hex')}`;
 }
@@ -215,7 +249,8 @@ authRouter.post('/register', async (req, res) => {
     [
       { sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, 0, ?, ?)', args: [userId, email, '', Date.now()] },
       { sql: `INSERT INTO identities (provider, subject, user_id) VALUES ('password', ?, ?)`, args: [email, userId] },
-      { sql: 'INSERT INTO credentials (user_id, password_hash) VALUES (?, ?)', args: [userId, await hashPassword(body.data.password)] },
+      { sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, 0, ?)', args: [userId, email, Date.now()] },
+      { sql: 'INSERT INTO password_credentials (subject, password_hash) VALUES (?, ?)', args: [email, await hashPassword(body.data.password)] },
     ],
     'write',
   );
@@ -224,19 +259,23 @@ authRouter.post('/register', async (req, res) => {
   res.status(201).json({ ok: true });
 });
 
-authRouter.post('/login', async (req, res) => {
-  const body = credentials.safeParse(req.body);
-  const bad = () => res.status(401).json({ error: 'Wrong email or password' });
-  if (!body.success) return bad();
+/** The account id behind an email + password, or null. Takes the same time whether or not the email exists. */
+export async function verifyPassword(email: string, password: string): Promise<string | null> {
   const r = await db.execute({
-    sql: `SELECT i.user_id, c.password_hash FROM identities i JOIN credentials c ON c.user_id = i.user_id
+    sql: `SELECT i.user_id, c.password_hash FROM identities i JOIN password_credentials c ON c.subject = i.subject
           WHERE i.provider = 'password' AND i.subject = ?`,
-    args: [body.data.email.trim().toLowerCase()],
+    args: [email.trim().toLowerCase()],
   });
   const found = r.rows[0] as unknown as { user_id: string; password_hash: string } | undefined;
-  const ok = await checkPassword(body.data.password, found?.password_hash ?? (await dummyHash));
-  if (!found || !ok) return bad();
-  await startSession(res, found.user_id);
+  const ok = await checkPassword(password, found?.password_hash ?? (await dummyHash));
+  return found && ok ? found.user_id : null;
+}
+
+authRouter.post('/login', async (req, res) => {
+  const body = credentials.safeParse(req.body);
+  const userId = body.success ? await verifyPassword(body.data.email, body.data.password) : null;
+  if (!userId) return res.status(401).json({ error: 'Wrong email or password' });
+  await startSession(res, userId);
   res.json({ ok: true });
 });
 
@@ -259,7 +298,14 @@ authRouter.get('/:provider', async (req, res) => {
   const state = randomBytes(16).toString('hex');
   const nonce = randomBytes(16).toString('hex');
   const next = safeNext(req.query.next);
-  const flow = await new SignJWT({ state, nonce, next }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime('10m').sign(secret);
+  // Merge mode: the user is signed in as account A and is proving they can sign in to another account B.
+  // A's id travels in the signed flow cookie, because Apple's cross-site POST callback won't carry the session cookie.
+  let merge: string | undefined;
+  if (req.query.merge) {
+    merge = (await readSessionUser(req)) ?? undefined;
+    if (!merge) return res.redirect(`${env.appUrl}/login`);
+  }
+  const flow = await new SignJWT({ state, nonce, next, ...(merge ? { merge } : {}) }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime('10m').sign(secret);
   // Apple posts back cross-site, so this cookie must be SameSite=None.
   res.cookie('oauth', flow, {
     ...cookieBase,
@@ -288,7 +334,7 @@ async function handleCallback(req: Request, res: Response) {
   const fail = (msg: string) => res.redirect(`${env.appUrl}/login?error=${encodeURIComponent(msg)}`);
   try {
     if (params.error) return fail(params.error);
-    const flow = (await jwtVerify(req.cookies?.oauth ?? '', secret)).payload as { state: string; nonce: string; next: string };
+    const flow = (await jwtVerify(req.cookies?.oauth ?? '', secret)).payload as { state: string; nonce: string; next: string; merge?: string };
     res.clearCookie('oauth', { ...cookieBase, sameSite: providerId === 'apple' && env.isProd ? 'none' : 'lax' });
     if (!params.code || params.state !== flow.state) return fail('Sign-in expired, please try again');
 
@@ -312,6 +358,17 @@ async function handleCallback(req: Request, res: Response) {
       issuer: p.issuer,
     });
     if (payload.nonce !== flow.nonce) return fail('Sign-in failed');
+
+    if (flow.merge) {
+      // Only an existing account can be merged: never create one here, and never replace the session.
+      const back = (error?: string) => res.redirect(`${env.appUrl}/merge${error ? `?error=${encodeURIComponent(error)}` : ''}`);
+      const identity = await db.execute({ sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?', args: [providerId, payload.sub!] });
+      if (!identity.rows.length) return back("No Lojubets account uses that sign-in. Sign in with the other account's own login.");
+      const other = identity.rows[0].user_id as string;
+      if (other === flow.merge) return back("That's the account you're already signed in with.");
+      await issueMergeTicket(res, flow.merge, other);
+      return back();
+    }
 
     // Apple only sends the user's name on the very first authorisation, as a form field.
     let appleName: string | undefined;

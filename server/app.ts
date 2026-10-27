@@ -2,12 +2,13 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { AppConfig, Bet, Friend, Invitation, Me, UserSummary } from '../shared/types.js';
+import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, UserSummary } from '../shared/types.js';
 import { authRouter, enabledProviders, requireAuth } from './auth.js';
 import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
 import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
+import { mergeRouter } from './merge.js';
 import { env } from './env.js';
 import { runCron } from './reminders.js';
 import { sendVerification } from './verification.js';
@@ -54,6 +55,7 @@ app.get('/api/invitations/token/:token', async (req, res) => {
 // ---------- everything below needs a session ----------
 
 app.use('/api', requireAuth);
+app.use('/api/merge', mergeRouter);
 
 // A user who hasn't chosen a display name is shown by their email address.
 const SUMMARY_SQL = `u.id, COALESCE(NULLIF(u.name, ''), u.email, 'Friend') AS name, a.updated_at AS avatar_version`;
@@ -64,15 +66,41 @@ const summary = (r: Record<string, any>): UserSummary => ({
   avatarVersion: Number(r.avatar_version ?? 0),
 });
 
-async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; profileName: string }) | undefined> {
+async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; profileName: string; emails: OwnEmailAddress[] }) | undefined> {
   const r = row(
     await db.execute({
       sql: `SELECT ${SUMMARY_SQL}, u.name AS profile_name, u.email, u.email_verified FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
       args: [id],
     }),
   );
-  return r && { ...summary(r), email: r.email, emailVerified: !!r.email_verified, profileName: r.profile_name ?? '' };
+  if (!r) return undefined;
+  const emails = await db.execute({ sql: 'SELECT email, verified FROM user_emails WHERE user_id = ? ORDER BY created_at, email', args: [id] });
+  const primary = String(r.email ?? '').toLowerCase();
+  const logins = await db.execute({ sql: 'SELECT provider, subject FROM identities WHERE user_id = ?', args: [id] });
+  const passwordLogins = new Set(logins.rows.filter((l) => l.provider === 'password').map((l) => String(l.subject)));
+  const verifiedCount = emails.rows.filter((e) => e.verified).length;
+  const list: OwnEmailAddress[] = emails.rows.map((e) => {
+    const email = String(e.email);
+    const signsInWithPassword = passwordLogins.has(email);
+    // Removing an address never leaves the account without a verified address, or without a way to sign in
+    // (removing an address also removes the password login that uses it).
+    const removeBlocked =
+      verifiedCount - (e.verified ? 1 : 0) < 1
+        ? e.verified
+          ? 'This is your only verified email address.'
+          : 'Verify an email address first: you need at least one verified address.'
+        : logins.rows.length - (signsInWithPassword ? 1 : 0) < 1
+          ? 'This address is your only way to sign in.'
+          : null;
+    return { email, verified: !!e.verified, primary: email === primary, signsInWithPassword, removeBlocked };
+  });
+  // The primary address first
+  list.sort((x, y) => Number(y.primary) - Number(x.primary));
+  return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, profileName: r.profile_name ?? '', emails: list };
 }
+
+/** The addresses this account has proven it owns. */
+const verifiedAddresses = (u: { emails: EmailAddress[] }) => u.emails.filter((e) => e.verified).map((e) => e.email);
 
 /**
  * Friends, invitations and bets unlock once the account's email is verified. (An account with no email
@@ -99,13 +127,54 @@ async function connect(a: string, b: string) {
 
 app.get('/api/me', async (_req, res) => {
   const u = (await getUser(uid(res)))!;
-  const me: Me = { id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified };
+  const me: Me = { id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails };
   res.json(me);
 });
 
 app.post('/api/me/verify-email', async (_req, res) => {
   const result = await sendVerification(uid(res));
   res.status(result === 'throttled' ? 429 : 200).json({ result });
+});
+
+// Make a verified address the primary one (the one friends see when there's no display name, and where emails go).
+// It has to be verified: a primary address that isn't would lock the account out of the app.
+app.post('/api/me/emails/:email/primary', async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const email = String(req.params.email).trim().toLowerCase();
+  const entry = me.emails.find((e) => e.email === email);
+  if (!entry) return res.status(404).json({ error: 'That address is not on your account' });
+  if (!entry.verified) return res.status(409).json({ error: 'Verify this address before making it your primary one.' });
+  if (!entry.primary) await db.execute({ sql: 'UPDATE users SET email = ?, email_verified = 1 WHERE id = ?', args: [email, me.id] });
+  res.json({ ok: true });
+});
+
+// Remove an email address from the account. Never the last verified one (or the only way to sign in).
+app.delete('/api/me/emails/:email', async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const email = String(req.params.email).trim().toLowerCase();
+  const entry = me.emails.find((e) => e.email === email);
+  if (!entry) return res.status(404).json({ error: 'That address is not on your account' });
+  if (entry.removeBlocked) return res.status(409).json({ error: entry.removeBlocked });
+  await db.batch(
+    [
+      { sql: 'DELETE FROM user_emails WHERE user_id = ? AND email = ?', args: [me.id, email] },
+      { sql: 'DELETE FROM email_verifications WHERE user_id = ? AND email = ?', args: [me.id, email] },
+      // An address that is also a password login takes the login with it
+      { sql: `DELETE FROM password_credentials WHERE subject IN (SELECT subject FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?)`, args: [me.id, email] },
+      { sql: `DELETE FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?`, args: [me.id, email] },
+      // Removing the primary address promotes the oldest remaining verified one
+      ...(entry.primary
+        ? [
+            {
+              sql: `UPDATE users SET email = (SELECT email FROM user_emails WHERE user_id = ? AND verified = 1 ORDER BY created_at, email LIMIT 1), email_verified = 1 WHERE id = ?`,
+              args: [me.id, me.id],
+            },
+          ]
+        : []),
+    ],
+    'write',
+  );
+  res.json({ ok: true });
 });
 
 app.put('/api/me', async (req, res) => {
@@ -162,9 +231,9 @@ app.post('/api/invitations', async (req, res) => {
   const me = (await getUser(uid(res)))!;
   // Invitations go out under the inviter's identity, so it must be an address they've proven they own.
   if (!me.emailVerified) return res.status(403).json({ error: 'Verify your email address before inviting friends' });
-  if (me.email?.toLowerCase() === email) return res.status(400).json({ error: "That's your own email" });
+  if (me.emails.some((e) => e.email === email)) return res.status(400).json({ error: "That's your own email" });
 
-  const existingUser = row(await db.execute({ sql: 'SELECT id FROM users WHERE lower(email) = ? AND email_verified = 1', args: [email] }));
+  const existingUser = row(await db.execute({ sql: 'SELECT user_id AS id FROM user_emails WHERE email = ? AND verified = 1', args: [email] }));
   if (existingUser && (await areConnected(me.id, existingUser.id))) {
     return res.status(409).json({ error: "You're already connected" });
   }
@@ -184,10 +253,14 @@ app.post('/api/invitations', async (req, res) => {
 app.get('/api/invitations', async (_req, res) => {
   const me = (await getUser(uid(res)))!;
   const sent = await db.execute({ sql: `${INVITE_SQL} WHERE i.inviter_id = ? AND i.status = 'pending' ORDER BY i.created_at DESC`, args: [me.id] });
-  const received =
-    me.email && me.emailVerified
-      ? await db.execute({ sql: `${INVITE_SQL} WHERE lower(i.email) = lower(?) AND i.status = 'pending' AND i.inviter_id != ? ORDER BY i.created_at DESC`, args: [me.email, me.id] })
-      : { rows: [] };
+  // Invitations to any address this account has verified (a merged account has several)
+  const mine = verifiedAddresses(me);
+  const received = mine.length
+    ? await db.execute({
+        sql: `${INVITE_SQL} WHERE lower(i.email) IN (${mine.map(() => '?').join(',')}) AND i.status = 'pending' AND i.inviter_id != ? ORDER BY i.created_at DESC`,
+        args: [...mine, me.id],
+      })
+    : { rows: [] };
   res.json({
     sent: sent.rows.map(toInvitation),
     // The token stays private to the inviter.
@@ -199,7 +272,7 @@ async function acceptInvitation(res: Response, where: string, arg: string, check
   const me = (await getUser(uid(res)))!;
   const inv = row(await db.execute({ sql: `SELECT * FROM invitations WHERE ${where} = ? AND status = 'pending'`, args: [arg] }));
   if (!inv) return res.status(404).json({ error: 'Invitation not found' });
-  if (checkEmail && !(me.emailVerified && me.email?.toLowerCase() === inv.email)) return res.status(403).json({ error: 'Not your invitation' });
+  if (checkEmail && !verifiedAddresses(me).includes(String(inv.email).toLowerCase())) return res.status(403).json({ error: 'Not your invitation' });
   if (inv.inviter_id === me.id) return res.status(400).json({ error: "You can't accept your own invitation" });
   await connect(me.id, inv.inviter_id);
   await db.execute({ sql: `UPDATE invitations SET status = 'accepted' WHERE id = ?`, args: [inv.id] });
@@ -212,10 +285,13 @@ app.post('/api/invitations/:id/accept', (req, res) => acceptInvitation(res, 'id'
 
 app.post('/api/invitations/:id/decline', async (req, res) => {
   const me = (await getUser(uid(res)))!;
-  await db.execute({
-    sql: `UPDATE invitations SET status = 'declined' WHERE id = ? AND status = 'pending' AND lower(email) = lower(?)`,
-    args: [String(req.params.id), me.emailVerified ? (me.email ?? '') : ''],
-  });
+  const mine = verifiedAddresses(me);
+  if (mine.length) {
+    await db.execute({
+      sql: `UPDATE invitations SET status = 'declined' WHERE id = ? AND status = 'pending' AND lower(email) IN (${mine.map(() => '?').join(',')})`,
+      args: [String(req.params.id), ...mine],
+    });
+  }
   res.json({ ok: true });
 });
 

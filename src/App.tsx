@@ -10,6 +10,7 @@ import FriendDetail from './pages/FriendDetail';
 import Friends from './pages/Friends';
 import InviteLanding from './pages/InviteLanding';
 import Login from './pages/Login';
+import Merge from './pages/Merge';
 import NewBet from './pages/NewBet';
 import Profile from './pages/Profile';
 import Styleguide from './pages/Styleguide';
@@ -67,6 +68,7 @@ export default function App() {
         <Route path="friends" element={<Friends />} />
         <Route path="friends/:id" element={<FriendDetail />} />
         <Route path="profile" element={<Profile />} />
+        <Route path="merge" element={<Merge />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

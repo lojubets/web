@@ -37,7 +37,23 @@ export interface UserSummary {
   avatarVersion: number;
 }
 
+export interface EmailAddress {
+  email: string;
+  verified: boolean;
+  primary: boolean;
+}
+
+/** An address on the signed-in user's own account. */
+export interface OwnEmailAddress extends EmailAddress {
+  /** This address is also a login: you can sign in with it and your password. */
+  signsInWithPassword: boolean;
+  /** Why it can't be removed right now, or null if it can. */
+  removeBlocked: string | null;
+}
+
 export interface Me extends UserSummary {
+  /** Every address on the account, the primary first, each with its own verification status. */
+  emails: OwnEmailAddress[];
   /** The display name the user chose; empty when not set. */
   profileName: string;
   email: string | null;
@@ -100,4 +116,38 @@ export interface Invitation {
 export interface AppConfig {
   providers: ('google' | 'microsoft' | 'apple')[];
   devLogin: boolean;
+}
+
+/** One of the two accounts in a merge. */
+export interface MergeSide {
+  id: string;
+  /** Display name, or the email when none is set. */
+  name: string;
+  /** The display name the user chose; empty when not set. */
+  profileName: string;
+  hasAvatar: boolean;
+  avatarVersion: number;
+  primaryEmail: string | null;
+  emails: EmailAddress[];
+  friends: number;
+  bets: number;
+}
+
+export interface MergePreview {
+  /** The account you're signed in to; it is the one that remains. */
+  a: MergeSide;
+  /** The account being merged into it. */
+  b: MergeSide;
+  /** Reasons the merge can't go ahead yet. */
+  blockers: string[];
+  /** Both accounts sign in with a password. The merged account gets exactly one, so a new one must be chosen. */
+  needsNewPassword: boolean;
+  /** Finished bets between the two accounts, which would be removed (a bet with yourself is meaningless). */
+  betsBetween: number;
+}
+
+export interface MergeChoices {
+  email: 'a' | 'b';
+  name: 'a' | 'b';
+  photo: 'a' | 'b' | 'none';
 }
