@@ -1,6 +1,6 @@
 <img src="icons/web/pwa-icon-192.png" alt="" width="72" align="right">
 
-# Lojubets
+# LoJuBets
 
 Bets between friends. Closest guess wins, and the prize is always one lonkero (the Finnish nickname for a long drink).
 

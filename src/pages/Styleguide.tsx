@@ -43,7 +43,7 @@ export default function Styleguide() {
         <Link to="/" className="back"><Icon name="chevron-left" size={22} />App</Link>
         <span className="eyebrow">Design system</span>
       </header>
-      <h1>Lojubets style guide</h1>
+      <h1>LoJuBets style guide</h1>
       <p className="muted">Every token and component, live. Rules are in <code className="sg-code">docs/brand-guide.md</code>; follow your device's light or dark setting to see both.</p>
 
       <section>
@@ -127,7 +127,7 @@ export default function Styleguide() {
       <section>
         <h2>Hero and navigation</h2>
         <div className="sg-preview">
-          <div className="hero"><img className="hero-can" src="/can-256.png" width="112" height="112" alt="" /><h1>Lojubets</h1><p>Settle it with a friend. Closest guess wins a lonkero.</p></div>
+          <div className="hero"><img className="hero-can" src="/can-256.png" width="112" height="112" alt="" /><h1>LoJuBets</h1><p>Settle it with a friend. Closest guess wins a lonkero.</p></div>
           <Wave />
           <div style={{ height: 'var(--space-5)' }} />
         </div>

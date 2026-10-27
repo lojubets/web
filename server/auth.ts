@@ -363,7 +363,7 @@ async function handleCallback(req: Request, res: Response) {
       // Only an existing account can be merged: never create one here, and never replace the session.
       const back = (error?: string) => res.redirect(`${env.appUrl}/merge${error ? `?error=${encodeURIComponent(error)}` : ''}`);
       const identity = await db.execute({ sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?', args: [providerId, payload.sub!] });
-      if (!identity.rows.length) return back("No Lojubets account uses that sign-in. Sign in with the other account's own login.");
+      if (!identity.rows.length) return back("No LoJuBets account uses that sign-in. Sign in with the other account's own login.");
       const other = identity.rows[0].user_id as string;
       if (other === flow.merge) return back("That's the account you're already signed in with.");
       await issueMergeTicket(res, flow.merge, other);
