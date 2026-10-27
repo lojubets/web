@@ -43,9 +43,26 @@ Copy `.env.example` to `.env` to configure anything else (Node doesn't load it a
 
 ## Deploy (Vercel Hobby, $0)
 
-1. Create a Turso database (free tier): `turso db create lojubets` then `turso db tokens create lojubets`. Tables are created automatically on first request.
-2. Import the repo in Vercel and set the env vars from `.env.example`: `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `SESSION_SECRET`, `APP_URL`, plus provider credentials.
-3. Register the redirect URI `APP_URL/api/auth/<google|microsoft|apple>/callback` with each provider.
+1. **Create a Turso database** (free tier), using the [Turso CLI](https://docs.turso.tech/cli/installation):
+
+   ```bash
+   turso auth login
+   turso db create lojubets
+   turso db show lojubets --url        # -> DATABASE_URL, e.g. libsql://lojubets-<your-org>.turso.io
+   turso db tokens create lojubets     # -> DATABASE_AUTH_TOKEN
+   ```
+
+   Tables are created automatically on the first request, so there is nothing to migrate by hand.
+2. **Set the database variables.** Both are required for Turso:
+
+   | Variable | Local development | Turso (production) |
+   | --- | --- | --- |
+   | `DATABASE_URL` | `file:local.db` (the default; a SQLite file in the project folder) | the `libsql://…turso.io` URL from `turso db show --url` |
+   | `DATABASE_AUTH_TOKEN` | not needed, leave empty | the token from `turso db tokens create` |
+
+   A `libsql://` URL without the token fails with an authentication error. The token is a secret: put it in Vercel's environment variables, never in git. To try Turso locally, use the same two values in your `.env`.
+3. Import the repo in Vercel and set the remaining env vars from `.env.example`: `SESSION_SECRET`, `APP_URL`, `CRON_SECRET`, plus provider credentials.
+4. Register the redirect URI `APP_URL/api/auth/<google|microsoft|apple>/callback` with each provider.
 
 ### Sign-in providers
 
