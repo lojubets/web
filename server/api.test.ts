@@ -313,3 +313,17 @@ describe('guess secrecy', () => {
     await bob.post(`/api/bets/${created.id}/guess`).send({ guess: '8' }).expect(409);
   });
 });
+
+describe('inviting requires a verified email', () => {
+  it('is refused until the inviter verifies their address', async () => {
+    const jo = request.agent(app);
+    await jo.post('/api/auth/register').send({ email: 'jo@example.com', password: 'correct horse' }).expect(201);
+    const refused = await jo.post('/api/invitations').send({ email: 'friend@example.com' }).expect(403);
+    expect(refused.body.error).toMatch(/Verify your email/);
+    expect((await jo.get('/api/invitations')).body.sent).toHaveLength(0);
+
+    const token = mails.filter((m) => m.to === 'jo@example.com').at(-1)!.text.match(/token=([\w-]+)/)![1];
+    await request(app).post('/api/auth/verify-email').send({ token }).expect(200);
+    await jo.post('/api/invitations').send({ email: 'friend@example.com' }).expect(201);
+  });
+});

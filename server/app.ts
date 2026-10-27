@@ -149,6 +149,8 @@ app.post('/api/invitations', async (req, res) => {
   if (!body.success) return res.status(400).json({ error: 'Enter a valid email address' });
   const email = body.data.email.trim().toLowerCase();
   const me = (await getUser(uid(res)))!;
+  // Invitations go out under the inviter's identity, so it must be an address they've proven they own.
+  if (!me.emailVerified) return res.status(403).json({ error: 'Verify your email address before inviting friends' });
   if (me.email?.toLowerCase() === email) return res.status(400).json({ error: "That's your own email" });
 
   const existingUser = row(await db.execute({ sql: 'SELECT id FROM users WHERE lower(email) = ? AND email_verified = 1', args: [email] }));

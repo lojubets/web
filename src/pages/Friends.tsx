@@ -5,9 +5,11 @@ import { api } from '../api';
 import Avatar from '../components/Avatar';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { balanceText } from '../format';
-import { useAction, useFetch } from '../hooks';
+import { useAction, useFetch, useMe } from '../hooks';
 
 export default function Friends() {
+  const { me } = useMe();
+  const canInvite = me.emailVerified;
   const friends = useFetch<Friend[]>('/friends');
   const invites = useFetch<{ sent: Invitation[]; received: Invitation[] }>('/invitations');
   const [email, setEmail] = useState('');
@@ -79,8 +81,9 @@ export default function Friends() {
             });
           }}
         >
-          <input type="email" placeholder="friend@example.com" value={email} onChange={(e) => setEmail(e.target.value)} required />
-          <button className="btn" disabled={invite.busy}>Send invitation</button>
+          <input type="email" placeholder="friend@example.com" value={email} disabled={!canInvite} onChange={(e) => setEmail(e.target.value)} required />
+          <button className="btn" disabled={invite.busy || !canInvite}>Send invitation</button>
+          {!canInvite && <p className="muted small">Verify your email address (above) before inviting friends.</p>}
           {invite.error && <p className="error">{invite.error}</p>}
         </form>
         {result && (

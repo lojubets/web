@@ -10,7 +10,7 @@ Bets between friends. Closest guess wins, and the prize is always one beer.
 ## How it works
 
 1. Sign up with just an email and password (or a provider). Optionally set a display name and profile picture on the Profile page; until then you're shown to friends by your email address.
-2. Invite a friend by email. They get a link (emailed if Resend is configured, otherwise you share it). Bets are only possible between connected users.
+2. Verify your own email address (automatic for Google/Apple; a confirmation link for email/password and Microsoft accounts), then invite a friend by email. They get a link (emailed if Resend is configured, otherwise you share it). Bets are only possible between connected users.
 3. **Create a bet:** a question, an answer type and your guess. Your guess stays hidden until your friend locks in theirs. Answer types and their rules (applied to both players' guesses):
    - **Number:** whole numbers only or decimals too; optional minimum and maximum, each inclusive or exclusive (negatives are allowed unless the minimum forbids them).
    - **Duration:** `3:05` (h:mm), `1:02:03`, or `3 hours and 5 minutes`.
