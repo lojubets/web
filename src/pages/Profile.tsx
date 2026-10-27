@@ -65,7 +65,7 @@ export default function Profile() {
           <span>Display name</span>
           <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} required />
         </label>
-        {me.email && <p className="muted small">Signed in as {me.email}{me.emailVerified ? ' (verified ✓)' : ''}</p>}
+        {me.email && <p className="muted small">Signed in as {me.email}{me.emailVerified ? ' (verified ✓)' : ' (not verified)'}</p>}
         <button className="btn" disabled={act.busy || name.trim() === me.name}>{saved ? 'Saved ✓' : 'Save'}</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>
