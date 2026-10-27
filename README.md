@@ -51,7 +51,7 @@ There are two ways to run the app on your machine. Each reads its own dotenv fil
 
 **Cloud** needs `.env.cloud` (copy the template and fill in `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `SESSION_SECRET`; see [Turso](#deploy-vercel-hobby-0) below for where they come from). Point it at a *separate* Turso database such as `lojubets-dev`, not production; the free tier allows plenty. The app refuses to start with a `libsql://` URL and no token.
 
-Restart after editing a dotenv file. Variables already set in your shell win over the file. Both files are git-ignored.
+Both commands first stop any dev servers left over from an earlier run of this project (matched by command *and* folder, so other projects are untouched), so you can just run them again after a crash or a closed terminal. If something unrelated is holding port 3001 or 5173, they say so and don't start. Restart after editing a dotenv file. Variables already set in your shell win over the file. Both files are git-ignored.
 
 ## Production
 

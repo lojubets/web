@@ -6,8 +6,8 @@
   "description": "Bets between friends. The prize is always one lonkero.",
   "scripts": {
     "dev": "npm run dev:local",
-    "dev:local": "concurrently --kill-others-on-fail -n api,web -c yellow,cyan \"npm:api:local\" \"npm:web\"",
-    "dev:cloud": "concurrently --kill-others-on-fail -n api,web -c yellow,cyan \"npm:api:cloud\" \"npm:web\"",
+    "dev:local": "node scripts/stop-dev.mjs && concurrently --kill-others-on-fail -n api,web -c yellow,cyan \"npm:api:local\" \"npm:web\"",
+    "dev:cloud": "node scripts/stop-dev.mjs && concurrently --kill-others-on-fail -n api,web -c yellow,cyan \"npm:api:cloud\" \"npm:web\"",
     "api:local": "node --env-file-if-exists=.env.local --import tsx --watch server/dev.ts",
     "api:cloud": "node --env-file=.env.cloud --import tsx --watch server/dev.ts",
     "web": "vite",
