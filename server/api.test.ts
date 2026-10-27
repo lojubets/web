@@ -8,6 +8,7 @@ vi.mock('./email.js', () => ({
   sendInviteEmail: async () => false,
 }));
 import app from './app.js';
+import { db } from './db.js';
 
 /** Registers with email/password and completes verification via the emailed link. */
 const verifiedUser = async (email: string) => {
@@ -511,8 +512,8 @@ describe('merging accounts', () => {
     const me = (await a.get('/api/me').expect(200)).body;
     expect(me).toMatchObject({ id: aId, email: 'mia.work@example.com', profileName: 'Mia (work)', hasAvatar: true, emailVerified: true });
     expect(me.emails).toEqual([
-      { email: 'mia.work@example.com', verified: true, primary: true },
-      { email: 'mia@example.com', verified: true, primary: false },
+      { email: 'mia.work@example.com', verified: true, primary: true, signsInWithPassword: true, removeBlocked: null },
+      { email: 'mia@example.com', verified: true, primary: false, signsInWithPassword: false, removeBlocked: null },
     ]);
 
     // Friends and bets are combined: Cleo once, the two accounts' bets with her, and balances add up (+1 -1)
@@ -614,5 +615,126 @@ describe('merging accounts', () => {
     await a.delete('/api/merge').expect(200);
     await a.get('/api/merge/preview').expect(404);
     expect(await id(b)).toBeTruthy(); // untouched
+  });
+});
+
+describe('passwords when merging', () => {
+  type Agent = ReturnType<typeof request.agent>;
+  const PW = 'correct horse';
+  const NEW_PW = 'a brand new password';
+  const id = async (a: Agent) => (await a.get('/api/me')).body.id as string;
+  const startMerge = (a: Agent, email: string) => a.post('/api/merge/password').send({ email, password: PW });
+  const confirm = (a: Agent, extra: object = {}) => a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none', ...extra });
+  const canLogin = async (email: string, password: string) => (await request(app).post('/api/auth/login').send({ email, password })).status === 200;
+
+  it('two password accounts need one new password, which works with both email addresses', async () => {
+    const a = await verifiedUser('pw.one@example.com');
+    await verifiedUser('pw.two@example.com');
+    const aId = await id(a);
+
+    await startMerge(a, 'pw.two@example.com').expect(200);
+    expect((await a.get('/api/merge/preview').expect(200)).body.needsNewPassword).toBe(true);
+
+    // a new password is required, and it has to be a real one
+    await confirm(a).expect(400);
+    await confirm(a, { newPassword: 'short' }).expect(400);
+    await confirm(a, { newPassword: NEW_PW }).expect(200);
+
+    for (const email of ['pw.one@example.com', 'pw.two@example.com']) {
+      const session = request.agent(app);
+      await session.post('/api/auth/login').send({ email, password: NEW_PW }).expect(200);
+      expect(await id(session)).toBe(aId);
+      expect(await canLogin(email, PW)).toBe(false); // neither old password works any more
+    }
+    expect((await a.get('/api/me')).body.emails.map((e: any) => e.signsInWithPassword)).toEqual([true, true]);
+  });
+
+  it('keeps the existing password when only one of the accounts has one', async () => {
+    const a = await verifiedUser('keep.pw@example.com');
+    await login('Keepdev'); // a dev account: no password
+    await a.post('/api/merge/dev').send({ email: 'keepdev@example.com' }).expect(200);
+    expect((await a.get('/api/merge/preview').expect(200)).body.needsNewPassword).toBe(false);
+    await confirm(a).expect(200); // no new password asked for
+    expect(await canLogin('keep.pw@example.com', PW)).toBe(true);
+  });
+});
+
+describe('removing email addresses', () => {
+  type Agent = ReturnType<typeof request.agent>;
+  const PW = 'correct horse';
+  const id = async (a: Agent) => (await a.get('/api/me')).body.id as string;
+  const emails = async (a: Agent) => (await a.get('/api/me')).body.emails as { email: string; primary: boolean; verified: boolean; removeBlocked: string | null; signsInWithPassword: boolean }[];
+  const remove = (a: Agent, email: string) => a.delete(`/api/me/emails/${encodeURIComponent(email)}`);
+  const addRaw = (userId: string, email: string, verified: boolean) =>
+    db.execute({ sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, ?, ?)', args: [userId, email, verified ? 1 : 0, Date.now() + 1] });
+  const mergeInto = async (a: Agent, otherEmail: string, otherPassword?: string) => {
+    if (otherPassword) await a.post('/api/merge/password').send({ email: otherEmail, password: otherPassword }).expect(200);
+    else await a.post('/api/merge/dev').send({ email: otherEmail }).expect(200);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(200);
+  };
+
+  it('never removes the only verified address', async () => {
+    const u = await verifiedUser('only@example.com');
+    expect((await emails(u))[0].removeBlocked).toMatch(/only verified/);
+    await remove(u, 'only@example.com').expect(409);
+    await remove(u, 'nobody@example.com').expect(404);
+    expect(await emails(u)).toHaveLength(1);
+  });
+
+  it('an account that has not verified anything cannot delete its address to dodge verification', async () => {
+    const u = request.agent(app);
+    await u.post('/api/auth/register').send({ email: 'dodge@example.com', password: PW }).expect(201);
+    expect((await emails(u))[0].removeBlocked).toMatch(/Verify an email address first/);
+    await remove(u, 'dodge@example.com').expect(409);
+    await u.get('/api/friends').expect(403); // still locked
+  });
+
+  it("removing a secondary address also removes the password login that used it, and frees the address", async () => {
+    const a = await login('Ola');
+    await verifiedUser('ola.work@example.com');
+    await mergeInto(a, 'ola.work@example.com', PW); // keeps Ola's email; the work address becomes a password login on the account
+    const work = (await emails(a)).find((e) => e.email === 'ola.work@example.com')!;
+    expect(work).toMatchObject({ primary: false, signsInWithPassword: true, removeBlocked: null });
+
+    await remove(a, 'ola.work@example.com').expect(200);
+    expect((await emails(a)).map((e) => e.email)).toEqual(['ola@example.com']);
+    expect((await request(app).post('/api/auth/login').send({ email: 'ola.work@example.com', password: PW })).status).toBe(401);
+    // the address is free again for anyone to register
+    await request(app).post('/api/auth/register').send({ email: 'ola.work@example.com', password: PW }).expect(201);
+    // and the last verified address is now protected
+    await remove(a, 'ola@example.com').expect(409);
+  });
+
+  it('removing the primary promotes the other verified address; provider logins are unaffected', async () => {
+    const a = await login('Pam');
+    await login('Pamb');
+    await mergeInto(a, 'pamb@example.com');
+    const before = await id(a);
+
+    await remove(a, 'pam@example.com').expect(200);
+    const me = (await a.get('/api/me')).body;
+    expect(me).toMatchObject({ email: 'pamb@example.com', emailVerified: true });
+    expect(me.emails).toHaveLength(1);
+    expect(me.emails[0]).toMatchObject({ email: 'pamb@example.com', primary: true });
+    // a sign-in through the provider doesn't depend on the address staying on the profile
+    const again = request.agent(app);
+    await again.post('/api/auth/dev').send({ name: 'Pam', email: 'pam@example.com' }).expect(200);
+    expect(await id(again)).toBe(before);
+  });
+
+  it('an unverified extra address can be removed', async () => {
+    const u = await verifiedUser('extra@example.com');
+    await addRaw(await id(u), 'extra.unverified@example.com', false);
+    expect((await emails(u)).find((e) => e.email === 'extra.unverified@example.com')).toMatchObject({ verified: false, removeBlocked: null });
+    await remove(u, 'extra.unverified@example.com').expect(200);
+    expect((await emails(u)).map((e) => e.email)).toEqual(['extra@example.com']);
+  });
+
+  it("never removes the address that is the account's only way to sign in", async () => {
+    const u = await verifiedUser('onlylogin@example.com');
+    await addRaw(await id(u), 'spare@example.com', true); // a verified address with no login of its own
+    expect((await emails(u)).find((e) => e.email === 'onlylogin@example.com')!.removeBlocked).toMatch(/only way to sign in/);
+    await remove(u, 'onlylogin@example.com').expect(409);
+    await remove(u, 'spare@example.com').expect(200);
   });
 });

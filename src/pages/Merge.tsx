@@ -153,6 +153,10 @@ function Choose({ preview }: { preview: MergePreview }) {
   }, []);
   const set = <K extends keyof MergeChoices>(k: K, v: MergeChoices[K]) => setChoices((c) => ({ ...c, [k]: v }));
   const blocked = preview.blockers.length > 0;
+  const needsPw = preview.needsNewPassword;
+  const [newPw, setNewPw] = useState('');
+  const [repeatPw, setRepeatPw] = useState('');
+  const pwOk = !needsPw || (newPw.length >= 8 && newPw === repeatPw);
 
   return (
     <>
@@ -199,11 +203,24 @@ function Choose({ preview }: { preview: MergePreview }) {
         />
       )}
 
+      {needsPw && (
+        <div className="card stack">
+          <h2>Choose a new password</h2>
+          <p className="muted small">
+            Both accounts sign in with a password, but the merged account has just one. You'll use this new password with either email address.
+          </p>
+          <input type="password" aria-label="New password" placeholder="New password (min 8 characters)" autoComplete="new-password" minLength={8} value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+          <input type="password" aria-label="Repeat the new password" placeholder="Repeat the new password" autoComplete="new-password" value={repeatPw} onChange={(e) => setRepeatPw(e.target.value)} />
+          {repeatPw && newPw !== repeatPw && <p className="error"><Icon name="alert" size={20} />The passwords don't match</p>}
+        </div>
+      )}
+
       <div className="card accent stack">
         <h2>What happens</h2>
         <ul className="examples">
           <li>Friends and bets from both accounts are combined.</li>
           <li>You can sign in with either account's login (Google, Microsoft, Apple or email and password).</li>
+          {needsPw && <li>Your two passwords are replaced by the new one, which works with both email addresses.</li>}
           {preview.betsBetween > 0 && (
             <li>{preview.betsBetween} finished {preview.betsBetween === 1 ? 'bet' : 'bets'} between these two accounts will be removed.</li>
           )}
@@ -214,10 +231,10 @@ function Choose({ preview }: { preview: MergePreview }) {
       {act.error && <p className="error"><Icon name="alert" size={20} />{act.error}</p>}
       <button
         className="btn"
-        disabled={act.busy || blocked}
+        disabled={act.busy || blocked || !pwOk}
         onClick={() =>
           act.run(async () => {
-            await api('/merge/confirm', 'POST', choices);
+            await api('/merge/confirm', 'POST', { ...choices, ...(needsPw ? { newPassword: newPw } : {}) });
             reload();
             nav('/profile?merged=1');
           })

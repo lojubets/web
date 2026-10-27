@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
+import type { OwnEmailAddress } from '../../shared/types';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useMe } from '../hooks';
 
@@ -27,6 +28,18 @@ export default function Profile() {
   const act = useAction();
   const [saved, setSaved] = useState(false);
   const merged = useSearchParams()[0].get('merged');
+  const rm = useAction();
+
+  const removeEmail = (e: OwnEmailAddress) => {
+    const lines = [`Remove ${e.email} from your account?`];
+    if (e.signsInWithPassword) lines.push('You will no longer be able to sign in with this address and your password.');
+    if (e.primary) lines.push('Another verified address becomes your primary one.');
+    if (!window.confirm(lines.join('\n\n'))) return;
+    rm.run(async () => {
+      await api(`/me/emails/${encodeURIComponent(e.email)}`, 'DELETE');
+      reload();
+    });
+  };
 
   return (
     <>
@@ -95,13 +108,21 @@ export default function Profile() {
         <section className="stack">
           <h2>Email addresses</h2>
           {me.emails.map((e) => (
-            <div className="row row-wrap" key={e.email}>
-              <span className="grow">
-                <strong>{e.email}</strong> <span className="muted small">{e.verified ? '(verified ✓)' : '(not verified)'}</span>
-              </span>
-              {e.primary && <span className="pill">Primary</span>}
+            <div className="stack" key={e.email}>
+              <div className="row row-wrap">
+                <span className="grow">
+                  <strong>{e.email}</strong> <span className="muted small">{e.verified ? '(verified ✓)' : '(not verified)'}</span>
+                </span>
+                {e.primary && <span className="pill">Primary</span>}
+                <button className="btn btn-small btn-secondary" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
+                  Remove
+                </button>
+              </div>
+              {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
+              {e.removeBlocked && <small className="muted">{e.removeBlocked}</small>}
             </div>
           ))}
+          {rm.error && <p className="error"><Icon name="alert" size={20} />{rm.error}</p>}
         </section>
       )}
       {me.emailVerified && (

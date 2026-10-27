@@ -193,7 +193,7 @@ async function findOrCreateUser(opts: {
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
-async function hashPassword(pw: string): Promise<string> {
+export async function hashPassword(pw: string): Promise<string> {
   const salt = randomBytes(16);
   return `${salt.toString('hex')}:${(await scryptAsync(pw, salt, 64)).toString('hex')}`;
 }

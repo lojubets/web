@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { MergeChoices, MergePreview, MergeSide } from '../shared/types.js';
-import { clearMergeTicket, issueMergeTicket, readMergeTicket, verifyPassword } from './auth.js';
+import { clearMergeTicket, hashPassword, issueMergeTicket, readMergeTicket, verifyPassword } from './auth.js';
 import { db } from './db.js';
 import { env } from './env.js';
 
@@ -63,6 +63,9 @@ async function betsBetween(a: string, b: string) {
   return { unfinished, finished };
 }
 
+const hasPasswordLogin = async (id: string) =>
+  !!first(await db.execute({ sql: `SELECT 1 AS x FROM identities WHERE user_id = ? AND provider = 'password' LIMIT 1`, args: [id] }));
+
 async function previewFor(a: string, b: string): Promise<MergePreview | null> {
   const [sa, sb] = await Promise.all([loadSide(a), loadSide(b)]);
   if (!sa || !sb) return null;
@@ -75,7 +78,9 @@ async function previewFor(a: string, b: string): Promise<MergePreview | null> {
   if (between.unfinished > 0) {
     blockers.push(`You have ${between.unfinished} unfinished bet${between.unfinished === 1 ? '' : 's'} with each other. Finish or cancel ${between.unfinished === 1 ? 'it' : 'them'} first.`);
   }
-  return { a: sa, b: sb, blockers, betsBetween: between.finished };
+  // One account can only have one password, so two password accounts need a new, shared one
+  const needsNewPassword = (await hasPasswordLogin(a)) && (await hasPasswordLogin(b));
+  return { a: sa, b: sb, blockers, betsBetween: between.finished, needsNewPassword };
 }
 
 /** The ticket for the signed-in account, or null (and the stale cookie is cleared). */
@@ -154,6 +159,13 @@ mergeRouter.post('/confirm', async (req, res) => {
   if (!preview) return res.status(404).json({ error: 'That account no longer exists' });
   if (preview.blockers.length) return res.status(409).json({ error: preview.blockers[0] });
 
+  let passwordHash: string | null = null;
+  if (preview.needsNewPassword) {
+    const pw = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+    if (pw.length < 8 || pw.length > 200) return res.status(400).json({ error: 'Choose a new password for the merged account (at least 8 characters)' });
+    passwordHash = await hashPassword(pw);
+  }
+
   const side = { a: preview.a, b: preview.b };
   const keep = side[choices.email];
   const nameFrom = side[choices.name];
@@ -183,6 +195,10 @@ mergeRouter.post('/confirm', async (req, res) => {
       S('UPDATE invitations SET inviter_id = ? WHERE inviter_id = ?', [a, b]),
       // Every login method of B now signs in to A
       S('UPDATE identities SET user_id = ? WHERE user_id = ?', [a, b]),
+      // Two password accounts become one account with one password: every password login gets the new one
+      ...(passwordHash
+        ? [S(`UPDATE password_credentials SET password_hash = ? WHERE subject IN (SELECT subject FROM identities WHERE provider = 'password' AND user_id = ?)`, [passwordHash, a])]
+        : []),
       // Both addresses stay on record, each with its own verification status
       S('UPDATE user_emails SET verified = 1 WHERE user_id = ? AND email IN (SELECT email FROM user_emails WHERE user_id = ? AND verified = 1)', [a, b]),
       S('INSERT OR IGNORE INTO user_emails (user_id, email, verified, created_at) SELECT ?, email, verified, created_at FROM user_emails WHERE user_id = ?', [a, b]),

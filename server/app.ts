@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, UserSummary } from '../shared/types.js';
+import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, UserSummary } from '../shared/types.js';
 import { authRouter, enabledProviders, requireAuth } from './auth.js';
 import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
 import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
@@ -66,7 +66,7 @@ const summary = (r: Record<string, any>): UserSummary => ({
   avatarVersion: Number(r.avatar_version ?? 0),
 });
 
-async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; profileName: string; emails: EmailAddress[] }) | undefined> {
+async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; profileName: string; emails: OwnEmailAddress[] }) | undefined> {
   const r = row(
     await db.execute({
       sql: `SELECT ${SUMMARY_SQL}, u.name AS profile_name, u.email, u.email_verified FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
@@ -76,7 +76,24 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   if (!r) return undefined;
   const emails = await db.execute({ sql: 'SELECT email, verified FROM user_emails WHERE user_id = ? ORDER BY created_at, email', args: [id] });
   const primary = String(r.email ?? '').toLowerCase();
-  const list: EmailAddress[] = emails.rows.map((e) => ({ email: String(e.email), verified: !!e.verified, primary: String(e.email) === primary }));
+  const logins = await db.execute({ sql: 'SELECT provider, subject FROM identities WHERE user_id = ?', args: [id] });
+  const passwordLogins = new Set(logins.rows.filter((l) => l.provider === 'password').map((l) => String(l.subject)));
+  const verifiedCount = emails.rows.filter((e) => e.verified).length;
+  const list: OwnEmailAddress[] = emails.rows.map((e) => {
+    const email = String(e.email);
+    const signsInWithPassword = passwordLogins.has(email);
+    // Removing an address never leaves the account without a verified address, or without a way to sign in
+    // (removing an address also removes the password login that uses it).
+    const removeBlocked =
+      verifiedCount - (e.verified ? 1 : 0) < 1
+        ? e.verified
+          ? 'This is your only verified email address.'
+          : 'Verify an email address first: you need at least one verified address.'
+        : logins.rows.length - (signsInWithPassword ? 1 : 0) < 1
+          ? 'This address is your only way to sign in.'
+          : null;
+    return { email, verified: !!e.verified, primary: email === primary, signsInWithPassword, removeBlocked };
+  });
   // The primary address first
   list.sort((x, y) => Number(y.primary) - Number(x.primary));
   return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, profileName: r.profile_name ?? '', emails: list };
@@ -117,6 +134,35 @@ app.get('/api/me', async (_req, res) => {
 app.post('/api/me/verify-email', async (_req, res) => {
   const result = await sendVerification(uid(res));
   res.status(result === 'throttled' ? 429 : 200).json({ result });
+});
+
+// Remove an email address from the account. Never the last verified one (or the only way to sign in).
+app.delete('/api/me/emails/:email', async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const email = String(req.params.email).trim().toLowerCase();
+  const entry = me.emails.find((e) => e.email === email);
+  if (!entry) return res.status(404).json({ error: 'That address is not on your account' });
+  if (entry.removeBlocked) return res.status(409).json({ error: entry.removeBlocked });
+  await db.batch(
+    [
+      { sql: 'DELETE FROM user_emails WHERE user_id = ? AND email = ?', args: [me.id, email] },
+      { sql: 'DELETE FROM email_verifications WHERE user_id = ? AND email = ?', args: [me.id, email] },
+      // An address that is also a password login takes the login with it
+      { sql: `DELETE FROM password_credentials WHERE subject IN (SELECT subject FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?)`, args: [me.id, email] },
+      { sql: `DELETE FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?`, args: [me.id, email] },
+      // Removing the primary address promotes the oldest remaining verified one
+      ...(entry.primary
+        ? [
+            {
+              sql: `UPDATE users SET email = (SELECT email FROM user_emails WHERE user_id = ? AND verified = 1 ORDER BY created_at, email LIMIT 1), email_verified = 1 WHERE id = ?`,
+              args: [me.id, me.id],
+            },
+          ]
+        : []),
+    ],
+    'write',
+  );
+  res.json({ ok: true });
 });
 
 app.put('/api/me', async (req, res) => {
