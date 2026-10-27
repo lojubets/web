@@ -1,6 +1,6 @@
 import { formatMoment, formatValue } from '../shared/format.js';
 import { loadParams, tippingVerdict } from './betLogic.js';
-import { settleDueBets, tippingPointOf, type BetRow } from './bets.js';
+import { tippingPointOf, type BetRow } from './bets.js';
 import { db } from './db.js';
 import { sendMail } from './email.js';
 import { env } from './env.js';
@@ -36,8 +36,6 @@ async function notifyBoth(b: BetRow, subject: string, body: (me: Person, other: 
 }
 
 export async function runCron(now = Date.now()) {
-  const settledNow = await settleDueBets({ now });
-
   // 1. Tipping point approaching
   const active = (await db.execute(`SELECT * FROM bets WHERE kind = 'instant' AND status = 'active'`)).rows as unknown as BetRow[];
   let soon = 0;
@@ -53,29 +51,30 @@ export async function runCron(now = Date.now()) {
       `⏰ Tipping point approaching: ${b.question}`,
       () =>
         `Tipping point: ${formatMoment(tp, params, 'UTC')} UTC.\n\n` +
-        `If the event hasn't happened by then, ${later.name}'s guess (${formatValue(b.kind, params, laterIsCreator ? b.creator_guess : b.opponent_guess, 'UTC')}) is guaranteed to be closer and wins automatically.\n` +
-        `If it has already happened, open the bet and enter the result before then.`,
+        `If the event still hasn't happened by then, ${later.name}'s guess (${formatValue(b.kind, params, laterIsCreator ? b.creator_guess : b.opponent_guess, 'UTC')}) is guaranteed to be closer.\n` +
+        `You'll be asked to confirm that. If the event has already happened, open the bet and enter the result.`,
     );
     soon++;
   }
 
-  // 2. Resolved by tipping point (whether the cron or someone opening the app settled it)
-  const resolved = (
-    await db.execute(`SELECT b.* FROM bets b WHERE b.settled_by = 'tipping_point'
-      AND NOT EXISTS (SELECT 1 FROM bet_reminders r WHERE r.bet_id = b.id AND r.kind = 'resolved')`)
-  ).rows as unknown as BetRow[];
-  for (const b of resolved) {
-    if (!(await claim(b.id, 'resolved'))) continue;
+  // 2. Tipping point passed: ask whether the event has happened (nothing is assumed)
+  let passed = 0;
+  for (const b of active) {
+    const tp = tippingPointOf(b);
+    if (tp === null || tp > now || !(await claim(b.id, 'tipping_passed'))) continue;
+    const params = loadParams(b.kind, b.params);
+    const laterIsCreator = tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!) === 'creator';
     const { creator, opponent } = await people(b);
-    const winner = b.winner_id === b.creator_id ? creator : b.winner_id === b.opponent_id ? opponent : null;
+    const later = laterIsCreator ? creator : opponent;
     await notifyBoth(
       b,
-      `Bet resolved: ${b.question}`,
-      (me) =>
-        `The tipping point passed without the event happening, so the later guess was guaranteed to be closer. ` +
-        (winner ? (winner.id === me.id ? `You won ${b.stake} 🍺!` : `${winner.name} won ${b.stake} 🍺.`) : 'Both guesses were identical, so nobody owes anything.'),
+      `Has it happened yet? ${b.question}`,
+      () =>
+        `The tipping point (${formatMoment(tp, params, 'UTC')} UTC) has passed.\n\n` +
+        `If the event happened, enter the result in the app. If it still hasn't, say so there: once you both agree, ${later.name}'s guess wins.`,
     );
+    passed++;
   }
 
-  return { settledNow, remindersSent: soon, resolvedNotices: resolved.length };
+  return { remindersSent: soon, passedNotices: passed };
 }

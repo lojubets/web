@@ -65,14 +65,18 @@ export interface Bet {
   winnerId: string | null;
   allIn: boolean;
   stake: number;
-  /** Settled by outcome, or by the tipping point passing with the event still pending. */
+  /** Settled by a confirmed outcome, or by both players confirming the event hadn't happened by the tipping point. */
   settledBy: 'outcome' | 'tipping_point' | null;
+  /** What the pending proposal says: a result, or "the event hasn't happened yet". */
+  proposalKind: 'outcome' | 'not_happened' | null;
   /**
    * Future-dated bets only: once this moment passes with the event still pending, the later guess
-   * is guaranteed to be closer and wins automatically.
+   * is guaranteed to be closer. The players are asked whether the event has happened; nothing is assumed.
    */
   tippingPoint: number | null;
   tippingSoon: boolean;
+  /** In play, tipping point passed, nobody has answered "has it happened?" yet. */
+  tippingPassed: boolean;
   needsMyAction: boolean;
   canAllIn: boolean;
   /** Beers I'd put on the line if I went all-in now. */

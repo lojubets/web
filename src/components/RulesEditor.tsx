@@ -82,8 +82,8 @@ export default function RulesEditor({ kind, rules, onChange }: Props) {
             </select>
           </div>
           <p className="muted small">
-            Checked when each of you guesses, so nobody can guess "in 5 minutes" from the bleachers. If the event still hasn't happened once the
-            midpoint of your two guesses passes, the later guess wins automatically.
+            Checked when each of you guesses, so nobody can guess "in 5 minutes" from the bleachers. Once the
+            midpoint of your two guesses passes, you'll be asked whether the event has happened yet. If you both agree it hasn't, the later guess wins.
           </p>
         </>
       )}

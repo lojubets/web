@@ -57,12 +57,14 @@ export default function BetDetail() {
       </div>
 
       {b.tippingPoint !== null && b.status === 'active' && (
-        <div className={`card stack ${b.tippingSoon ? 'needs-action' : ''}`}>
-          <strong>⏰ Tipping point: {formatMoment(b.tippingPoint, b.params)}</strong>
+        <div className={`card stack ${b.tippingSoon || b.tippingPassed ? 'needs-action' : ''}`}>
+          <strong>⏰ {b.tippingPassed ? 'Tipping point passed' : 'Tipping point'}: {formatMoment(b.tippingPoint, b.params)}</strong>
           <span className="muted small">
             {later === 'both'
               ? 'You guessed the same, so this ends in a draw whatever happens.'
-              : `If the event hasn't happened by then, ${later === 'me' ? 'your' : `${friend.name}'s`} guess is guaranteed to be closer and wins automatically. If it already happened, enter the result before then.`}
+              : b.tippingPassed
+                ? `Has the event happened? If it hasn't, ${later === 'me' ? 'your' : `${friend.name}'s`} guess is guaranteed to be closer.`
+                : `If the event still hasn't happened by then, ${later === 'me' ? 'your' : `${friend.name}'s`} guess is guaranteed to be closer. You'll be asked to confirm. If it already happened, enter the result.`}
           </span>
         </div>
       )}
@@ -78,7 +80,7 @@ export default function BetDetail() {
 
       {b.status === 'settled' && (
         <p className={`banner ${b.winnerId === null ? '' : iWon ? 'win' : 'lose'}`}>
-          {byTipping && 'Tipping point passed with nothing happening. '}
+          {byTipping && "You both confirmed the event hadn't happened by the tipping point. "}
           {b.winnerId === null
             ? "Dead heat, nobody owes anything."
             : iWon
@@ -106,11 +108,26 @@ export default function BetDetail() {
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/propose', { outcome: value }); }}>
           <ValueInput kind={b.kind} params={b.params} role="outcome" value={value} onChange={setValue} label="It happened! What was the actual result?" />
           <button className="btn" disabled={act.busy}>Propose result</button>
+          {b.tippingPassed && later !== 'both' && (
+            <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => post('/not-happened')}>
+              It hasn't happened yet
+            </button>
+          )}
         </form>
       )}
 
       {b.status === 'awaiting_confirmation' &&
-        (b.outcomeProposedByMe ? (
+        (b.proposalKind === 'not_happened' ? (
+          b.outcomeProposedByMe ? (
+            <p className="muted">Waiting for {friend.name} to agree that the event hasn't happened yet.</p>
+          ) : (
+            <div className="stack">
+              <p>{friend.name} says the event still hasn't happened. If you agree, the later guess wins. Agree?</p>
+              <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>Yes, it hasn't happened</button>
+              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>No, it has happened</button>
+            </div>
+          )
+        ) : b.outcomeProposedByMe ? (
           <p className="muted">Waiting for {friend.name} to confirm the result.</p>
         ) : (
           <div className="stack">

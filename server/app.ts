@@ -4,8 +4,8 @@ import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { AppConfig, Bet, Friend, Invitation, Me, UserSummary } from '../shared/types.js';
 import { authRouter, enabledProviders, requireAuth } from './auth.js';
-import { balanceFor, buildParams, decide, loadParams, normalizeAnswer } from './betLogic.js';
-import { settleDueBets, tippingPointOf, type BetRow } from './bets.js';
+import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
+import { tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
 import { env } from './env.js';
@@ -212,7 +212,6 @@ app.delete('/api/invitations/:id', async (req, res) => {
 // ---------- bets ----------
 
 async function loadBets(me: string): Promise<BetRow[]> {
-  await settleDueBets({ userId: me });
   const r = await db.execute({
     sql: `SELECT * FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status != 'cancelled' ORDER BY created_at DESC`,
     args: [me, me],
@@ -238,14 +237,17 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
   const other = otherOf(b, me);
   const myGuess = iAmCreator ? b.creator_guess : b.opponent_guess;
   const theirGuess = iAmCreator ? b.opponent_guess : b.creator_guess;
+  const tp = b.status === 'active' ? tippingPointOf(b) : null;
+  const now = Date.now();
+  const tippingPassed = tp !== null && now >= tp;
   const needsMyAction =
-    (b.status === 'awaiting_guess' && !iAmCreator) || (b.status === 'awaiting_confirmation' && b.outcome_proposed_by !== me);
+    (b.status === 'awaiting_guess' && !iAmCreator) ||
+    (b.status === 'awaiting_confirmation' && b.outcome_proposed_by !== me) ||
+    tippingPassed; // both players are asked whether the event has happened
   const debt = -(bal.get(other) ?? 0);
   const anotherAllInOpen = allBets.some(
     (x) => x.id !== b.id && x.all_in && otherOf(x, me) === other && (x.status === 'active' || x.status === 'awaiting_confirmation'),
   );
-  const tp = b.status === 'active' ? tippingPointOf(b) : null;
-  const now = Date.now();
   return {
     id: b.id,
     question: b.question,
@@ -265,6 +267,8 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     settledBy: b.status === 'settled' ? (b.settled_by === 'tipping_point' ? 'tipping_point' : 'outcome') : null,
     tippingPoint: tp,
     tippingSoon: tp !== null && tp > now && tp - now <= 48 * 3_600_000,
+    tippingPassed,
+    proposalKind: b.status === 'awaiting_confirmation' ? (b.outcome === null ? 'not_happened' : 'outcome') : null,
     needsMyAction,
     canAllIn: b.status === 'active' && !b.all_in && debt > 0 && !anotherAllInOpen,
     allInStake: Math.max(debt, 0),
@@ -389,11 +393,28 @@ app.post('/api/bets/:id/confirm', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
   if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by === uid(res)) return res.status(409).json({ error: 'Nothing to confirm' });
-  const verdict = decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
+  // No outcome means the proposal was "the event hasn't happened by the tipping point": the later guess wins.
+  const notHappened = b.outcome === null;
+  const verdict = notHappened
+    ? tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!)
+    : decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
   const winner = verdict === 'draw' ? null : verdict === 'creator' ? b.creator_id : b.opponent_id;
   await db.execute({
-    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = 'outcome' WHERE id = ?`,
-    args: [winner, Date.now(), b.id],
+    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = ? WHERE id = ?`,
+    args: [winner, Date.now(), notHappened ? 'tipping_point' : 'outcome', b.id],
+  });
+  await respondWithBet(res, b.id);
+});
+
+// "The tipping point has passed and the event still hasn't happened": the other player must agree.
+app.post('/api/bets/:id/not-happened', async (req, res) => {
+  const b = await betFor(req, res);
+  if (!b) return;
+  const tp = b.status === 'active' ? tippingPointOf(b) : null;
+  if (tp === null || Date.now() < tp) return res.status(409).json({ error: "The tipping point hasn't passed yet" });
+  await db.execute({
+    sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, status = 'awaiting_confirmation' WHERE id = ?`,
+    args: [uid(res), b.id],
   });
   await respondWithBet(res, b.id);
 });

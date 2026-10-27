@@ -186,18 +186,22 @@ describe('bet rules and tipping point', () => {
     await create({ params, guess: iso(Date.now() + 3 * 3_600_000) }).expect(201);
   });
 
-  it('settles automatically after the tipping point, and reminds beforehand', async () => {
-    const t0 = Date.now();
+  async function futureBet(t0: number) {
     const params = { precision: 'minute', allowPast: false, minLeadMinutes: 0 };
     const { body } = await create({ params, guess: iso(t0 + 10 * DAY) }).expect(201);
     await bob.post(`/api/bets/${body.id}/guess`).send({ guess: iso(t0 + 20 * DAY) }).expect(200);
+    return body.id as string;
+  }
 
-    const active = (await ann.get(`/api/bets/${body.id}`)).body;
-    expect(active.status).toBe('active');
+  it('reminds before the tipping point, then asks (rather than assumes) once it has passed', async () => {
+    const t0 = Date.now();
+    const id = await futureBet(t0);
+    const active = (await ann.get(`/api/bets/${id}`)).body;
+    expect(active).toMatchObject({ status: 'active', tippingSoon: false, tippingPassed: false });
     expect(active.tippingPoint).toBeGreaterThan(t0 + 15 * DAY);
-    expect(active.tippingSoon).toBe(false);
+    await ann.post(`/api/bets/${id}/not-happened`).expect(409); // too early to claim
 
-    // ~1 day before the tipping point: the cron sends reminders, once
+    // ~1 day before the tipping point: reminders go out, once
     const before = mails.length;
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(t0 + 14.5 * DAY);
@@ -205,16 +209,45 @@ describe('bet rules and tipping point', () => {
     expect(mails.length - before).toBe(2);
     expect(mails.at(-1)!.text).toMatch(/Tipping point/);
     expect((await request(app).get('/api/cron')).body.remindersSent).toBe(0);
-    expect((await ann.get(`/api/bets/${body.id}`)).body.tippingSoon).toBe(true);
+    expect((await ann.get(`/api/bets/${id}`)).body.tippingSoon).toBe(true);
 
-    // after it: the later guess (Gus) has won, nothing else needed
+    // After it: nothing is settled automatically; both are asked
     vi.setSystemTime(t0 + 16 * DAY);
-    const settled = (await ann.get(`/api/bets/${body.id}`)).body;
-    expect(settled).toMatchObject({ status: 'settled', settledBy: 'tipping_point', winnerId: bobId });
-    const cron = (await request(app).get('/api/cron')).body;
-    expect(cron.resolvedNotices).toBe(1);
-    expect(mails.at(-1)!.text).toMatch(/guaranteed to be closer/);
-    expect((await request(app).get('/api/cron')).body.resolvedNotices).toBe(0);
+    for (const who of [ann, bob]) {
+      expect((await who.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'active', tippingPassed: true, needsMyAction: true });
+    }
+    expect((await request(app).get('/api/cron')).body.passedNotices).toBe(1);
+    expect(mails.at(-1)!.text).toMatch(/If the event happened, enter the result/);
+    expect((await request(app).get('/api/cron')).body.passedNotices).toBe(0);
+  });
+
+  it("settles for the later guess only when both confirm the event hadn't happened", async () => {
+    const t0 = Date.now();
+    const id = await futureBet(t0);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(t0 + 16 * DAY);
+
+    const proposed = (await ann.post(`/api/bets/${id}/not-happened`).expect(200)).body;
+    expect(proposed).toMatchObject({ status: 'awaiting_confirmation', proposalKind: 'not_happened', outcomeProposedByMe: true });
+    await ann.post(`/api/bets/${id}/confirm`).expect(409); // can't confirm your own claim
+    const done = (await bob.post(`/api/bets/${id}/confirm`).expect(200)).body;
+    expect(done).toMatchObject({ status: 'settled', settledBy: 'tipping_point', winnerId: bobId });
+  });
+
+  it('lets the other player dispute "not happened" and enter the real result instead', async () => {
+    const t0 = Date.now();
+    const id = await futureBet(t0);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(t0 + 16 * DAY);
+
+    await ann.post(`/api/bets/${id}/not-happened`).expect(200);
+    expect((await bob.post(`/api/bets/${id}/reject`).expect(200)).body.status).toBe('active');
+
+    // It actually happened on day 11 (before the tipping point), so Fay's day-10 guess was closer
+    await bob.post(`/api/bets/${id}/propose`).send({ outcome: iso(t0 + 11 * DAY) }).expect(200);
+    const done = (await ann.post(`/api/bets/${id}/confirm`).expect(200)).body;
+    expect(done).toMatchObject({ status: 'settled', settledBy: 'outcome' });
+    expect(done.winnerId).not.toBe(bobId);
   });
 
   it('past-allowed bets have no tipping point', async () => {

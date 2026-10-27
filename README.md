@@ -20,11 +20,12 @@ Bets between friends. Closest guess wins, and the prize is always one beer.
 
 ### Tipping point
 
-For a future-dated bet, once the midpoint of the two guesses has passed and the event still hasn't happened, the later guess is closer whatever happens, so the bet settles automatically in its favour (identical guesses draw). Players see the tipping point on the bet, get a heads-up section on the home screen, and (if email is configured) an email about 2 days before and another when it resolves. Notes:
+For a future-dated bet, once the midpoint of the two guesses has passed and the event still hasn't happened, the later guess is closer whatever happens. But the app never assumes the event hadn't happened; the players might just not have entered the result yet. So after the tipping point both are asked:
 
-- It only applies when past dates are *not* allowed. If the event may already have happened, there's nothing to infer.
-- A bet with a pending result proposal is never auto-settled; confirm or reject the proposal first. If the event did happen before the tipping point, enter the result before then.
-- Settlement happens the moment anyone looks at the bet (so it's exact); the daily cron only sends the emails.
+- **It happened:** enter the result as usual (the other player confirms), and the closer guess wins.
+- **It hasn't happened yet:** either player says so and the other confirms, and the later guess wins (identical guesses draw). If the other player disagrees, the bet goes back to in-play and they enter the real result instead.
+
+Players see the tipping point on the bet, a heads-up section on the home screen, and (if email is configured) get an email about 2 days before and another when it has passed. It only applies when past dates are *not* allowed; if the event may already have happened, there's nothing to infer.
 
 Balances are derived from settled bets, so there is no separate ledger to keep in sync.
 
@@ -65,7 +66,7 @@ Resend's free tier needs a verified domain to email anyone other than your own a
 
 ### Reminders cron
 
-`vercel.json` schedules `/api/cron` daily (the most Vercel's free Hobby plan allows). Set `CRON_SECRET` in Vercel and it is sent automatically. For finer-grained reminders, point any free pinger (e.g. cron-job.org) at `/api/cron` with an `Authorization: Bearer <CRON_SECRET>` header.
+`vercel.json` schedules `/api/cron` daily to send the tipping-point emails (the most Vercel's free Hobby plan allows). Set `CRON_SECRET` in Vercel and it is sent automatically. For finer-grained reminders, point any free pinger (e.g. cron-job.org) at `/api/cron` with an `Authorization: Bearer <CRON_SECRET>` header.
 
 ## Layout
 
