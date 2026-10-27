@@ -30,6 +30,15 @@ export default function Profile() {
   const merged = useSearchParams()[0].get('merged');
   const rm = useAction();
 
+  const makePrimary = (e: OwnEmailAddress) => {
+    const note = me.profileName ? '' : ' Until you set a display name, your friends will see this address instead of the old one.';
+    if (!window.confirm(`Make ${e.email} your primary address?${note}`)) return;
+    rm.run(async () => {
+      await api(`/me/emails/${encodeURIComponent(e.email)}/primary`, 'POST');
+      reload();
+    });
+  };
+
   const removeEmail = (e: OwnEmailAddress) => {
     const lines = [`Remove ${e.email} from your account?`];
     if (e.signsInWithPassword) lines.push('You will no longer be able to sign in with this address and your password.');
@@ -114,11 +123,18 @@ export default function Profile() {
                   <strong>{e.email}</strong> <span className="muted small">{e.verified ? '(verified ✓)' : '(not verified)'}</span>
                 </span>
                 {e.primary && <span className="pill">Primary</span>}
+              </div>
+              {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
+              <div className="row row-wrap">
+                {!e.primary && e.verified && (
+                  <button className="btn btn-small btn-secondary" disabled={rm.busy} onClick={() => makePrimary(e)}>
+                    Make primary
+                  </button>
+                )}
                 <button className="btn btn-small btn-secondary" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
                   Remove
                 </button>
               </div>
-              {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
               {e.removeBlocked && <small className="muted">{e.removeBlocked}</small>}
             </div>
           ))}

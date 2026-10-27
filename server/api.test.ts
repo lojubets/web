@@ -738,3 +738,42 @@ describe('removing email addresses', () => {
     await remove(u, 'spare@example.com').expect(200);
   });
 });
+
+describe('choosing the primary address', () => {
+  type Agent = ReturnType<typeof request.agent>;
+  const PW = 'correct horse';
+  const id = async (a: Agent) => (await a.get('/api/me')).body.id as string;
+  const primary = (a: Agent, email: string) => a.post(`/api/me/emails/${encodeURIComponent(email)}/primary`);
+
+  it('makes a verified secondary address the primary one, and friends see it when there is no display name', async () => {
+    const a = await verifiedUser('pm.one@example.com'); // no display name set
+    await verifiedUser('pm.two@example.com');
+    const friend = await login('Pmc');
+    const { body } = await a.post('/api/invitations').send({ email: 'pmc@example.com' });
+    await friend.post(`/api/invitations/token/${body.link.split('/invite/')[1]}/accept`).expect(200);
+
+    await a.post('/api/merge/password').send({ email: 'pm.two@example.com', password: PW }).expect(200);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none', newPassword: 'a brand new password' }).expect(200);
+    expect((await friend.get('/api/friends')).body[0].name).toBe('pm.one@example.com');
+
+    await primary(a, 'pm.two@example.com').expect(200);
+    const me = (await a.get('/api/me')).body;
+    expect(me).toMatchObject({ email: 'pm.two@example.com', emailVerified: true });
+    expect(me.emails.map((e: any) => [e.email, e.primary])).toEqual([['pm.two@example.com', true], ['pm.one@example.com', false]]);
+    expect((await friend.get('/api/friends')).body[0].name).toBe('pm.two@example.com');
+
+    // making the current primary primary again changes nothing; the old one can now be removed
+    await primary(a, 'pm.two@example.com').expect(200);
+    await a.delete(`/api/me/emails/${encodeURIComponent('pm.one@example.com')}`).expect(200);
+  });
+
+  it('refuses an unverified or unknown address, so the account can never be locked out by it', async () => {
+    const u = await verifiedUser('pm.solo@example.com');
+    await db.execute({ sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, 0, ?)', args: [await id(u), 'pm.unverified@example.com', Date.now() + 1] });
+    const res = await primary(u, 'pm.unverified@example.com').expect(409);
+    expect(res.body.error).toMatch(/Verify this address/);
+    await primary(u, 'nobody@example.com').expect(404);
+    expect((await u.get('/api/me')).body).toMatchObject({ email: 'pm.solo@example.com', emailVerified: true });
+    await u.get('/api/friends').expect(200); // still unlocked
+  });
+});

@@ -136,6 +136,18 @@ app.post('/api/me/verify-email', async (_req, res) => {
   res.status(result === 'throttled' ? 429 : 200).json({ result });
 });
 
+// Make a verified address the primary one (the one friends see when there's no display name, and where emails go).
+// It has to be verified: a primary address that isn't would lock the account out of the app.
+app.post('/api/me/emails/:email/primary', async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const email = String(req.params.email).trim().toLowerCase();
+  const entry = me.emails.find((e) => e.email === email);
+  if (!entry) return res.status(404).json({ error: 'That address is not on your account' });
+  if (!entry.verified) return res.status(409).json({ error: 'Verify this address before making it your primary one.' });
+  if (!entry.primary) await db.execute({ sql: 'UPDATE users SET email = ?, email_verified = 1 WHERE id = ?', args: [email, me.id] });
+  res.json({ ok: true });
+});
+
 // Remove an email address from the account. Never the last verified one (or the only way to sign in).
 app.delete('/api/me/emails/:email', async (req, res) => {
   const me = (await getUser(uid(res)))!;
