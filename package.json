@@ -6,7 +6,7 @@
   "description": "Bets between friends. The prize is always one beer.",
   "scripts": {
     "dev": "concurrently -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "tsx watch --env-file-if-exists=.env server/dev.ts",
+    "dev:api": "node --env-file-if-exists=.env --import tsx --watch server/dev.ts",
     "dev:web": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
