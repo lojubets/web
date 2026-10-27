@@ -44,8 +44,8 @@ function DurationField({ value, onChange }: { value: string; onChange: (v: strin
   const seconds = value.trim() ? parseDuration(value) : null;
   return (
     <>
-      <input type="text" placeholder="3:05 or 3 hours 5 minutes" value={value} onChange={(e) => onChange(e.target.value)} required />
-      {value.trim() && <small className={seconds === null ? 'error' : 'muted'}>{seconds === null ? "Can't read that as a duration" : `= ${formatDuration(seconds)}`}</small>}
+      <input type="text" placeholder="e.g. 3:05, 25 days, 12 weeks" value={value} onChange={(e) => onChange(e.target.value)} required />
+      {value.trim() && <small className={seconds === null ? 'error' : 'muted'}>{seconds === null ? "Can't read that as a duration. Try 3:05, 25 days or 3 months and 2 days" : `= ${formatDuration(seconds)}`}</small>}
     </>
   );
 }

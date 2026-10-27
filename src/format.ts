@@ -13,7 +13,7 @@ export function balanceText(name: string, balance: number): string {
 
 /** The rules of a bet as short phrases, e.g. ["Whole numbers only", "At least 0 and less than 10"]. */
 export function describeRules(kind: BetKind, params: BetParams): string[] {
-  if (kind === 'duration') return ['A duration, e.g. 3:05 or 3 hours 5 minutes'];
+  if (kind === 'duration') return ['A duration, e.g. 3:05, 25 days or 3 months and 2 days'];
   if (kind === 'number') {
     const p = params as NumberParams;
     const out = [p.integer ? 'Whole numbers only' : 'Whole or decimal numbers'];

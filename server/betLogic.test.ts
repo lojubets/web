@@ -50,12 +50,30 @@ describe('durations', () => {
     expect(parseDuration('2 days, 4 hours')).toBe(2 * 86400 + 4 * 3600);
     expect(parseDuration('45 sec')).toBe(45);
   });
+  it('parses long durations: days, weeks, months, years', () => {
+    const DAY = 86400;
+    expect(parseDuration('25 days')).toBe(25 * DAY);
+    expect(parseDuration('25days')).toBe(25 * DAY);
+    expect(parseDuration('12 weeks')).toBe(84 * DAY);
+    expect(parseDuration('3 months and 2 days')).toBe(92 * DAY); // a month counts as 30 days
+    expect(parseDuration('1 year')).toBe(365 * DAY);
+    expect(parseDuration('1 year, 2 months and 3 weeks')).toBe((365 + 60 + 21) * DAY);
+    expect(parseDuration('1.5 months')).toBe(45 * DAY);
+    expect(parseDuration('2w 3d')).toBe(17 * DAY);
+    expect(parseDuration('2mo')).toBe(60 * DAY);
+  });
+  it('keeps "m" as minutes, never months', () => {
+    expect(parseDuration('3m')).toBe(180);
+    expect(parseDuration('3 m')).toBe(180);
+    expect(parseDuration('3 months')).toBe(3 * 30 * 86400);
+  });
   it('rejects junk and bare numbers', () => {
-    for (const bad of ['', '90', 'soon', '3:75', '3 parsecs', '5 minutes later']) expect(parseDuration(bad)).toBeNull();
+    for (const bad of ['', '90', 'soon', '3:75', '3 parsecs', '5 minutes later', '150 years']) expect(parseDuration(bad)).toBeNull();
   });
   it('formats', () => {
     expect(formatDuration(11100)).toBe('3 h 5 min');
     expect(formatDuration(0)).toBe('0 min');
+    expect(formatDuration(92 * 86400)).toBe('92 d');
   });
   it('is normalised to seconds and compared by distance', () => {
     expect(guess('duration', {}, '3:05')).toEqual({ ok: true, value: '11100' });

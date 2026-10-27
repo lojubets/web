@@ -95,7 +95,7 @@ export function normalizeAnswer(kind: BetKind, params: BetParams, raw: string, c
 
   if (kind === 'duration') {
     const seconds = parseDuration(text);
-    if (seconds === null) return fail('Enter a duration like 3:05 or "3 hours 5 minutes"');
+    if (seconds === null) return fail('Enter a duration like 3:05, "25 days" or "3 months and 2 days"');
     return { ok: true, value: String(seconds) };
   }
 

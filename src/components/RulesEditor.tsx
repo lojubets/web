@@ -44,7 +44,24 @@ export default function RulesEditor({ kind, rules, onChange }: Props) {
     onChange({ ...EMPTY_RULES });
   }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (kind === 'duration') return <p className="muted small">Answers like <b>3:05</b> or <b>3 hours 5 minutes</b>.</p>;
+  if (kind === 'duration') {
+    return (
+      <div className="card accent stack">
+        <strong>How to write a duration</strong>
+        <ul className="examples">
+          <li><span className="example">3:05</span> 3 hours 5 minutes</li>
+          <li><span className="example">90 minutes</span> or <span className="example">1.5 hours</span></li>
+          <li><span className="example">25 days</span></li>
+          <li><span className="example">12 weeks</span></li>
+          <li><span className="example">3 months and 2 days</span></li>
+        </ul>
+        <p className="muted small">
+          Units: seconds, minutes, hours, days, weeks, months and years (or s, min, h, d, w, mo, y). A month counts as 30 days and a year as
+          365. <b>m</b> means minutes. A bare number needs a unit.
+        </p>
+      </div>
+    );
+  }
 
   if (kind === 'number') {
     return (

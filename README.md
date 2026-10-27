@@ -15,7 +15,7 @@ Bets between friends. Closest guess wins, and the prize is always one lonkero (t
 2. Verify your own email address (automatic for Google/Apple; a confirmation link for email/password and Microsoft accounts), then invite a friend by email. They get a link (emailed if Resend is configured, otherwise you share it). Bets are only possible between connected users.
 3. **Create a bet:** a question, an answer type and your guess. Your guess stays hidden until your friend locks in theirs. Answer types and their rules (applied to both players' guesses):
    - **Number:** whole numbers only or decimals too; optional minimum and maximum, each inclusive or exclusive (negatives are allowed unless the minimum forbids them).
-   - **Duration:** `3:05` (h:mm), `1:02:03`, or `3 hours and 5 minutes`.
+   - **Duration:** `3:05` (h:mm), `1:02:03`, or words like `3 hours and 5 minutes`, `25 days`, `12 weeks`, `3 months and 2 days`. A month counts as 30 days and a year as 365; `m` means minutes.
    - **Date or time:** date or date-and-time; whether past dates are allowed; and a minimum lead time ("at least now + 2 hours", checked when each player guesses).
 4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one lonkero; equal distance is a draw.
 5. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
