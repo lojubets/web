@@ -257,8 +257,9 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     otherUserId: other,
     iAmCreator,
     myGuess,
-    // The creator's guess stays secret until the opponent has locked in theirs.
-    theirGuess: !iAmCreator && b.status === 'awaiting_guess' ? null : theirGuess,
+    // Guesses stay secret until both players have locked theirs in. This is the only place guesses leave the
+    // server, and nothing derived from both of them (tipping point, verdicts) is exposed before that either.
+    theirGuess: b.opponent_guess === null ? null : theirGuess,
     outcome: b.outcome,
     outcomeProposedByMe: b.outcome_proposed_by ? b.outcome_proposed_by === me : null,
     winnerId: b.winner_id,

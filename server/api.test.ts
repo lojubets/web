@@ -256,3 +256,39 @@ describe('bet rules and tipping point', () => {
     expect((await ann.get(`/api/bets/${body.id}`)).body.tippingPoint).toBeNull();
   });
 });
+
+describe('guess secrecy', () => {
+  it("nobody sees the other's guess, or anything derived from it, until both have locked in", async () => {
+    const ann = await login('Hal');
+    const bob = await login('Ivy');
+    const bobId = (await bob.get('/api/me')).body.id;
+    const annId = (await ann.get('/api/me')).body.id;
+    const { body: inv } = await ann.post('/api/invitations').send({ email: 'ivy@example.com' });
+    await bob.post(`/api/invitations/token/${inv.link.split('/invite/')[1]}/accept`).expect(200);
+
+    const secret = '4242.5';
+    const created = (await ann.post('/api/bets').send({ opponentId: bobId, question: 'Secret numbers', kind: 'number', guess: secret }).expect(201)).body;
+
+    // Before Ivy locks in: she must not get Hal's guess from the detail or list endpoints, in any field
+    for (const path of [`/api/bets/${created.id}`, '/api/bets', `/api/bets?with=${annId}`]) {
+      const res = await bob.get(path).expect(200);
+      if (path !== `/api/bets/${created.id}`) expect(res.body).toHaveLength(1); // the bet is really in the response
+      expect(JSON.stringify(res.body)).not.toContain(secret);
+    }
+    expect((await bob.get(`/api/bets/${created.id}`)).body).toMatchObject({ myGuess: null, theirGuess: null });
+    // Hal sees only his own
+    expect((await ann.get(`/api/bets/${created.id}`)).body).toMatchObject({ myGuess: secret, theirGuess: null });
+
+    // Ivy can't change anything about Hal's guess, and a failed guess reveals nothing either
+    const bad = await bob.post(`/api/bets/${created.id}/guess`).send({ guess: 'nope' }).expect(400);
+    expect(JSON.stringify(bad.body)).not.toContain(secret);
+
+    // Once both have locked in, both see both
+    await bob.post(`/api/bets/${created.id}/guess`).send({ guess: '7' }).expect(200);
+    expect((await bob.get(`/api/bets/${created.id}`)).body).toMatchObject({ myGuess: '7', theirGuess: secret });
+    expect((await ann.get(`/api/bets/${created.id}`)).body).toMatchObject({ myGuess: secret, theirGuess: '7' });
+
+    // A guess is final
+    await bob.post(`/api/bets/${created.id}/guess`).send({ guess: '8' }).expect(409);
+  });
+});
