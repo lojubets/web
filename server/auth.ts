@@ -1,4 +1,5 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, scrypt, timingSafeEqual } from 'node:crypto';
+import { promisify } from 'node:util';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { SignJWT, jwtVerify, createRemoteJWKSet, importPKCS8, type JWTPayload } from 'jose';
 import { z } from 'zod';
@@ -150,6 +151,24 @@ async function findOrCreateUser(opts: {
   return userId;
 }
 
+// ---------- passwords ----------
+
+const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
+
+async function hashPassword(pw: string): Promise<string> {
+  const salt = randomBytes(16);
+  return `${salt.toString('hex')}:${(await scryptAsync(pw, salt, 64)).toString('hex')}`;
+}
+
+async function checkPassword(pw: string, stored: string): Promise<boolean> {
+  const [salt, hash] = stored.split(':');
+  const expected = Buffer.from(hash, 'hex');
+  return timingSafeEqual(await scryptAsync(pw, Buffer.from(salt, 'hex'), expected.length), expected);
+}
+
+// Compared against when the email is unknown, so timing doesn't reveal which emails exist.
+const dummyHash = hashPassword('not-a-real-password');
+
 // ---------- routes ----------
 
 function safeNext(next: unknown): string {
@@ -175,6 +194,44 @@ authRouter.post('/dev', async (req, res) => {
     linkByEmail: true,
   });
   await startSession(res, userId);
+  res.json({ ok: true });
+});
+
+const credentials = z.object({ email: z.email(), password: z.string().min(8).max(200) });
+
+authRouter.post('/register', async (req, res) => {
+  const body = credentials.extend({ name: z.string().trim().min(1).max(60) }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Enter your name, a valid email and a password of at least 8 characters' });
+  const email = body.data.email.trim().toLowerCase();
+  const taken = await db.execute({ sql: `SELECT 1 FROM identities WHERE provider = 'password' AND subject = ?`, args: [email] });
+  if (taken.rows.length) return res.status(409).json({ error: 'That email is already registered. Try signing in.' });
+  // Emails are not verified for password accounts (no mail service required), so never link or match on them.
+  const userId = randomUUID();
+  await db.batch(
+    [
+      { sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, 0, ?, ?)', args: [userId, email, body.data.name, Date.now()] },
+      { sql: `INSERT INTO identities (provider, subject, user_id) VALUES ('password', ?, ?)`, args: [email, userId] },
+      { sql: 'INSERT INTO credentials (user_id, password_hash) VALUES (?, ?)', args: [userId, await hashPassword(body.data.password)] },
+    ],
+    'write',
+  );
+  await startSession(res, userId);
+  res.status(201).json({ ok: true });
+});
+
+authRouter.post('/login', async (req, res) => {
+  const body = credentials.safeParse(req.body);
+  const bad = () => res.status(401).json({ error: 'Wrong email or password' });
+  if (!body.success) return bad();
+  const r = await db.execute({
+    sql: `SELECT i.user_id, c.password_hash FROM identities i JOIN credentials c ON c.user_id = i.user_id
+          WHERE i.provider = 'password' AND i.subject = ?`,
+    args: [body.data.email.trim().toLowerCase()],
+  });
+  const found = r.rows[0] as unknown as { user_id: string; password_hash: string } | undefined;
+  const ok = await checkPassword(body.data.password, found?.password_hash ?? (await dummyHash));
+  if (!found || !ok) return bad();
+  await startSession(res, found.user_id);
   res.json({ ok: true });
 });
 

@@ -24,6 +24,10 @@ const schema = [
     user_id TEXT NOT NULL,
     PRIMARY KEY (provider, subject)
   )`,
+  `CREATE TABLE IF NOT EXISTS credentials (
+    user_id TEXT PRIMARY KEY,
+    password_hash TEXT NOT NULL
+  )`,
   // user_a < user_b always, so each pair is stored once
   `CREATE TABLE IF NOT EXISTS connections (
     user_a TEXT NOT NULL,

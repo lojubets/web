@@ -5,7 +5,7 @@ Bets between friends. Closest guess wins, and the prize is always one beer.
 - **Frontend:** React + TypeScript (Vite), mobile-first
 - **Backend:** Express + TypeScript, served as a single Vercel serverless function under `/api`
 - **Database:** libSQL (a local SQLite file in dev, free [Turso](https://turso.tech) in production)
-- **Auth:** Google, Microsoft and Apple sign-in (OIDC, implemented in `server/auth.ts`, no auth SaaS)
+- **Auth:** email/password, plus Google, Microsoft and Apple sign-in (OIDC, implemented in `server/auth.ts`, no auth SaaS)
 
 ## How it works
 

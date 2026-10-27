@@ -91,3 +91,21 @@ describe('bets between friends', () => {
     expect(body.status).toBe('active');
   });
 });
+
+describe('email/password accounts', () => {
+  const creds = { name: 'Cy', email: 'Cy@Example.com', password: 'correct horse' };
+
+  it('registers, signs in, and rejects bad credentials', async () => {
+    const a = request.agent(app);
+    await a.post('/api/auth/register').send(creds).expect(201);
+    expect((await a.get('/api/me')).body.name).toBe('Cy');
+    await request(app).post('/api/auth/register').send(creds).expect(409);
+    await request(app).post('/api/auth/register').send({ ...creds, email: 'x@example.com', password: 'short' }).expect(400);
+
+    const b = request.agent(app);
+    await b.post('/api/auth/login').send({ email: 'cy@example.com', password: 'wrong password' }).expect(401);
+    await b.post('/api/auth/login').send({ email: 'nobody@example.com', password: 'correct horse' }).expect(401);
+    await b.post('/api/auth/login').send({ email: 'cy@example.com', password: creds.password }).expect(200);
+    expect((await b.get('/api/me')).body.name).toBe('Cy');
+  });
+});

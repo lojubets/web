@@ -11,8 +11,11 @@ export default function Login() {
   const next = params.get('next') ?? '/';
   const { data: config } = useFetch<AppConfig>('/config');
   const { busy, error, run } = useAction();
+  const pw = useAction();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [mode, setMode] = useState<'login' | 'register'>('login');
 
   return (
     <div className="page login">
@@ -32,6 +35,34 @@ export default function Login() {
           <p className="muted center">No sign-in providers are configured yet.</p>
         )}
       </div>
+      <form
+        className="card stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          pw.run(async () => {
+            await api(mode === 'login' ? '/auth/login' : '/auth/register', 'POST', { name, email, password });
+            location.href = next;
+          });
+        }}
+      >
+        <strong>{mode === 'login' ? 'Sign in with email' : 'Create an account'}</strong>
+        {mode === 'register' && <input placeholder="Name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />}
+        <input type="email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <input
+          type="password"
+          placeholder={mode === 'register' ? 'Password (min 8 characters)' : 'Password'}
+          autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+          minLength={8}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+        />
+        <button className="btn" disabled={pw.busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
+        {pw.error && <p className="error">{pw.error}</p>}
+        <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
+          {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
+        </button>
+      </form>
       {config?.devLogin && (
         <form
           className="card stack"
