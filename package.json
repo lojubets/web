@@ -5,9 +5,12 @@
   "type": "module",
   "description": "Bets between friends. The prize is always one beer.",
   "scripts": {
-    "dev": "concurrently -n api,web -c yellow,cyan \"npm:dev:api\" \"npm:dev:web\"",
-    "dev:api": "node --env-file-if-exists=.env --import tsx --watch server/dev.ts",
-    "dev:web": "vite",
+    "dev": "npm run dev:local",
+    "dev:local": "concurrently -n api,web -c yellow,cyan \"npm:api:local\" \"npm:web\"",
+    "dev:cloud": "concurrently -n api,web -c yellow,cyan \"npm:api:cloud\" \"npm:web\"",
+    "api:local": "node --env-file-if-exists=.env.local --import tsx --watch server/dev.ts",
+    "api:cloud": "node --env-file=.env.cloud --import tsx --watch server/dev.ts",
+    "web": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run"

@@ -33,13 +33,39 @@ Balances are derived from settled bets, so there is no separate ledger to keep i
 
 ```bash
 npm install
-npm run dev      # web on :5173 (proxies /api to the API on :3001)
 npm test
 ```
 
-With no OAuth credentials configured, the login page shows a **dev login** form (never available in production). Use two browsers/profiles to play both sides.
+There are two ways to run the app on your machine. Each reads its own dotenv file, and both serve the web app on :5173 (proxying `/api` to the API on :3001).
 
-Copy `.env.example` to `.env` to configure anything else; `npm run dev` loads it automatically (restart it after editing).
+| | `npm run dev` / `npm run dev:local` | `npm run dev:cloud` |
+| --- | --- | --- |
+| Database | SQLite file `local.db`, fully offline | a Turso database |
+| Config file | `.env.local` (optional) | `.env.cloud` (required) |
+| Template | `.env.local.example` | `.env.cloud.example` |
+| Sign-in | dev login form (no OAuth needed), email/password | email/password and real providers; dev login is off unless `DEV_LOGIN=on` |
+
+**Local** works with zero setup: just `npm run dev`. Use two browsers/profiles to play both sides. Copy `.env.local.example` to `.env.local` if you want to try real providers or email.
+
+**Cloud** needs `.env.cloud` (copy the template and fill in `DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `SESSION_SECRET`; see [Turso](#deploy-vercel-hobby-0) below for where they come from). Point it at a *separate* Turso database such as `lojubets-dev`, not production; the free tier allows plenty. The app refuses to start with a `libsql://` URL and no token.
+
+Restart after editing a dotenv file. Variables already set in your shell win over the file. Both files are git-ignored.
+
+## Production
+
+Production does **not** use a dotenv file. Vercel stores the variables you configure and hands them to the function as ordinary environment variables (`process.env`), which is where the app reads everything. Set them in the Vercel dashboard (Project → Settings → Environment Variables) or with `vercel env add <NAME> production`, then redeploy.
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | Turso `libsql://…` URL. A `file:` URL is rejected in production. |
+| `DATABASE_AUTH_TOKEN` | yes | Turso token |
+| `SESSION_SECRET` | yes | long random string |
+| `APP_URL` | yes | your public URL, e.g. `https://lojubets.vercel.app` (falls back to Vercel's production URL) |
+| `CRON_SECRET` | yes | protects `/api/cron`; Vercel Cron sends it automatically |
+| `GOOGLE_*`, `MICROSOFT_*`, `APPLE_*` | per provider | see [Sign-in providers](#sign-in-providers) |
+| `RESEND_API_KEY`, `RESEND_FROM` | optional | see [Email](#email-invitations-and-verification) |
+
+The dev login is never available in production, whatever `DEV_LOGIN` says. Watch out: `vercel env pull` writes to `.env.local` by default, which would silently switch your local mode to those values. Use `vercel env pull .env.cloud` instead if you want that.
 
 ## Deploy (Vercel Hobby, $0)
 
@@ -60,8 +86,8 @@ Copy `.env.example` to `.env` to configure anything else; `npm run dev` loads it
    | `DATABASE_URL` | `file:local.db` (the default; a SQLite file in the project folder) | the `libsql://…turso.io` URL from `turso db show --url` |
    | `DATABASE_AUTH_TOKEN` | not needed, leave empty | the token from `turso db tokens create` |
 
-   A `libsql://` URL without the token fails with an authentication error. The token is a secret: put it in Vercel's environment variables, never in git. To try Turso locally, use the same two values in your `.env`.
-3. Import the repo in Vercel and set the remaining env vars from `.env.example`: `SESSION_SECRET`, `APP_URL`, `CRON_SECRET`, plus provider credentials.
+   A `libsql://` URL without the token fails with an authentication error. The token is a secret: put it in Vercel's environment variables, never in git. To try Turso from your machine, put the same two values in `.env.cloud` and run `npm run dev:cloud`.
+3. Import the repo in Vercel and set the [production variables](#production) above.
 4. Register the redirect URI `APP_URL/api/auth/<google|microsoft|apple>/callback` with each provider.
 
 ### Sign-in providers
