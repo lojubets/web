@@ -1,5 +1,12 @@
 import request from 'supertest';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it, vi } from 'vitest';
+
+const mails: { to: string; text: string }[] = [];
+vi.mock('./email.js', () => ({
+  mailConfigured: () => true,
+  sendMail: async (to: string, _subject: string, text: string) => (mails.push({ to, text }), true),
+  sendInviteEmail: async () => false,
+}));
 import app from './app.js';
 
 const login = async (name: string) => {
@@ -107,5 +114,28 @@ describe('email/password accounts', () => {
     await b.post('/api/auth/login').send({ email: 'nobody@example.com', password: 'correct horse' }).expect(401);
     await b.post('/api/auth/login').send({ email: 'cy@example.com', password: creds.password }).expect(200);
     expect((await b.get('/api/me')).body.name).toBe('Cy');
+  });
+});
+
+describe('email verification', () => {
+  const tokenFrom = (to: string) => mails.filter((m) => m.to === to).at(-1)!.text.match(/token=([\w-]+)/)![1];
+
+  it('verifies a password account, unlocking email-matched invitations', async () => {
+    const inviter = await login('Dee');
+    const eve = request.agent(app);
+    await eve.post('/api/auth/register').send({ name: 'Eve', email: 'eve@example.com', password: 'hunter2hunter2' }).expect(201);
+    expect((await eve.get('/api/me')).body.emailVerified).toBe(false);
+
+    await inviter.post('/api/invitations').send({ email: 'eve@example.com' }).expect(201);
+    expect((await eve.get('/api/invitations')).body.received).toHaveLength(0); // unverified: not matched
+
+    const token = tokenFrom('eve@example.com'); // sent automatically at registration
+    await eve.post('/api/me/verify-email').expect(429); // resend is throttled
+    await request(app).post('/api/auth/verify-email').send({ token: 'bogus' }).expect(400);
+    await request(app).post('/api/auth/verify-email').send({ token }).expect(200);
+    await request(app).post('/api/auth/verify-email').send({ token }).expect(400); // single use
+
+    expect((await eve.get('/api/me')).body.emailVerified).toBe(true);
+    expect((await eve.get('/api/invitations')).body.received).toHaveLength(1);
   });
 });

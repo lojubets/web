@@ -5,6 +5,7 @@ import { SignJWT, jwtVerify, createRemoteJWKSet, importPKCS8, type JWTPayload } 
 import { z } from 'zod';
 import { db } from './db.js';
 import { env } from './env.js';
+import { consumeVerification, sendVerification } from './verification.js';
 
 type ProviderId = 'google' | 'microsoft' | 'apple';
 
@@ -121,14 +122,15 @@ async function findOrCreateUser(opts: {
   emailVerified: boolean;
   name?: string | null;
   linkByEmail: boolean;
-}): Promise<string> {
+}): Promise<{ userId: string; created: boolean }> {
   const existing = await db.execute({
     sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?',
     args: [opts.provider, opts.subject],
   });
-  if (existing.rows.length) return existing.rows[0].user_id as string;
+  if (existing.rows.length) return { userId: existing.rows[0].user_id as string, created: false };
 
   let userId: string | undefined;
+  let created = false;
   if (opts.linkByEmail && opts.email && opts.emailVerified) {
     const byEmail = await db.execute({
       sql: 'SELECT id FROM users WHERE lower(email) = lower(?) AND email_verified = 1',
@@ -138,6 +140,7 @@ async function findOrCreateUser(opts: {
   }
   if (!userId) {
     userId = randomUUID();
+    created = true;
     const name = opts.name?.trim() || opts.email?.split('@')[0] || 'Friend';
     await db.execute({
       sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, ?, ?, ?)',
@@ -148,7 +151,7 @@ async function findOrCreateUser(opts: {
     sql: 'INSERT INTO identities (provider, subject, user_id) VALUES (?, ?, ?)',
     args: [opts.provider, opts.subject, userId],
   });
-  return userId;
+  return { userId, created };
 }
 
 // ---------- passwords ----------
@@ -185,7 +188,7 @@ authRouter.post('/dev', async (req, res) => {
   const body = z.object({ name: z.string().min(1), email: z.email() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'name and email required' });
   const { name, email } = body.data;
-  const userId = await findOrCreateUser({
+  const { userId } = await findOrCreateUser({
     provider: 'dev',
     subject: email.toLowerCase(),
     email,
@@ -216,6 +219,7 @@ authRouter.post('/register', async (req, res) => {
     'write',
   );
   await startSession(res, userId);
+  await sendVerification(userId).catch(() => undefined);
   res.status(201).json({ ok: true });
 });
 
@@ -232,6 +236,12 @@ authRouter.post('/login', async (req, res) => {
   const ok = await checkPassword(body.data.password, found?.password_hash ?? (await dummyHash));
   if (!found || !ok) return bad();
   await startSession(res, found.user_id);
+  res.json({ ok: true });
+});
+
+authRouter.post('/verify-email', async (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  if (!token || !(await consumeVerification(token))) return res.status(400).json({ error: 'This link is invalid or has expired. Request a new one from your profile.' });
   res.json({ ok: true });
 });
 
@@ -310,7 +320,7 @@ async function handleCallback(req: Request, res: Response) {
     }
     const email = (payload.email as string | undefined) ?? null;
     const trusted = p.trustsEmail(payload);
-    const userId = await findOrCreateUser({
+    const { userId, created } = await findOrCreateUser({
       provider: providerId,
       subject: payload.sub!,
       email,
@@ -319,6 +329,8 @@ async function handleCallback(req: Request, res: Response) {
       linkByEmail: trusted,
     });
     await startSession(res, userId);
+    // Providers whose email we can't trust (Microsoft) get a confirmation link on first sign-in.
+    if (created && email && !trusted) await sendVerification(userId).catch(() => undefined);
     res.redirect(`${env.appUrl}${safeNext(flow.next)}`);
   } catch (e) {
     console.error('OAuth callback failed', e);

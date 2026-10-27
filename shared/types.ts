@@ -16,6 +16,7 @@ export interface UserSummary {
 
 export interface Me extends UserSummary {
   email: string | null;
+  emailVerified: boolean;
 }
 
 export interface Friend extends UserSummary {

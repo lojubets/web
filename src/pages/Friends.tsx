@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import type { Friend, Invitation } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
+import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { balanceText } from '../format';
 import { useAction, useFetch } from '../hooks';
 
@@ -30,6 +31,7 @@ export default function Friends() {
   return (
     <>
       <header className="header"><h1>Friends</h1></header>
+      <VerifyEmailBanner />
 
       {invites.data?.received.length ? (
         <section>

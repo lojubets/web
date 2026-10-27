@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
+import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useMe } from '../hooks';
 
 /** Crops to a centred square and downsizes so the avatar stays a few KB. */
@@ -23,6 +24,7 @@ export default function Profile() {
   return (
     <>
       <header className="header"><h1>Profile</h1></header>
+      <VerifyEmailBanner />
       <div className="profile-head">
         <button className="avatar-btn" onClick={() => file.current?.click()} aria-label="Change profile picture">
           <Avatar user={me} size={96} />
@@ -63,7 +65,7 @@ export default function Profile() {
           <span>Display name</span>
           <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} required />
         </label>
-        {me.email && <p className="muted small">Signed in as {me.email}</p>}
+        {me.email && <p className="muted small">Signed in as {me.email}{me.emailVerified ? ' ✓' : ''}</p>}
         <button className="btn" disabled={act.busy || name.trim() === me.name}>{saved ? 'Saved ✓' : 'Save'}</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>

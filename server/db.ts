@@ -28,6 +28,13 @@ const schema = [
     user_id TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS email_verifications (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
   // user_a < user_b always, so each pair is stored once
   `CREATE TABLE IF NOT EXISTS connections (
     user_a TEXT NOT NULL,

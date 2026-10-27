@@ -1,21 +1,28 @@
 import { env } from './env.js';
 
+export const mailConfigured = () => !!env.resendApiKey;
+
 /** Sends via Resend if configured. Returns whether an email was actually sent. */
-export async function sendInviteEmail(to: string, inviterName: string, link: string): Promise<boolean> {
-  if (!env.resendApiKey) return false;
+export async function sendMail(to: string, subject: string, text: string): Promise<boolean> {
+  if (!env.resendApiKey) {
+    if (!env.isProd) console.log(`\n[mail not configured] To: ${to}\nSubject: ${subject}\n${text}\n`);
+    return false;
+  }
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${env.resendApiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: env.resendFrom,
-        to,
-        subject: `${inviterName} wants to bet you a beer 🍺`,
-        text: `${inviterName} invited you to Lojubets, where friends settle disputes one beer at a time.\n\nAccept the invitation: ${link}`,
-      }),
+      body: JSON.stringify({ from: env.resendFrom, to, subject, text }),
     });
     return res.ok;
   } catch {
     return false;
   }
 }
+
+export const sendInviteEmail = (to: string, inviterName: string, link: string) =>
+  sendMail(
+    to,
+    `${inviterName} wants to bet you a beer 🍺`,
+    `${inviterName} invited you to Lojubets, where friends settle disputes one beer at a time.\n\nAccept the invitation: ${link}`,
+  );

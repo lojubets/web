@@ -8,6 +8,7 @@ import { balanceFor, decide, normalizeValue } from './betLogic.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
 import { env } from './env.js';
+import { sendVerification } from './verification.js';
 
 const app = express();
 app.use(express.json({ limit: '600kb' }));
@@ -77,8 +78,13 @@ async function connect(a: string, b: string) {
 
 app.get('/api/me', async (_req, res) => {
   const u = (await getUser(uid(res)))!;
-  const me: Me = { id: u.id, name: u.name, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email };
+  const me: Me = { id: u.id, name: u.name, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified };
   res.json(me);
+});
+
+app.post('/api/me/verify-email', async (_req, res) => {
+  const result = await sendVerification(uid(res));
+  res.status(result === 'throttled' ? 429 : 200).json({ result });
 });
 
 app.put('/api/me', async (req, res) => {

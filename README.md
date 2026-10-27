@@ -40,14 +40,17 @@ Copy `.env.example` to `.env` to configure anything else (Node doesn't load it a
 | Provider | Cost | Notes |
 | --- | --- | --- |
 | Google | free | Google Cloud Console → OAuth client (Web). |
-| Microsoft | free | Entra ID app registration, supported accounts "any org + personal". Personal accounts' email isn't verified by Microsoft, so those users are matched to invitations via the invite link rather than their email. |
+| Microsoft | free | Entra ID app registration, supported accounts "any org + personal". Microsoft's email claim isn't trustworthy, so these accounts (like email/password ones) start unverified and confirm their address via an emailed link. |
 | Apple | **$99/year** | Requires an Apple Developer Program membership (Services ID + Sign in with Apple key). This is the one part that can't be free. Leave the `APPLE_*` vars unset to hide the button. |
 
 Each button appears only when its credentials are set.
 
-### Invitation emails
+### Email (invitations and verification)
 
-Resend's free tier needs a verified domain to email anyone other than your own address. Without `RESEND_API_KEY` the app creates the invitation and offers a share link (native share sheet on phones), which works fine for a handful of friends.
+Email/password and Microsoft accounts must verify their address (a one-time link, valid 24h, hashed at rest) before they can receive email-matched invitations or be linked to a Google/Apple account. Invite links work regardless.
+
+
+Resend's free tier needs a verified domain to email anyone other than your own address. Without `RESEND_API_KEY`, verification emails can't be delivered (in dev the link is printed to the API console), and the app creates invitations with a share link instead (native share sheet on phones), which works fine for a handful of friends.
 
 ## Layout
 

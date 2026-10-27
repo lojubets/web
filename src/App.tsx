@@ -12,6 +12,7 @@ import InviteLanding from './pages/InviteLanding';
 import Login from './pages/Login';
 import NewBet from './pages/NewBet';
 import Profile from './pages/Profile';
+import VerifyEmail from './pages/VerifyEmail';
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = loading
@@ -30,6 +31,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={me ? <Navigate to="/" replace /> : <Login />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} />} />
       <Route
         element={
