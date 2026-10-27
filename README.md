@@ -39,7 +39,7 @@ npm test
 
 With no OAuth credentials configured, the login page shows a **dev login** form (never available in production). Use two browsers/profiles to play both sides.
 
-Copy `.env.example` to `.env` to configure anything else (Node doesn't load it automatically, e.g. `node --env-file=.env`; `tsx watch --env-file=.env` works for the API).
+Copy `.env.example` to `.env` to configure anything else; `npm run dev` loads it automatically (restart it after editing).
 
 ## Deploy (Vercel Hobby, $0)
 
