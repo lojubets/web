@@ -35,5 +35,5 @@ export const env = {
   // The dev login can sign in as any email, so against a remote database it must be asked for explicitly.
   devLogin: !isProd && (localDatabase ? process.env.DEV_LOGIN !== 'off' : process.env.DEV_LOGIN === 'on'),
   resendApiKey: process.env.RESEND_API_KEY,
-  resendFrom: process.env.RESEND_FROM || 'Lojubets <onboarding@resend.dev>',
+  resendFrom: process.env.RESEND_FROM || 'LoJuBets <onboarding@resend.dev>',
 };

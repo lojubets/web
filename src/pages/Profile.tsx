@@ -61,7 +61,7 @@ export default function Profile() {
       )}
       {me.email && !me.emailVerified && (
         <div className="card accent stack">
-          <h2>Welcome to Lojubets!</h2>
+          <h2>Welcome to LoJuBets!</h2>
           <span>
             Once you've verified your email address, you can connect with friends and wage bets. Until then, this profile page is all there is.
             You can set your display name and picture in the meantime.
