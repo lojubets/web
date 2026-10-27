@@ -160,6 +160,17 @@ export default function Profile() {
       >
         Sign out
       </button>
+      <button
+        className="btn btn-secondary"
+        onClick={async () => {
+          if (!confirm('Sign out on every device, including this one?')) return;
+          await api('/auth/logout-everywhere', 'POST');
+          await api('/auth/logout', 'POST');
+          location.href = '/login';
+        }}
+      >
+        Sign out everywhere
+      </button>
     </>
   );
 }

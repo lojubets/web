@@ -43,6 +43,12 @@ const schema = [
     user_id TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL
   )`,
+  // Fixed-window counters for login throttling; one row per key, shared by every serverless instance.
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS email_verifications (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -97,6 +103,9 @@ async function migrate() {
   if (!cols.includes('settled_by')) await db.execute('ALTER TABLE bets ADD COLUMN settled_by TEXT');
   // What a pending proposal says: 'outcome' | 'not_happened' | 'tie' (older rows: inferred from outcome)
   if (!cols.includes('proposal')) await db.execute('ALTER TABLE bets ADD COLUMN proposal TEXT');
+  // Bumping this signs the account out everywhere: session tokens carry the version they were issued under.
+  const userCols = (await db.execute('PRAGMA table_info(users)')).rows.map((r) => r.name);
+  if (!userCols.includes('session_version')) await db.execute('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
   // 'date' bets became 'instant' bets with day precision and no restrictions
   await db.execute(`UPDATE bets SET kind = 'instant', params = '{"precision":"day","allowPast":true,"minLeadMinutes":0}' WHERE kind = 'date'`);
   await db.execute(`UPDATE bets SET settled_by = 'outcome' WHERE status = 'settled' AND settled_by IS NULL`);

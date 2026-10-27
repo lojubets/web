@@ -1,5 +1,5 @@
 import request from 'supertest';
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mails: { to: string; text: string }[] = [];
 vi.mock('./email.js', () => ({
@@ -9,6 +9,11 @@ vi.mock('./email.js', () => ({
 }));
 import app from './app.js';
 import { db } from './db.js';
+
+// Every request comes from the same address, so start each test with fresh throttling counters.
+beforeEach(async () => {
+  await db.execute('DELETE FROM rate_limits').catch(() => undefined);
+});
 
 /** Registers with email/password and completes verification via the emailed link. */
 const verifiedUser = async (email: string) => {
@@ -596,7 +601,7 @@ describe('merging accounts', () => {
   it('a ticket only works for the account it was issued to', async () => {
     const a = await verifiedUser('una@example.com');
     const b = await verifiedUser('una.alt@example.com');
-    const cookies = (res: { headers: Record<string, any> }) => (res.headers['set-cookie'] as string[]).map((c) => c.split(';')[0]);
+    const cookies = (res: { headers: Record<string, any> }) => (res.headers['set-cookie'] as unknown as string[]).map((c) => c.split(';')[0]);
 
     const ticket = cookies(await merge(a, { email: 'una.alt@example.com' }).expect(200));
     const intruder = cookies(await request(app).post('/api/auth/dev').send({ name: 'Uma', email: 'uma@example.com' }).expect(200));
@@ -775,5 +780,60 @@ describe('choosing the primary address', () => {
     await primary(u, 'nobody@example.com').expect(404);
     expect((await u.get('/api/me')).body).toMatchObject({ email: 'pm.solo@example.com', emailVerified: true });
     await u.get('/api/friends').expect(200); // still unlocked
+  });
+});
+
+describe('session security', () => {
+  const cookieOf = (res: { headers: Record<string, any> }) => (res.headers['set-cookie'] as unknown as string[]).find((c) => c.startsWith('session='))!.split(';')[0];
+
+  it('signs out every session on "sign out everywhere", keeping the calling browser signed in', async () => {
+    const first = await login('Sess');
+    const second = await login('Sess');
+    await first.get('/api/me').expect(200);
+    await first.post('/api/auth/logout-everywhere').expect(200);
+    await first.get('/api/me').expect(200);
+    await second.get('/api/me').expect(401);
+  });
+
+  it('does not accept another kind of token as a session', async () => {
+    const a = request.agent(app);
+    const r = await a.post('/api/auth/dev').send({ name: 'Typ', email: 'typ@example.com' }).expect(200);
+    const forged = r.headers['set-cookie'] as unknown as string[];
+    expect(forged.some((c) => c.startsWith('session='))).toBe(true);
+    // a merge ticket is signed with the same key but must not work as a session
+    const m = await a.post('/api/merge/dev').send({ email: 'sess@example.com' }).expect(200);
+    const ticket = (m.headers['set-cookie'] as unknown as string[]).find((c) => c.startsWith('merge='))!.split(';')[0].replace('merge=', 'session=');
+    await request(app).get('/api/me').set('Cookie', ticket).expect(401);
+  });
+
+  it('renews an old session and enforces the absolute maximum', async () => {
+    const { SignJWT } = await import('jose');
+    const key = new TextEncoder().encode('test-secret');
+    const id = (await (await login('Renew')).get('/api/me')).body.id as string;
+    const token = (iat: number, auth: number) =>
+      new SignJWT({ typ: 'session', ver: 0, auth }).setProtectedHeader({ alg: 'HS256' }).setSubject(id).setIssuedAt(iat).setExpirationTime(Math.floor(Date.now() / 1000) + 3600).sign(key);
+    const now = Math.floor(Date.now() / 1000);
+    const stale = await request(app).get('/api/me').set('Cookie', `session=${await token(now - 2 * 86_400, now - 2 * 86_400)}`).expect(200);
+    expect(cookieOf(stale)).toMatch(/^session=/); // re-issued
+    const fresh = await request(app).get('/api/me').set('Cookie', `session=${await token(now, now)}`).expect(200);
+    expect(fresh.headers['set-cookie']).toBeUndefined();
+    await request(app).get('/api/me').set('Cookie', `session=${await token(now, now - 181 * 86_400)}`).expect(401);
+  });
+
+  it('refuses cross-site state changes but allows same-origin ones', async () => {
+    const a = await login('Csrf');
+    await a.post('/api/auth/logout-everywhere').set('Origin', 'https://evil.example').expect(403);
+    await a.post('/api/auth/logout-everywhere').set('Sec-Fetch-Site', 'cross-site').expect(403);
+    await a.post('/api/auth/logout-everywhere').set('Origin', 'http://127.0.0.1').set('Host', '127.0.0.1').expect(200);
+  });
+
+  it('only offers the dev login to localhost', async () => {
+    await request(app).post('/api/auth/dev').set('Host', 'bets.example.com').send({ name: 'X', email: 'x@example.com' }).expect(404);
+  });
+
+  it('throttles repeated password guesses for one email', async () => {
+    let last = 0;
+    for (let i = 0; i < 12; i++) last = (await request(app).post('/api/auth/login').send({ email: 'victim@example.com', password: 'wrong password' })).status;
+    expect(last).toBe(429);
   });
 });

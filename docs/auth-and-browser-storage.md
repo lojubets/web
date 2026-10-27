@@ -4,6 +4,12 @@ State of the code as of `main` at commit `9f5a039`. Everything below was read fr
 `server/merge.ts`, `server/env.ts`, `server/verification.ts`, `src/api.ts`, `src/pages/Login.tsx` and friends.
 Section 7 onwards is assessment and recommendation; sections 1–6 are description only.
 
+> ## Status of this document
+>
+> Sections 1–6 and the "Findings" below describe the code **as it was on `main` at `9f5a039`**. The same PR then
+> fixed most of the findings; §10 lists what changed and what is still open. Where §1–§6 say "no X", read §10 for the
+> current state.
+
 > ## ⚠️ Findings that deserve attention first
 >
 > 1. **DOM XSS / open redirect via `?next=` on the login page** (`src/pages/Login.tsx:10,37,78`). `next` is read straight
@@ -240,3 +246,26 @@ sessions can come later.
 3. Session overhaul: sliding renewal + absolute cap + revocation (`session_version` or sessions table), `__Host-` prefix, token `typ`.
 4. Password reset (R7), recent-auth gate for email/password/merge changes.
 5. Tighten dev-login/secret gating (R4), Microsoft issuer/tenant (R5), squatting (R6), headers/PKCE.
+
+## 10. What this PR fixed, and what is still open
+
+| Finding | Status | How |
+|---|---|---|
+| R1 `?next=` XSS / open redirect | **Fixed** | `safeNext` in `src/api.ts` (same rule as the server) used by `Login.tsx`. |
+| R2 No revocation, fixed 30 d | **Fixed** | `users.session_version` (in the JWT as `ver`, checked on every request). `POST /api/auth/logout-everywhere` bumps it and keeps the caller signed in ("Sign out everywhere" button on the profile page); a merge does the same. Sessions renew themselves (re-issued when >1 day old, 30-day idle window) up to an absolute maximum of 180 days from the actual sign-in (`auth` claim). Old tokens without the new claims keep working until they expire. |
+| R3 No rate limiting | **Fixed** | `server/rateLimit.ts`, fixed-window counters in a `rate_limits` table (shared across serverless instances). Login and merge-password: 10 / 15 min per email, 60 / 30 per IP; register 10 / h per IP; verify-email 30 / 15 min per IP. 429 + `Retry-After`. `trust proxy` is set in production. |
+| R4 Dev login / fallback secret | **Fixed** | The dev login only answers requests whose Host is `localhost`, `127.0.0.1`, `[::1]` or `*.localhost` (also reflected in `/api/config`); the built-in fallback secret is refused when `DATABASE_URL` is remote. A short (<32 char) production secret logs a warning. |
+| R8 Reflected callback `error` | **Fixed** | A generic message is shown; the provider's value is only logged. |
+| CSRF defence in depth | **Added** | Non-GET `/api` requests with a cross-site `Origin` (or `Sec-Fetch-Site: cross-site/same-site`) get 403, except Apple's callback. `express.urlencoded` now only runs on that callback. |
+| `__Host-` cookies | **Added** | In production the cookies are `__Host-session`, `__Host-oauth`, `__Host-merge` (plain names in development, where there is no HTTPS). Everyone is signed out once on deploy. |
+| Token confusion (N3, partly) | **Added** | Session, oauth and merge JWTs carry a `typ` and are accepted only as that kind. |
+
+**Still open** (deliberately left out; each needs product decisions or UI):
+R5 Microsoft issuer/tenant validation, R6 email squatting on password registration, R7 password reset/change (the
+biggest remaining gap: a session-version bump is ready for it to call), recent-auth prompts for sensitive actions, a
+per-device session list, PKCE, security headers/CSP, scrypt cost upgrade, hashing invitation tokens, single-use merge
+tickets, `kid` for secret rotation.
+
+**Deploy notes:** the `session_version` column and `rate_limits` table are created automatically on first request.
+Because of the `__Host-` rename, all users have to sign in once after this ships. Rate-limit counters count every attempt
+(successful or not) in the window, so a user who logs in more than 10 times in 15 minutes with one email is throttled.
