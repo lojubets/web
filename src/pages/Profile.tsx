@@ -16,7 +16,7 @@ async function toAvatarDataUrl(file: File, size = 256): Promise<string> {
 
 export default function Profile() {
   const { me, reload } = useMe();
-  const [name, setName] = useState(me.name);
+  const [name, setName] = useState(me.profileName);
   const file = useRef<HTMLInputElement>(null);
   const act = useAction();
   const [saved, setSaved] = useState(false);
@@ -62,11 +62,12 @@ export default function Profile() {
         }}
       >
         <label className="field">
-          <span>Display name</span>
-          <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} required />
+          <span>Display name (optional)</span>
+          <input value={name} maxLength={60} placeholder={me.email ?? 'Your name'} onChange={(e) => setName(e.target.value)} />
+          {!me.profileName && <small className="muted">Until you set one, your friends see {me.email ? 'your email address' : 'you as "Friend"'}.</small>}
         </label>
         {me.email && <p className="muted small">Signed in as {me.email}{me.emailVerified ? ' (verified ✓)' : ' (not verified)'}</p>}
-        <button className="btn" disabled={act.busy || name.trim() === me.name}>{saved ? 'Saved ✓' : 'Save'}</button>
+        <button className="btn" disabled={act.busy || name.trim() === me.profileName}>{saved ? 'Saved ✓' : 'Save'}</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>
       <button

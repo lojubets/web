@@ -31,12 +31,15 @@ export type BetStatus =
 
 export interface UserSummary {
   id: string;
+  /** Display name, or the email address when the user hasn't set one. Never empty. */
   name: string;
   hasAvatar: boolean;
   avatarVersion: number;
 }
 
 export interface Me extends UserSummary {
+  /** The display name the user chose; empty when not set. */
+  profileName: string;
   email: string | null;
   emailVerified: boolean;
 }

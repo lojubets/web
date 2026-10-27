@@ -100,20 +100,41 @@ describe('bets between friends', () => {
 });
 
 describe('email/password accounts', () => {
-  const creds = { name: 'Cy', email: 'Cy@Example.com', password: 'correct horse' };
+  const creds = { email: 'Cy@Example.com', password: 'correct horse' };
 
   it('registers, signs in, and rejects bad credentials', async () => {
     const a = request.agent(app);
     await a.post('/api/auth/register').send(creds).expect(201);
-    expect((await a.get('/api/me')).body.name).toBe('Cy');
     await request(app).post('/api/auth/register').send(creds).expect(409);
-    await request(app).post('/api/auth/register').send({ ...creds, email: 'x@example.com', password: 'short' }).expect(400);
+    await request(app).post('/api/auth/register').send({ email: 'x@example.com', password: 'short' }).expect(400);
 
     const b = request.agent(app);
     await b.post('/api/auth/login').send({ email: 'cy@example.com', password: 'wrong password' }).expect(401);
     await b.post('/api/auth/login').send({ email: 'nobody@example.com', password: 'correct horse' }).expect(401);
     await b.post('/api/auth/login').send({ email: 'cy@example.com', password: creds.password }).expect(200);
-    expect((await b.get('/api/me')).body.name).toBe('Cy');
+    expect((await b.get('/api/me')).body.email).toBe('cy@example.com');
+  });
+
+  it('has no display name at first: shown by email, until one is set', async () => {
+    const a = request.agent(app);
+    await a.post('/api/auth/register').send({ email: 'Dot@Example.com', password: 'correct horse' }).expect(201);
+    expect((await a.get('/api/me')).body).toMatchObject({ name: 'dot@example.com', profileName: '' });
+
+    await a.put('/api/me').send({ name: 'Dot' }).expect(200);
+    expect((await a.get('/api/me')).body).toMatchObject({ name: 'Dot', profileName: 'Dot' });
+
+    await a.put('/api/me').send({ name: '   ' }).expect(200); // clearing goes back to the email
+    expect((await a.get('/api/me')).body).toMatchObject({ name: 'dot@example.com', profileName: '' });
+  });
+
+  it('friends see a nameless user by their email', async () => {
+    const inviter = await login('Pat');
+    const nameless = request.agent(app);
+    await nameless.post('/api/auth/register').send({ email: 'nameless@example.com', password: 'correct horse' }).expect(201);
+    const { body } = await inviter.post('/api/invitations').send({ email: 'nameless@example.com' });
+    await nameless.post(`/api/invitations/token/${body.link.split('/invite/')[1]}/accept`).expect(200);
+    expect((await inviter.get('/api/friends')).body[0]).toMatchObject({ name: 'nameless@example.com' });
+    expect((await nameless.get('/api/friends')).body[0]).toMatchObject({ name: 'Pat' });
   });
 });
 
@@ -123,7 +144,7 @@ describe('email verification', () => {
   it('verifies a password account, unlocking email-matched invitations', async () => {
     const inviter = await login('Dee');
     const eve = request.agent(app);
-    await eve.post('/api/auth/register').send({ name: 'Eve', email: 'eve@example.com', password: 'hunter2hunter2' }).expect(201);
+    await eve.post('/api/auth/register').send({ email: 'eve@example.com', password: 'hunter2hunter2' }).expect(201);
     expect((await eve.get('/api/me')).body.emailVerified).toBe(false);
 
     await inviter.post('/api/invitations').send({ email: 'eve@example.com' }).expect(201);

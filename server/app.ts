@@ -43,7 +43,7 @@ app.get('/api/cron', async (req, res) => {
 app.get('/api/invitations/token/:token', async (req, res) => {
   const r = row(
     await db.execute({
-      sql: `SELECT i.status, u.name FROM invitations i JOIN users u ON u.id = i.inviter_id WHERE i.token = ?`,
+      sql: `SELECT i.status, COALESCE(NULLIF(u.name, ''), u.email, 'Friend') AS name FROM invitations i JOIN users u ON u.id = i.inviter_id WHERE i.token = ?`,
       args: [req.params.token],
     }),
   );
@@ -55,7 +55,8 @@ app.get('/api/invitations/token/:token', async (req, res) => {
 
 app.use('/api', requireAuth);
 
-const SUMMARY_SQL = `u.id, u.name, a.updated_at AS avatar_version`;
+// A user who hasn't chosen a display name is shown by their email address.
+const SUMMARY_SQL = `u.id, COALESCE(NULLIF(u.name, ''), u.email, 'Friend') AS name, a.updated_at AS avatar_version`;
 const summary = (r: Record<string, any>): UserSummary => ({
   id: r.id,
   name: r.name,
@@ -63,14 +64,14 @@ const summary = (r: Record<string, any>): UserSummary => ({
   avatarVersion: Number(r.avatar_version ?? 0),
 });
 
-async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean }) | undefined> {
+async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; profileName: string }) | undefined> {
   const r = row(
     await db.execute({
-      sql: `SELECT ${SUMMARY_SQL}, u.email, u.email_verified FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
+      sql: `SELECT ${SUMMARY_SQL}, u.name AS profile_name, u.email, u.email_verified FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
       args: [id],
     }),
   );
-  return r && { ...summary(r), email: r.email, emailVerified: !!r.email_verified };
+  return r && { ...summary(r), email: r.email, emailVerified: !!r.email_verified, profileName: r.profile_name ?? '' };
 }
 
 async function areConnected(a: string, b: string) {
@@ -87,7 +88,7 @@ async function connect(a: string, b: string) {
 
 app.get('/api/me', async (_req, res) => {
   const u = (await getUser(uid(res)))!;
-  const me: Me = { id: u.id, name: u.name, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified };
+  const me: Me = { id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified };
   res.json(me);
 });
 
@@ -97,8 +98,9 @@ app.post('/api/me/verify-email', async (_req, res) => {
 });
 
 app.put('/api/me', async (req, res) => {
-  const body = z.object({ name: z.string().trim().min(1).max(60) }).safeParse(req.body);
-  if (!body.success) return res.status(400).json({ error: 'Name is required (max 60 characters)' });
+  // An empty name is allowed: it clears the display name, and the email address is shown instead.
+  const body = z.object({ name: z.string().trim().max(60) }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Display name can be at most 60 characters' });
   await db.execute({ sql: 'UPDATE users SET name = ? WHERE id = ?', args: [body.data.name, uid(res)] });
   res.json({ ok: true });
 });
@@ -284,7 +286,7 @@ app.get('/api/friends', async (_req, res) => {
     sql: `SELECT ${SUMMARY_SQL} FROM connections c
           JOIN users u ON u.id = CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END
           LEFT JOIN avatars a ON a.user_id = u.id
-          WHERE c.user_a = ? OR c.user_b = ? ORDER BY u.name COLLATE NOCASE`,
+          WHERE c.user_a = ? OR c.user_b = ? ORDER BY COALESCE(NULLIF(u.name, ''), u.email, 'Friend') COLLATE NOCASE`,
     args: [me, me, me],
   });
   const bets = await loadBets(me);

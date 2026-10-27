@@ -40,13 +40,12 @@ export default function Login() {
         onSubmit={(e) => {
           e.preventDefault();
           pw.run(async () => {
-            await api(mode === 'login' ? '/auth/login' : '/auth/register', 'POST', { name, email, password });
+            await api(mode === 'login' ? '/auth/login' : '/auth/register', 'POST', { email, password });
             location.href = next;
           });
         }}
       >
         <strong>{mode === 'login' ? 'Sign in with email' : 'Create an account'}</strong>
-        {mode === 'register' && <input placeholder="Name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required />}
         <input type="email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input
           type="password"
@@ -75,7 +74,7 @@ export default function Login() {
           }}
         >
           <strong>Dev login</strong>
-          <input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+          <input placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
           <input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <button className="btn" disabled={busy}>Sign in (development only)</button>
           {error && <p className="error">{error}</p>}

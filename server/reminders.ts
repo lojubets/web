@@ -15,7 +15,7 @@ interface Person {
 
 async function people(b: BetRow): Promise<{ creator: Person; opponent: Person }> {
   const r = await db.execute({
-    sql: `SELECT id, name, CASE WHEN email_verified = 1 THEN email END AS email FROM users WHERE id IN (?, ?)`,
+    sql: `SELECT id, COALESCE(NULLIF(name, ''), email, 'Friend') AS name, CASE WHEN email_verified = 1 THEN email END AS email FROM users WHERE id IN (?, ?)`,
     args: [b.creator_id, b.opponent_id],
   });
   const by = new Map((r.rows as unknown as Person[]).map((p) => [p.id, p]));

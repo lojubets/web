@@ -141,7 +141,8 @@ async function findOrCreateUser(opts: {
   if (!userId) {
     userId = randomUUID();
     created = true;
-    const name = opts.name?.trim() || opts.email?.split('@')[0] || 'Friend';
+    // No name from the provider means no display name: the user is shown by their email until they set one.
+    const name = opts.name?.trim() || '';
     await db.execute({
       sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, ?, ?, ?)',
       args: [userId, opts.email ?? null, opts.emailVerified ? 1 : 0, name, Date.now()],
@@ -185,7 +186,7 @@ export const authRouter = Router();
 
 authRouter.post('/dev', async (req, res) => {
   if (!env.devLogin) return res.status(404).json({ error: 'Not found' });
-  const body = z.object({ name: z.string().min(1), email: z.email() }).safeParse(req.body);
+  const body = z.object({ name: z.string().default(''), email: z.email() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'name and email required' });
   const { name, email } = body.data;
   const { userId } = await findOrCreateUser({
@@ -203,8 +204,8 @@ authRouter.post('/dev', async (req, res) => {
 const credentials = z.object({ email: z.email(), password: z.string().min(8).max(200) });
 
 authRouter.post('/register', async (req, res) => {
-  const body = credentials.extend({ name: z.string().trim().min(1).max(60) }).safeParse(req.body);
-  if (!body.success) return res.status(400).json({ error: 'Enter your name, a valid email and a password of at least 8 characters' });
+  const body = credentials.safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Enter a valid email and a password of at least 8 characters' });
   const email = body.data.email.trim().toLowerCase();
   const taken = await db.execute({ sql: `SELECT 1 FROM identities WHERE provider = 'password' AND subject = ?`, args: [email] });
   if (taken.rows.length) return res.status(409).json({ error: 'That email is already registered. Try signing in.' });
@@ -212,7 +213,7 @@ authRouter.post('/register', async (req, res) => {
   const userId = randomUUID();
   await db.batch(
     [
-      { sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, 0, ?, ?)', args: [userId, email, body.data.name, Date.now()] },
+      { sql: 'INSERT INTO users (id, email, email_verified, name, created_at) VALUES (?, ?, 0, ?, ?)', args: [userId, email, '', Date.now()] },
       { sql: `INSERT INTO identities (provider, subject, user_id) VALUES ('password', ?, ?)`, args: [email, userId] },
       { sql: 'INSERT INTO credentials (user_id, password_hash) VALUES (?, ?)', args: [userId, await hashPassword(body.data.password)] },
     ],
