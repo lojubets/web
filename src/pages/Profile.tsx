@@ -4,6 +4,7 @@ import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import type { OwnEmailAddress } from '../../shared/types';
+import DeleteAccount from '../components/DeleteAccount';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useMe } from '../hooks';
 
@@ -171,6 +172,7 @@ export default function Profile() {
       >
         Sign out everywhere
       </button>
+      {me.emailVerified && <DeleteAccount />}
     </>
   );
 }

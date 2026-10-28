@@ -39,7 +39,7 @@ export default function App() {
   if (me === undefined) return <p className="center muted">Loading…</p>;
 
   // Until an unverified email is confirmed, the only place to be is the profile page.
-  const locked = !!me && !!me.email && !me.emailVerified;
+  const locked = !!me && !me.emailVerified;
 
   return (
     <Routes>

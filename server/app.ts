@@ -8,6 +8,7 @@ import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVe
 import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
+import { afterBetEnded, deletionBlock, deletionRouter, runDeletionCron } from './deletion.js';
 import { mergeRouter } from './merge.js';
 import { env } from './env.js';
 import { runCron } from './reminders.js';
@@ -49,7 +50,7 @@ app.use('/api/auth', authRouter);
 app.get('/api/cron', async (req, res) => {
   const secret = process.env.CRON_SECRET;
   if (secret ? req.get('authorization') !== `Bearer ${secret}` : env.isProd) return res.status(secret ? 401 : 503).json({ error: 'Unauthorized' });
-  res.json(await runCron());
+  res.json({ ...(await runCron()), ...(await runDeletionCron()) });
 });
 
 app.get('/api/invitations/token/:token', async (req, res) => {
@@ -69,18 +70,19 @@ app.use('/api', requireAuth);
 app.use('/api/merge', mergeRouter);
 
 // A user who hasn't chosen a display name is shown by their email address.
-const SUMMARY_SQL = `u.id, COALESCE(NULLIF(u.name, ''), u.email, 'Friend') AS name, a.updated_at AS avatar_version`;
+const SUMMARY_SQL = `u.id, COALESCE(NULLIF(u.name, ''), u.email, 'Friend') AS name, a.updated_at AS avatar_version, u.deleted_at IS NOT NULL AS deleted`;
 const summary = (r: Record<string, any>): UserSummary => ({
   id: r.id,
   name: r.name,
   hasAvatar: r.avatar_version != null,
   avatarVersion: Number(r.avatar_version ?? 0),
+  deleted: !!r.deleted,
 });
 
-async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; profileName: string; emails: OwnEmailAddress[] }) | undefined> {
+async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; deletionRequestedAt: number | null; profileName: string; emails: OwnEmailAddress[] }) | undefined> {
   const r = row(
     await db.execute({
-      sql: `SELECT ${SUMMARY_SQL}, u.name AS profile_name, u.email, u.email_verified FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
+      sql: `SELECT ${SUMMARY_SQL}, u.name AS profile_name, u.email, u.email_verified, u.deletion_requested_at FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
       args: [id],
     }),
   );
@@ -107,22 +109,20 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   });
   // The primary address first
   list.sort((x, y) => Number(y.primary) - Number(x.primary));
-  return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, profileName: r.profile_name ?? '', emails: list };
+  return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, deletionRequestedAt: r.deletion_requested_at ?? null, profileName: r.profile_name ?? '', emails: list };
 }
 
 /** The addresses this account has proven it owns. */
 const verifiedAddresses = (u: { emails: EmailAddress[] }) => u.emails.filter((e) => e.verified).map((e) => e.email);
 
-/**
- * Friends, invitations and bets unlock once the account's email is verified. (An account with no email
- * at all can never verify, so it isn't locked out of the rest of the app.)
- */
+/** Friends, invitations and bets unlock once the account's email is verified: every bettor is reachable by email. */
 async function requireVerifiedEmail(_req: Request, res: Response, next: express.NextFunction) {
   const u = await getUser(uid(res));
-  if (u?.email && !u.emailVerified) return res.status(403).json({ error: 'Verify your email address first', code: 'email_not_verified' });
+  if (!u?.emailVerified) return res.status(403).json({ error: 'Verify your email address first', code: 'email_not_verified' });
   next();
 }
 app.use(['/api/friends', '/api/invitations', '/api/bets'], requireVerifiedEmail);
+app.use('/api', deletionRouter);
 
 async function areConnected(a: string, b: string) {
   const [x, y] = pair(a, b);
@@ -138,8 +138,40 @@ async function connect(a: string, b: string) {
 
 app.get('/api/me', async (_req, res) => {
   const u = (await getUser(uid(res)))!;
-  const me: Me = { id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails };
+  const me: Me = { deletionRequestedAt: u.deletionRequestedAt, deleted: false, id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails };
   res.json(me);
+});
+
+// Everything we hold about the signed-in user that is theirs to take along (Art. 20), as a download. No password hashes.
+app.get('/api/me/export', async (_req, res) => {
+  const me = uid(res);
+  const u = (await getUser(me))!;
+  const avatar = row(await db.execute({ sql: 'SELECT mime, data FROM avatars WHERE user_id = ?', args: [me] }));
+  const names = new Map<string, string>();
+  const nameOf = async (id: string) => {
+    if (!names.has(id)) names.set(id, row(await db.execute({ sql: `SELECT COALESCE(NULLIF(name, ''), email, 'Friend') AS name FROM users WHERE id = ?`, args: [id] }))?.name ?? 'Friend');
+    return names.get(id)!;
+  };
+  const friends = await db.execute({ sql: `SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS id, created_at FROM connections WHERE user_a = ? OR user_b = ?`, args: [me, me, me] });
+  const bets = (await db.execute({ sql: 'SELECT * FROM bets WHERE creator_id = ? OR opponent_id = ? ORDER BY created_at', args: [me, me] })).rows as unknown as BetRow[];
+  const bal = balances(me, bets.filter((b) => b.status !== 'cancelled'));
+  const sent = await db.execute({ sql: 'SELECT email, status, created_at FROM invitations WHERE inviter_id = ? ORDER BY created_at', args: [me] });
+  res.set('Content-Disposition', 'attachment; filename="lojubets-my-data.json"');
+  res.json({
+    exportedAt: new Date().toISOString(),
+    profile: { name: u.profileName, emails: u.emails.map((e) => ({ email: e.email, verified: e.verified, primary: e.primary })), avatar: avatar ? `data:${avatar.mime};base64,${avatar.data}` : null },
+    friends: await Promise.all(friends.rows.map(async (f) => ({ name: await nameOf(String(f.id)), since: new Date(Number(f.created_at)).toISOString() }))),
+    bets: await Promise.all(
+      bets.map(async (b) => {
+        const s = serializeBet(b, me, bal, bets);
+        return {
+          question: s.question, with: await nameOf(s.otherUserId), status: s.status, myGuess: s.myGuess, theirGuess: s.theirGuess, outcome: s.outcome,
+          iWon: s.winnerId === null ? null : s.winnerId === me, stake: s.stake, created: new Date(s.createdAt).toISOString(), settled: s.settledAt ? new Date(s.settledAt).toISOString() : null,
+        };
+      }),
+    ),
+    invitationsSent: sent.rows.map((i) => ({ email: i.email, status: i.status, created: new Date(Number(i.created_at)).toISOString() })),
+  });
 });
 
 app.post('/api/me/verify-email', async (_req, res) => {
@@ -243,6 +275,8 @@ app.post('/api/invitations', async (req, res) => {
   // Invitations go out under the inviter's identity, so it must be an address they've proven they own.
   if (!me.emailVerified) return res.status(403).json({ error: 'Verify your email address before inviting friends' });
   if (me.emails.some((e) => e.email === email)) return res.status(400).json({ error: "That's your own email" });
+  const blocked = await deletionBlock(me.id);
+  if (blocked) return res.status(409).json({ error: blocked });
 
   const existingUser = row(await db.execute({ sql: 'SELECT user_id AS id FROM user_emails WHERE email = ? AND verified = 1', args: [email] }));
   if (existingUser && (await areConnected(me.id, existingUser.id))) {
@@ -361,7 +395,8 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     myGuess,
     // Guesses stay secret until both players have locked theirs in. This is the only place guesses leave the
     // server, and nothing derived from both of them (tipping point, verdicts) is exposed before that either.
-    theirGuess: b.opponent_guess === null ? null : theirGuess,
+    // (a deleted user's own guess is gone: stored as '')
+    theirGuess: b.opponent_guess === null || theirGuess === '' ? null : theirGuess,
     outcome: b.outcome,
     outcomeProposedByMe: b.outcome_proposed_by ? b.outcome_proposed_by === me : null,
     winnerId: b.winner_id,
@@ -444,6 +479,8 @@ app.post('/api/bets', async (req, res) => {
   const guess = normalizeAnswer(kind, params.value, body.data.guess, { now: Date.now(), role: 'guess' });
   if (!guess.ok) return res.status(400).json({ error: guess.error });
   if (!(await areConnected(uid(res), opponentId))) return res.status(403).json({ error: 'You can only bet with connected friends' });
+  const blocked = await deletionBlock(uid(res), opponentId);
+  if (blocked) return res.status(409).json({ error: blocked });
   const id = randomUUID();
   await db.execute({
     sql: `INSERT INTO bets (id, creator_id, opponent_id, question, kind, params, status, creator_guess, created_at)
@@ -468,6 +505,7 @@ app.post('/api/bets/:id/cancel', async (req, res) => {
   if (!b) return;
   if (b.status !== 'awaiting_guess') return res.status(409).json({ error: 'Only bets nobody has answered yet can be cancelled' });
   await db.execute({ sql: `UPDATE bets SET status = 'cancelled' WHERE id = ?`, args: [b.id] });
+  await afterBetEnded(b.id);
   res.json({ ok: true });
 });
 
@@ -509,6 +547,7 @@ app.post('/api/bets/:id/confirm', async (req, res) => {
     sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = ?, proposal = NULL WHERE id = ?`,
     args: [winner, Date.now(), kind === 'tie' ? 'tie' : kind === 'not_happened' ? 'tipping_point' : 'outcome', b.id],
   });
+  await afterBetEnded(b.id);
   await respondWithBet(res, b.id);
 });
 

@@ -148,6 +148,16 @@ export async function readSessionUser(req: Request, res?: Response): Promise<str
   }
 }
 
+/** When the current session cookie was issued (ms since epoch), or null. */
+export async function sessionIssuedAt(req: Request): Promise<number | null> {
+  try {
+    const { payload } = await jwtVerify(req.cookies?.session ?? '', secret, { algorithms: ['HS256'] });
+    return payload.iat ? payload.iat * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const userId = await readSessionUser(req, res);
   if (!userId) return res.status(401).json({ error: 'Not signed in' });
@@ -429,6 +439,8 @@ async function handleCallback(req: Request, res: Response) {
       } catch {}
     }
     const email = (payload.email as string | undefined) ?? null;
+    // Every account has an email address: it is how the other bettors' requests and our notices reach people.
+    if (!email) return fail("That sign-in didn't share an email address with us, and we need one to create your account.");
     const trusted = p.trustsEmail(payload);
     const { userId, created } = await findOrCreateUser({
       provider: providerId,

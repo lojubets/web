@@ -168,6 +168,19 @@ export default function BetDetail() {
           </div>
         ))}
 
+      {b.status === 'settled' && friend.deleted && (
+        <div className="stack">
+          <p className="muted small">{friend.name} has left. This bet stays in your history until you remove it, which also changes your balance.</p>
+          <button
+            className="btn btn-secondary"
+            disabled={act.busy}
+            onClick={() => window.confirm('Remove this bet from your history? It is gone for good, and your balance changes if it was settled.') && act.run(async () => { await api(`/bets/${b.id}/remove-from-history`, 'POST'); nav('/'); })}
+          >
+            Remove from my history
+          </button>
+        </div>
+      )}
+
       {b.canAllIn && (
         <div className="card allin-offer stack">
           <strong className="row"><Icon name="flame" size={22} />You're in the red. Feeling lucky?</strong>
