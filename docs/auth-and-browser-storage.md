@@ -8,10 +8,10 @@ Section 7 onwards is assessment and recommendation; sections 1–6 are descripti
 >
 > Sections 1–6 and the "Findings" below describe the code **as it was on `main` at `9f5a039` on 2026-10-28**. The same PR then
 > fixed most of the findings; §10 lists what changed and what is still open. Where §1–§6 say "no X", read §10 for the
-> current state. §11 re-assesses everything against `main` at `c70b9fc` (after account deletion and the privacy policy
-> landed): all fixes in §10 still hold, and four new findings (R9–R12) came with the account-deletion work.
+> current state. **§10 is the current, re-verified status of every finding** (last checked against `main` at `0e9b878`);
+> it supersedes the status columns and the first box below.
 
-> ## ⚠️ Findings that deserve attention first
+> ## ⚠️ Findings that deserved attention first (original analysis; all three are fixed, see §10)
 >
 > 1. **DOM XSS / open redirect via `?next=` on the login page** (`src/pages/Login.tsx:10,37,78`). `next` is read straight
 >    from the URL and assigned to `location.href` after a successful password or dev login, with no validation. A link to
@@ -248,82 +248,68 @@ sessions can come later.
 4. Password reset (R7), recent-auth gate for email/password/merge changes.
 5. Tighten dev-login/secret gating (R4), Microsoft issuer/tenant (R5), squatting (R6), headers/PKCE.
 
-## 10. What this PR fixed, and what is still open
+## 10. Current status of every finding
 
-| Finding | Status | How |
-|---|---|---|
-| R1 `?next=` XSS / open redirect | **Fixed** | `safeNext` in `src/api.ts` (same rule as the server) used by `Login.tsx`. |
-| R2 No revocation, fixed 30 d | **Fixed** | `users.session_version` (in the JWT as `ver`, checked on every request). `POST /api/auth/logout-everywhere` bumps it and keeps the caller signed in ("Sign out everywhere" button on the profile page); a merge does the same. Sessions renew themselves (re-issued when >1 day old, 30-day idle window) up to an absolute maximum of 180 days from the actual sign-in (`auth` claim). Old tokens without the new claims keep working until they expire. |
-| R3 No rate limiting | **Fixed** | `server/rateLimit.ts`, fixed-window counters in a `rate_limits` table (shared across serverless instances). Login and merge-password: 10 / 15 min per email, 60 / 30 per IP; register 10 / h per IP; verify-email 30 / 15 min per IP. 429 + `Retry-After`. `trust proxy` is set in production. |
-| R4 Dev login / fallback secret | **Fixed** | The dev login only answers requests whose Host is `localhost`, `127.0.0.1`, `[::1]` or `*.localhost` (also reflected in `/api/config`); the built-in fallback secret is refused when `DATABASE_URL` is remote. A short (<32 char) production secret logs a warning. |
-| R8 Reflected callback `error` | **Fixed** | A generic message is shown; the provider's value is only logged. |
-| CSRF defence in depth | **Added** | Non-GET `/api` requests with a cross-site `Origin` (or `Sec-Fetch-Site: cross-site/same-site`) get 403, except Apple's callback. `express.urlencoded` now only runs on that callback. |
-| `__Host-` cookies | **Added** | In production the cookies are `__Host-session`, `__Host-oauth`, `__Host-merge` (plain names in development, where there is no HTTPS). Everyone is signed out once on deploy. |
-| Token confusion (N3, partly) | **Added** | Session, oauth and merge JWTs carry a `typ` and are accepted only as that kind. |
+Re-verified on **2026-10-28 against `main` at `0e9b878`** (plus the one-line guard described under R13, in the PR that
+updated this section). Each row was checked in the code, not copied from an earlier version of this document.
 
-**Still open** (deliberately left out; each needs product decisions or UI):
-R5 Microsoft issuer/tenant validation, R6 email squatting on password registration, R7 password reset/change (reset is now done, see the end of §11; change-while-signed-in is not) (the
-biggest remaining gap: a session-version bump is ready for it to call), recent-auth prompts for sensitive actions, a
-per-device session list, PKCE, security headers/CSP, scrypt cost upgrade, hashing invitation tokens, single-use merge
-tickets, `kid` for secret rotation.
+### Real bugs / risks (§8 and the follow-up findings)
 
-**Deploy notes:** the `session_version` column and `rate_limits` table are created automatically on first request.
-Because of the `__Host-` rename, all users have to sign in once after this ships. Rate-limit counters count every attempt
-(successful or not) in the window, so a user who logs in more than 10 times in 15 minutes with one email is throttled.
-
-## 11. Re-assessment on 2026-10-28 (`main` at `c70b9fc`)
-
-Since §10, three PRs landed: account deletion (#6, `server/deletion.ts`, `src/components/DeleteAccount.tsx`), the privacy
-policy page (#5) and cosmetic changes (#9). I re-read `server/auth.ts`, `env.ts`, `rateLimit.ts`, `merge.ts`, `deletion.ts`,
-the CSRF middleware in `server/app.ts`, and `src/api.ts` / `Login.tsx`.
-
-### Previously fixed findings: still fixed
-
-| Finding | Re-check |
-|---|---|
-| R1 `?next=` | Still guarded: `safeNext` (`src/api.ts:20`) is used in `Login.tsx:12`. |
-| R2 revocation / renewal | `session_version` check, 1-day renewal and 180-day cap are intact (`readSessionUser`). Merge still calls `revokeSessions`. Account deletion removes the user row, so every session for it fails the lookup. |
-| R3 rate limiting | Intact on login, register, merge-password and verify-email. The new deletion endpoint was not covered (R10, now fixed). |
-| R4 dev login / fallback secret | Intact (`devLoginAllowed`, remote-DB guard in `env.ts`). |
-| R8 callback `error` | Intact. |
-| CSRF Origin check, `__Host-` cookies, `typ` claims | Intact. |
-
-### New findings
-
-| # | Finding | Where | Severity |
+| # | Finding | Status | Where it is handled |
 |---|---|---|---|
-| R9 | **The "recent sign-in" check for account deletion is broken in production and weaker than intended.** `sessionIssuedAt` reads `req.cookies.session`, but in production the cookie is `__Host-session`, so it always returns null. Sign-in-provider-only users (no password) therefore *always* get `reauth_required` and cannot delete their account at all. Tests do not catch it because dev uses the plain name. If it were fixed by only changing the cookie name, it would still be wrong: it reads the token's `iat`, which is reset whenever the session renews (any request after 1 day), so a stolen cookie that is used once a day always looks "recently signed in". It also skips the `typ` and `session_version` checks. | `server/auth.ts:151-158`, `server/deletion.ts:238` | **Medium**: a GDPR right (erasure) is unusable for social-login users, and the intended protection does not work |
-| R10 | `POST /api/me/deletion` verifies a password via `verifyPassword` with no rate limit, a password oracle for the signed-in account (the same class as R3's `/merge/password`, which is limited). Also the `/me/contact` throttle is an in-memory `Map`, which does not hold across serverless instances (§7's point about shared stores). | `server/deletion.ts:230-249` | Low–medium (needs a session) |
-| R11 | After deletion the response clears a cookie named `session`, not `__Host-session`, so in production the (now useless) session cookie stays in the browser until it expires. Harmless for access, since the user row is gone, but untidy next to a privacy feature. | `server/deletion.ts:248` | Low |
-| R12 | The privacy policy says the sign-in cookie keeps you signed in "for 30 days". Since the session overhaul it renews with use, up to 180 days from the actual sign-in. | `src/pages/Privacy.tsx:65` | Low (accuracy of a public statement) |
+| R1 | `?next=` DOM XSS / open redirect | **Fixed** | `safeNext` in `src/api.ts:20`, used by `Login.tsx`; same rule as the server's. |
+| R2 | No revocation, fixed 30 days | **Fixed** | `users.session_version` (`ver` claim) is checked on every request; "Sign out everywhere"; merge, password reset and password change bump it. Sessions renew when more than a day old (30-day idle window) up to 180 days from the actual sign-in (`auth` claim). Old tokens without the new claims keep working until they expire. |
+| R3 | No rate limiting | **Fixed** | `server/rateLimit.ts`, counters in the `rate_limits` table (shared across serverless instances); `trust proxy` set in production. Covers login, register, merge-password, verify-email, account deletion, password-reset request and reset, change password and add-email. Counters count every attempt, so more than 10 logins in 15 minutes for one email are throttled. |
+| R4 | Dev login / public fallback secret | **Fixed** | Dev login answers only `localhost`, `127.0.0.1`, `[::1]` and `*.localhost` hosts; the fallback secret is refused with a remote DB; a production secret under 32 characters logs a warning (it does not refuse to start, see N3). |
+| R5 | Microsoft `iss` not validated, identity keyed on `sub` only | **Still open** | Unchanged (`issuer` is unset for Microsoft in `server/auth.ts`). The UI text no longer advertises Microsoft or Apple (#12), but the server still supports them whenever their environment variables are set, so this applies to any deployment that enables Microsoft. |
+| R6 | Email squatting on password registration | **Mitigated, not closed** | The real owner who gets "already registered" can now use *Forgot your password?* on that address: the reset signs the squatter out, gives the owner the account and verifies the address (unless another account already verified it, R13). Registration still answers 409 and a squatter's unverified account still exists until the owner notices. |
+| R7 | No password reset / change | **Fixed** | Reset by emailed link (`server/passwordReset.ts`, §10.1) and change-password for signed-in users (`POST /api/me/password`, needs the current password, rate-limited, replaces the hash of every password login on a merged account, signs out other sessions, voids pending reset links). |
+| R8 | Reflected callback `error` | **Fixed** | Generic message shown, provider value only logged. |
+| R9 | Account-deletion "recent sign-in" check broken in production and based on `iat` | **Fixed** | `lastSignInAt` (`auth.ts`) reads `SESSION_COOKIE`, checks `typ` and `session_version`, and uses the `auth` claim. |
+| R10 | Unthrottled password check on `/me/deletion`; in-memory contact throttle | **Fixed** | `rateLimit('delete', { perIp: 60, perUser: 10 })`; the `/me/contact` limit counts in the database. |
+| R11 | Deletion cleared the wrong cookie name in production | **Fixed** | Shared `clearSessionCookie`. |
+| R12 | Privacy policy said 30-day cookie | **Fixed** | Text now describes renewal and the 180-day cap. |
+| R13 | **New.** Password reset marked the address verified even when another account had already verified it, breaking "one verified address, one account" | **Fixed in this PR** | `consumeReset` skips the verification step when `user_emails` already has that address verified for a different user (the password still changes). Test added. |
 
-**Status: R9 and R11 are fixed** (`lastSignInAt` in `auth.ts` replaces `sessionIssuedAt`: it uses `SESSION_COOKIE`, `typ`, `session_version` and the `auth` claim; `clearSessionCookie` is shared by logout and deletion). **R12 is fixed** (the privacy policy now describes the renewing session and the 180-day cap). **R10 is fixed** (`/me/deletion` is limited to 10 attempts / 15 min per user and 60 per IP, through a new `perUser` option on `rateLimit`; the `/me/contact` throttle now counts in the `rate_limits` table instead of an in-memory `Map`). Original proposal: export a helper from `auth.ts` that reads the session through the same
-`verify(token, 'session')` and `SESSION_COOKIE` as `readSessionUser`, returns the `auth` claim (time of the actual sign-in,
-which renewal preserves) and checks `session_version`; export `clearSessionCookie(res)` and use it in logout and deletion;
-put `rateLimit('delete', { perIp: 30, perBody … })` or a per-user key on the deletion route. Add a test that runs the
-deletion flow with `NODE_ENV=production`-style cookie names.
+### Hardening that was added (not numbered findings)
 
-### Open items: status changes
+CSRF defence in depth (cross-site `Origin` / `Sec-Fetch-Site` gets 403, `urlencoded` only on Apple's callback),
+`__Host-` cookies in production, `typ` claims on session, oauth and merge tokens, and per-address verification links
+(`consumeVerification` also refuses an address another account verified first).
 
-- **Recent-auth for sensitive actions:** *partly done.* Deletion now requires a password or a recent sign-in (see R9 for why the latter does not work). Still missing for changing/removing emails and logins and for merge confirmation.
-- **R5, R6, R7, per-device session list, PKCE, security headers/CSP, scrypt cost, hashing invitation tokens, single-use merge tickets, `kid`:** unchanged, still open. R7 (password reset) remains the biggest functional gap.
-- **§1 inventory:** unchanged. Still no `localStorage`, `sessionStorage`, IndexedDB or service worker (the new components and the privacy page add none, as the policy states). The only addition is the new `/privacy` route, which needs no session.
-- **New small improvement:** OAuth sign-in now refuses providers that share no email address (`auth.ts:443`), which keeps every account reachable.
+### Nice-to-haves (§8)
 
-Updated priority order: password reset is done → remaining recent-auth gates → the rest of §9.
+| # | Item | Status |
+|---|---|---|
+| N1 | PKCE | Open (no `code_challenge` anywhere). |
+| N2 | Security headers / CSP / `frame-ancestors` | Open (no header middleware, and `vercel.json` sets none). |
+| N3 | `aud`/`iss`/`kid`, secret length check | Partly: `typ` done; the length check only warns; no `kid`, `aud` or `iss`. |
+| N4 | scrypt cost and upgrade path, breached-password check | Open (Node defaults, `salt:hash` with no parameters). |
+| N5 | Single-use merge ticket, recent-auth on merge confirm | Open (merge confirm revokes other sessions, but does not re-ask for A's password). |
+| N6 | Constant-time `CRON_SECRET` comparison; hash invitation tokens | Open (`!==` in `server/app.ts`, invitation tokens stored raw). |
+| N7 | Registration enumeration (409) | Unchanged; now paired with rate limiting (R3). |
+| N8 | `trust proxy` | **Done** (production only). |
 
-### Password reset (R7, partly)
+### Still open, and what I would do next
 
-`server/passwordReset.ts` adds `POST /api/auth/forgot-password` and `POST /api/auth/reset-password`, and the pages
-`/forgot-password` and `/reset-password` (linked from the sign-in form).
+1. **Recent-auth for account-security changes.** Deletion needs the password or a recent sign-in, and password change needs the current password. But removing a login method or an email address (`DELETE /api/me/logins/...`, `DELETE /api/me/emails/...`), making another address primary, and confirming a merge need nothing beyond the session, so a stolen session can strip the owner's other sign-in methods (it always leaves one verified login and one verified address, and it cannot *add* a login or promote an address without the owner's mailbox). Reuse `lastSignInAt` for these, as for deletion.
+2. **Notice emails** after a password change, a reset, or a removed login.
+3. R5 (Microsoft issuer/tenant), a per-device session list, security headers/CSP, PKCE, scrypt cost, hashing invitation tokens, single-use merge tickets, `kid`.
 
-- **Token:** 32 random bytes, only its SHA-256 is stored (`password_resets`), valid 1 hour, single use. The link belongs to a password login (its email), so merged accounts with several password logins reset the right one. Requesting a new link is held back for a minute per address.
-- **No enumeration:** the request endpoint answers the same whether or not the address has a password login, and sends nothing to sign-in-provider-only accounts. (Registration still answers 409, see N7. Response *time* can differ slightly, because the mail is sent before answering.)
-- **Throttling:** 5 requests / 15 min per address, 20 per IP; 30 reset attempts per IP.
-- **On success:** the password is replaced, the address counts as verified (opening the mailed link proves the mailbox), `session_version` is bumped so every session, including a thief's, is signed out, and any other pending link for that login is deleted. The user is not signed in automatically; they sign in with the new password.
-- **Verification link posts:** the reset page submits with a POST, so mail scanners that prefetch the link cannot use the token up.
-- **Account deletion** also deletes pending reset links.
+### 10.1 What the newer account features do (all checked)
 
-**Interaction with R6 (email squatting):** someone who registered a victim's address can no longer lock the real owner out for good: the owner can reset that login's password, which takes the account over and verifies the address. The squatter's account is signed out. The squatter can still do the same to a *genuine* password user only by controlling the mailbox, so this is not a new takeover path.
+- **Password reset** (`/api/auth/forgot-password`, `/api/auth/reset-password`, pages `/forgot-password`, `/reset-password`): token is 32 random bytes, stored only as a SHA-256 hash (`password_resets`), valid 1 hour, single use, one new link per minute per address; 5 requests / 15 min per address and 20 per IP. The request endpoint answers the same for unknown addresses and for provider-only accounts and mails nothing to them (response *time* can still differ a little, because the mail is sent before answering). On success every password login of the account gets the new password, every session is signed out, other pending links are deleted, the address counts as verified (R13 guard) and the user is *not* signed in automatically. The page submits with a POST, so mail scanners that prefetch the link cannot use the token up. Account deletion removes pending links.
+- **Add an email address / switch the primary one** (`POST /api/me/emails`, verification per address): a new address starts unverified, needs its own mailed link, and only a verified one can become primary. Up to 10 per account, 10 additions per hour per user. An address verified by another account cannot be added or verified (the user is pointed to account merge). Removing an address that is a password login's only home moves the login to another verified address, unless another account already has a password login on it.
+- **Login methods on the Profile page:** the last login tied to a verified address cannot be removed.
+- **Cookies and storage:** unchanged. Still three HttpOnly cookies and no `localStorage`, `sessionStorage`, IndexedDB or service worker; the new pages add none.
 
-**Not included:** a "change password" form for signed-in users (needs the current password, or the recent sign-in from R9), and a notice email after a password change (§7 "sign-in alerts").
+### Where §1–§9 no longer match the code
+
+They describe `main` at `9f5a039` and are kept as the original analysis. Superseded statements: §3.1 "no forgot password and no change
+password" (both exist, R7), §5 "no `Origin` check" and the global `urlencoded` gap (fixed), §6 "`trust proxy` is not
+configured" (set in production), §2 and §1 cookie names and lifetimes (production cookies are `__Host-` prefixed, sessions
+renew, R2), §3.1 "Registered emails start unverified … never used to link or match" still holds, and the §9 order of work
+is done through step 3 and the password-reset half of step 4; what remains is §10 above.
+
+**Deploy notes (from the original fixes):** the `session_version` column and the `rate_limits` and `password_resets`
+tables are created automatically on first request. Because of the `__Host-` rename all users had to sign in once.
