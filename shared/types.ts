@@ -110,8 +110,10 @@ export interface Bet {
   otherUserId: string;
   iAmCreator: boolean;
   myGuess: string | null;
-  /** Hidden from the creator's opponent until both have guessed. */
+  /** Hidden until both have guessed. */
   theirGuess: string | null;
+  /** While the bet waits for guesses: whether they have locked theirs in (the guess itself stays hidden). */
+  theirGuessIn: boolean;
   outcome: string | null;
   outcomeProposedByMe: boolean | null;
   /**

@@ -66,7 +66,8 @@ export default function NewBet() {
           ))}
         </div>
         <RulesEditor kind={kind} rules={rules} onChange={setRules} />
-        <ValueInput key={kind} kind={kind} params={betParams} value={guess} onChange={setGuess} label="Your guess (hidden until they answer)" />
+        <ValueInput key={kind} kind={kind} params={betParams} value={guess} onChange={setGuess} label="Your guess (optional, hidden until they answer)" optional />
+        <small className="muted">Not sure yet? Leave it empty to record the bet now and guess later.</small>
         {error && <p className="error">{error}</p>}
         <button className="btn" disabled={busy || !selected || (kind === 'choice' && (betParams as { options: string[] }).options.length < 2)}>Propose bet · 1 GT</button>
       </form>

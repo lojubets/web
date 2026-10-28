@@ -547,13 +547,14 @@ function balances(me: string, bets: BetRow[]): Map<string, number> {
 function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: BetRow[]): Bet {
   const iAmCreator = b.creator_id === me;
   const other = otherOf(b, me);
-  const myGuess = iAmCreator ? b.creator_guess : b.opponent_guess;
+  // A creator who hasn't guessed yet has an empty guess (ongoing bets never hold a deleted user's guess, which is also empty)
+  const myGuess = iAmCreator ? b.creator_guess || null : b.opponent_guess;
   const theirGuess = iAmCreator ? b.opponent_guess : b.creator_guess;
   const tp = b.status === 'active' ? tippingPointOf(b) : null;
   const now = Date.now();
   const tippingPassed = tp !== null && now >= tp;
   const needsMyAction =
-    (b.status === 'awaiting_guess' && !iAmCreator) ||
+    (b.status === 'awaiting_guess' && myGuess === null) ||
     (b.status === 'awaiting_confirmation' && b.outcome_proposed_by !== me) ||
     tippingPassed; // both players are asked whether the event has happened
   const debt = -(bal.get(other) ?? 0);
@@ -572,7 +573,8 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     // Guesses stay secret until both players have locked theirs in. This is the only place guesses leave the
     // server, and nothing derived from both of them (tipping point, verdicts) is exposed before that either.
     // (a deleted user's own guess is gone: stored as '')
-    theirGuess: b.opponent_guess === null || theirGuess === '' ? null : theirGuess,
+    theirGuessIn: b.status === 'awaiting_guess' && theirGuess !== null && theirGuess !== '',
+    theirGuess: b.status === 'awaiting_guess' || b.opponent_guess === null || theirGuess === '' ? null : theirGuess,
     outcome: b.outcome,
     proposedVerdict: b.status !== 'awaiting_confirmation' || b.kind !== 'text' || proposalOf(b) !== 'outcome' || !b.proposed_verdict
       ? null
@@ -649,13 +651,17 @@ const kindSchema = z.enum(['number', 'duration', 'instant', 'text', 'yesno', 'ch
 
 app.post('/api/bets', async (req, res) => {
   const body = z
-    .object({ opponentId: z.string(), question: z.string().trim().min(3).max(200), kind: kindSchema, params: z.unknown().optional(), guess: z.string() })
+    .object({ opponentId: z.string(), question: z.string().trim().min(3).max(200), kind: kindSchema, params: z.unknown().optional(), guess: z.string().optional() })
     .safeParse(req.body);
-  if (!body.success) return res.status(400).json({ error: 'Give the bet a question (3–200 characters) and your guess' });
+  if (!body.success) return res.status(400).json({ error: 'Give the bet a question (3–200 characters)' });
   const { opponentId, question, kind } = body.data;
   const params = buildParams(kind, body.data.params);
   if (!params.ok) return res.status(400).json({ error: params.error });
-  const guess = normalizeAnswer(kind, params.value, body.data.guess, { now: Date.now(), role: 'guess' });
+  // Your own guess is optional: leave it out (or empty) to record the bet now and guess later. A guess made only of
+  // whitespace is not a guess. Guesses are stored trimmed.
+  if (body.data.guess && !body.data.guess.trim()) return res.status(400).json({ error: "A guess can't be blank. Leave it empty to guess later" });
+  const hasGuess = !!body.data.guess;
+  const guess = hasGuess ? normalizeAnswer(kind, params.value, body.data.guess!, { now: Date.now(), role: 'guess' }) : { ok: true as const, value: '' };
   if (!guess.ok) return res.status(400).json({ error: guess.error });
   if (!(await areConnected(uid(res), opponentId))) return res.status(403).json({ error: 'You can only bet with connected friends' });
   const blocked = await deletionBlock(uid(res), opponentId);
@@ -672,17 +678,23 @@ app.post('/api/bets', async (req, res) => {
 app.post('/api/bets/:id/guess', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
-  if (b.opponent_id !== uid(res) || b.status !== 'awaiting_guess') return res.status(409).json({ error: "You can't guess on this bet right now" });
+  const iAmCreator = b.creator_id === uid(res);
+  if (b.status !== 'awaiting_guess' || (iAmCreator ? b.creator_guess !== '' : b.opponent_guess !== null)) return res.status(409).json({ error: "You can't guess on this bet right now" });
   const guess = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.guess ?? ''), { now: Date.now(), role: 'guess' });
   if (!guess.ok) return res.status(400).json({ error: guess.error });
-  await db.execute({ sql: `UPDATE bets SET opponent_guess = ?, status = 'active' WHERE id = ?`, args: [guess.value, b.id] });
+  // The bet starts once both of you have locked in a guess
+  const theirsIn = iAmCreator ? b.opponent_guess !== null : b.creator_guess !== '';
+  await db.execute({
+    sql: `UPDATE bets SET ${iAmCreator ? 'creator_guess' : 'opponent_guess'} = ?, status = ? WHERE id = ?`,
+    args: [guess.value, theirsIn ? 'active' : 'awaiting_guess', b.id],
+  });
   await respondWithBet(res, b.id);
 });
 
 app.post('/api/bets/:id/cancel', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
-  if (b.status !== 'awaiting_guess') return res.status(409).json({ error: 'Only bets nobody has answered yet can be cancelled' });
+  if (b.status !== 'awaiting_guess') return res.status(409).json({ error: 'Only bets that are still waiting for a guess can be cancelled' });
   await db.execute({ sql: `UPDATE bets SET status = 'cancelled' WHERE id = ?`, args: [b.id] });
   await afterBetEnded(b.id);
   res.json({ ok: true });
