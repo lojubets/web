@@ -108,7 +108,7 @@ export async function tryDeleteUser(userId: string, now = Date.now()): Promise<b
     tx.close();
   }
   // The last use of the address, and nothing is logged about it
-  if (email) await sendMail(email, 'Your Lojubets account has been deleted', `Hi${name ? ` ${name}` : ''},\n\nYour account and personal data have been deleted, as you asked. Bets you settled with friends stay in their history under "Deleted user".\n\nThanks for betting with us.`);
+  if (email) await sendMail(email, 'Your LoJuBets account has been deleted', `Hi${name ? ` ${name}` : ''},\n\nYour account and personal data have been deleted, as you asked. Bets you settled with friends stay in their history under "Deleted user".\n\nThanks for betting with us.`);
   console.info(`account deleted: ${userId}`);
   return true;
 }
@@ -260,7 +260,7 @@ deletionRouter.post('/me/contact', async (req, res) => {
   if (Date.now() - last < 60_000) return res.status(429).json({ error: 'Please wait a minute before sending another message' });
   lastContact.set(me, Date.now());
   const { name, email } = await contactOf(me);
-  const sent = await sendMail(env.supportEmail, `Lojubets: help with account deletion (${name})`, `From: ${name} <${email ?? 'no verified email'}>, user ${me}\n\n${body.data.message}`);
+  const sent = await sendMail(env.supportEmail, `LoJuBets: help with account deletion (${name})`, `From: ${name} <${email ?? 'no verified email'}>, user ${me}\n\n${body.data.message}`);
   if (!sent) return res.status(502).json({ error: "We couldn't send your message. Try again later." });
   res.json({ ok: true });
 });
