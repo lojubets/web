@@ -1,4 +1,7 @@
-export type BetKind = 'number' | 'duration' | 'instant';
+export type BetKind = 'number' | 'duration' | 'instant' | 'text' | 'yesno' | 'choice';
+
+/** Kinds where an answer is right or wrong rather than closer or further. */
+export const EXACT_KINDS: readonly BetKind[] = ['yesno', 'choice'];
 
 /** Rules for a numeric answer. Applied to guesses, not to the real-world outcome. */
 export interface NumberParams {
@@ -20,7 +23,15 @@ export interface InstantParams {
 }
 
 export type DurationParams = Record<string, never>;
-export type BetParams = NumberParams | InstantParams | DurationParams;
+export type TextParams = Record<string, never>;
+export type YesNoParams = Record<string, never>;
+
+/** The options a multiple-choice bet offers; an answer is one of them, written exactly as listed. */
+export interface ChoiceParams {
+  options: string[];
+}
+
+export type BetParams = NumberParams | InstantParams | DurationParams | TextParams | YesNoParams | ChoiceParams;
 
 export type BetStatus =
   | 'awaiting_guess' // creator has guessed, opponent has not
@@ -103,6 +114,11 @@ export interface Bet {
   theirGuess: string | null;
   outcome: string | null;
   outcomeProposedByMe: boolean | null;
+  /**
+   * Freeform bets only: who the proposer says was right (a person can't compute closeness of free text),
+   * from the viewer's point of view. The other player confirms or rejects it.
+   */
+  proposedVerdict: 'me' | 'them' | 'draw' | null;
   /** null while unsettled or on a draw */
   winnerId: string | null;
   allIn: boolean;

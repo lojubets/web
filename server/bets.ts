@@ -20,6 +20,7 @@ export interface BetRow {
   settled_at: number | null;
   settled_by: string | null;
   proposal: string | null;
+  proposed_verdict: 'creator' | 'opponent' | 'draw' | null;
 }
 
 /** The kind of the pending proposal (rows from before the column existed are inferred). */

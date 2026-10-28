@@ -121,6 +121,8 @@ async function migrate() {
   if (!cols.includes('settled_by')) await db.execute('ALTER TABLE bets ADD COLUMN settled_by TEXT');
   // What a pending proposal says: 'outcome' | 'not_happened' | 'tie' (older rows: inferred from outcome)
   if (!cols.includes('proposal')) await db.execute('ALTER TABLE bets ADD COLUMN proposal TEXT');
+  // Freeform bets: who the proposer says won ('creator' | 'opponent' | 'draw'), pending the other player's confirmation
+  if (!cols.includes('proposed_verdict')) await db.execute('ALTER TABLE bets ADD COLUMN proposed_verdict TEXT');
   const userCols = (await db.execute('PRAGMA table_info(users)')).rows.map((r) => r.name);
   // Account deletion: a pending request, and the marker on the placeholder that stands in for a deleted user
   if (!userCols.includes('deletion_requested_at')) await db.execute('ALTER TABLE users ADD COLUMN deletion_requested_at INTEGER');

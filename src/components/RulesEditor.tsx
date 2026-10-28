@@ -11,11 +11,14 @@ export interface RulesDraft {
   allowPast: boolean;
   leadAmount: string;
   leadUnit: 'minutes' | 'hours' | 'days';
+  options: string[];
 }
+
+export const MAX_OPTIONS = 8;
 
 export const EMPTY_RULES: RulesDraft = {
   integer: false, min: '', max: '', minExclusive: false, maxExclusive: false,
-  precision: 'day', allowPast: false, leadAmount: '', leadUnit: 'hours',
+  precision: 'day', allowPast: false, leadAmount: '', leadUnit: 'hours', options: ['', ''],
 };
 
 const UNIT_MINUTES = { minutes: 1, hours: 60, days: 1440 };
@@ -29,6 +32,7 @@ export function draftToParams(kind: BetKind, r: RulesDraft): BetParams {
     const lead = r.allowPast ? 0 : Math.round((num(r.leadAmount) ?? 0) * UNIT_MINUTES[r.leadUnit]);
     return { precision: r.precision, allowPast: r.allowPast, minLeadMinutes: lead } as BetParams;
   }
+  if (kind === 'choice') return { options: r.options.map((o) => o.trim()).filter(Boolean) } as BetParams;
   return {} as BetParams;
 }
 
@@ -43,6 +47,32 @@ export default function RulesEditor({ kind, rules, onChange }: Props) {
   useEffect(() => {
     onChange({ ...EMPTY_RULES });
   }, [kind]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (kind === 'text' || kind === 'yesno') return null;
+
+  if (kind === 'choice') {
+    const setOption = (i: number, v: string) => set({ options: rules.options.map((o, j) => (j === i ? v : o)) });
+    return (
+      <div className="card stack">
+        <strong>Options</strong>
+        {rules.options.map((o, i) => (
+          <div className="bound" key={i}>
+            <label className="field">
+              <span className="sr-only">Option {i + 1}</span>
+              <input value={o} maxLength={60} placeholder={`Option ${i + 1}`} onChange={(e) => setOption(i, e.target.value)} />
+            </label>
+            {rules.options.length > 2 && (
+              <button type="button" className="link" aria-label={`Remove option ${i + 1}`} onClick={() => set({ options: rules.options.filter((_, j) => j !== i) })}>Remove</button>
+            )}
+          </div>
+        ))}
+        {rules.options.length < MAX_OPTIONS && (
+          <button type="button" className="link" onClick={() => set({ options: [...rules.options, ''] })}>Add an option</button>
+        )}
+        <p className="muted small">If neither of you picks the right one, or you both do, it's a draw.</p>
+      </div>
+    );
+  }
 
   if (kind === 'duration') {
     return (

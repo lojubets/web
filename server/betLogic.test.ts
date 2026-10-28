@@ -145,6 +145,41 @@ describe('decide', () => {
   });
 });
 
+describe('yes/no, multiple choice and freeform answers', () => {
+  const choice = { options: ['quit', 'get fired', 'get reassigned'] };
+  it('yes/no accepts only yes or no, case-insensitively', () => {
+    expect(guess('yesno', {}, ' YES ')).toEqual({ ok: true, value: 'yes' });
+    expect(guess('yesno', {}, 'no')).toEqual({ ok: true, value: 'no' });
+    expect(err(guess('yesno', {}, 'maybe'))).toBeTruthy();
+  });
+  it('choice answers must be one of the options, and come back as listed', () => {
+    expect(guess('choice', choice, 'Get Fired')).toEqual({ ok: true, value: 'get fired' });
+    expect(err(guess('choice', choice, 'retire'))).toBeTruthy();
+  });
+  it('choice rules need 2–8 distinct options', () => {
+    expect(buildParams('choice', { options: ['a'] }).ok).toBe(false);
+    expect(buildParams('choice', { options: ['a', 'A'] }).ok).toBe(false);
+    expect(buildParams('choice', { options: Array.from({ length: 9 }, (_, i) => `o${i}`) }).ok).toBe(false);
+    expect(buildParams('choice', { options: [' a ', 'b'] })).toEqual({ ok: true, value: { options: ['a', 'b'] } });
+    expect(buildParams('choice', {}).ok).toBe(false);
+  });
+  it('freeform answers are trimmed, non-empty and bounded', () => {
+    expect(guess('text', {}, '  "I quit"  ')).toEqual({ ok: true, value: '"I quit"' });
+    expect(err(guess('text', {}, '   '))).toBeTruthy();
+    expect(err(guess('text', {}, 'x'.repeat(301)))).toBeTruthy();
+  });
+  it('exact kinds: the right answer wins; both or neither right is a draw', () => {
+    expect(decide('yesno', 'yes', 'no', 'yes')).toBe('creator');
+    expect(decide('yesno', 'yes', 'no', 'no')).toBe('opponent');
+    expect(decide('yesno', 'yes', 'yes', 'yes')).toBe('draw');
+    expect(decide('choice', 'quit', 'get fired', 'get reassigned')).toBe('draw');
+    expect(decide('choice', 'quit', 'get fired', 'get fired')).toBe('opponent');
+  });
+  it('freeform bets are never decided by the computer', () => {
+    expect(() => decide('text', 'a', 'b', 'a')).toThrow();
+  });
+});
+
 describe('tipping point', () => {
   const p = inst();
   it('is the midpoint (plus a minute of slack) for future-dated bets', () => {

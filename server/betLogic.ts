@@ -1,10 +1,15 @@
 import { z } from 'zod';
 import { formatDurationLong, parseDuration } from '../shared/duration.js';
-import type { BetKind, BetParams, InstantParams, NumberParams } from '../shared/types.js';
+import { EXACT_KINDS, type BetKind, type BetParams, type ChoiceParams, type InstantParams, type NumberParams } from '../shared/types.js';
 
 const MIN_MS = 60_000;
 const DAY_MS = 86_400_000;
 const MAX_ABS = 1e15;
+const MAX_TEXT = 300;
+const MAX_OPTIONS = 8;
+const MAX_OPTION_LENGTH = 60;
+
+const sameText = (a: string, b: string) => a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
 
 const floorDay = (ms: number) => Math.floor(ms / DAY_MS) * DAY_MS;
 
@@ -30,7 +35,18 @@ const instantSchema = z
 
 const durationSchema = z.object({}).strict();
 
-const schemas = { number: numberSchema, instant: instantSchema, duration: durationSchema } as const;
+const choiceSchema = z
+  .object({ options: z.array(z.string().trim().min(1).max(MAX_OPTION_LENGTH)).min(2).max(MAX_OPTIONS) })
+  .strict();
+
+const schemas = {
+  number: numberSchema,
+  instant: instantSchema,
+  duration: durationSchema,
+  text: durationSchema,
+  yesno: durationSchema,
+  choice: choiceSchema,
+} as const;
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -50,6 +66,10 @@ export function buildParams(kind: BetKind, input: unknown): Parsed<BetParams> {
       if (empty) return { ok: false, error: 'The minimum and maximum leave no possible answers' };
     }
   }
+  if (kind === 'choice') {
+    const { options } = params as ChoiceParams;
+    if (options.some((o, i) => options.findIndex((x) => sameText(x, o)) !== i)) return { ok: false, error: 'Each option must be different' };
+  }
   if (kind === 'instant') {
     const p = params as InstantParams;
     if (p.allowPast && p.minLeadMinutes > 0) return { ok: false, error: 'A minimum lead time only applies when past dates are not allowed' };
@@ -64,7 +84,8 @@ export function loadParams(kind: BetKind, stored: string | null): BetParams {
     raw = stored ? JSON.parse(stored) : {};
   } catch {}
   const parsed = schemas[kind].safeParse(raw);
-  return (parsed.success ? parsed.data : schemas[kind].parse({})) as BetParams;
+  if (parsed.success) return parsed.data as BetParams;
+  return (kind === 'choice' ? { options: [] } : schemas[kind].parse({})) as BetParams;
 }
 
 // ---------- answers ----------
@@ -91,6 +112,22 @@ export function normalizeAnswer(kind: BetKind, params: BetParams, raw: string, c
       if (p.max !== null && (p.maxExclusive ? n >= p.max : n > p.max)) return fail(p.maxExclusive ? `Must be less than ${p.max}` : `Must be at most ${p.max}`);
     }
     return { ok: true, value: String(n) };
+  }
+
+  if (kind === 'text') {
+    if (text === '') return fail('Write an answer');
+    if (text.length > MAX_TEXT) return fail(`Keep it to ${MAX_TEXT} characters`);
+    return { ok: true, value: text };
+  }
+
+  if (kind === 'yesno') {
+    const v = text.toLowerCase();
+    return v === 'yes' || v === 'no' ? { ok: true, value: v } : fail('Answer yes or no');
+  }
+
+  if (kind === 'choice') {
+    const option = (params as ChoiceParams).options.find((o) => sameText(o, text));
+    return option === undefined ? fail('Pick one of the options') : { ok: true, value: option };
   }
 
   if (kind === 'duration') {
@@ -136,8 +173,16 @@ function scalar(kind: BetKind, v: string): number {
 
 export type Verdict = 'creator' | 'opponent' | 'draw';
 
-/** Whose guess was closer? Equal distance is a draw. */
+/**
+ * Whose guess was closer (or, for yes/no and multiple choice, right)? Equal distance is a draw, and so is
+ * both or neither being right. Freeform bets can't be decided by a computer: the players say who won.
+ */
 export function decide(kind: BetKind, creatorGuess: string, opponentGuess: string, outcome: string): Verdict {
+  if (kind === 'text') throw new Error('Freeform bets are decided by the players');
+  if (EXACT_KINDS.includes(kind)) {
+    const c = sameText(creatorGuess, outcome);
+    return c === sameText(opponentGuess, outcome) ? 'draw' : c ? 'creator' : 'opponent';
+  }
   const o = scalar(kind, outcome);
   // Rounded so decimal noise (0.1 + 0.2) can't turn a tie into a win.
   const dist = (g: string) => Math.round(Math.abs(scalar(kind, g) - o) * 1e9);

@@ -205,6 +205,73 @@ describe('bet rules and tipping point', () => {
     await bob.post(`/api/bets/${body.id}/guess`).send({ guess: '7' }).expect(200);
   });
 
+  it('yes/no bets: the right answer wins, and nothing derived leaks early', async () => {
+    const { body } = await create({ kind: 'yesno', guess: 'yes' }).expect(201);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: 'perhaps' }).expect(400);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: 'no' }).expect(200);
+    await ann.post(`/api/bets/${body.id}/propose`).send({ outcome: 'yes' }).expect(200);
+    const done = await bob.post(`/api/bets/${body.id}/confirm`).expect(200);
+    expect(done.body).toMatchObject({ status: 'settled', winnerId: expect.not.stringMatching(bobId) });
+  });
+
+  it('multiple choice bets validate options and draw when nobody is right', async () => {
+    await create({ kind: 'choice', params: { options: ['quit'] }, guess: 'quit' }).expect(400);
+    const params = { options: ['quit', 'get fired', 'get reassigned'] };
+    await create({ kind: 'choice', params, guess: 'retire' }).expect(400);
+    const { body } = await create({ kind: 'choice', params, guess: 'quit' }).expect(201);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: 'get fired' }).expect(200);
+    await ann.post(`/api/bets/${body.id}/propose`).send({ outcome: 'get reassigned' }).expect(200);
+    const done = await bob.post(`/api/bets/${body.id}/confirm`).expect(200);
+    expect(done.body).toMatchObject({ status: 'settled', winnerId: null });
+  });
+
+  it('freeform bets are settled by who the proposer says was right, if the other agrees', async () => {
+    const { body } = await create({ kind: 'text', guess: '"We were unlucky"' }).expect(201);
+    await bob.post(`/api/bets/${body.id}/guess`).send({ guess: '"The referee"' }).expect(200);
+    await ann.post(`/api/bets/${body.id}/propose`).send({ outcome: 'He blamed the referee' }).expect(400); // must say who was right
+    await ann.post(`/api/bets/${body.id}/propose`).send({ outcome: 'He blamed the referee', winner: 'them' }).expect(200);
+    expect((await bob.get(`/api/bets/${body.id}`)).body.proposedVerdict).toBe('me');
+    expect((await ann.get(`/api/bets/${body.id}`)).body.proposedVerdict).toBe('them');
+    await bob.post(`/api/bets/${body.id}/reject`).expect(200);
+    expect((await bob.get(`/api/bets/${body.id}`)).body.proposedVerdict).toBeNull();
+    await bob.post(`/api/bets/${body.id}/propose`).send({ outcome: 'He blamed the referee', winner: 'me' }).expect(200);
+    const done = await ann.post(`/api/bets/${body.id}/confirm`).expect(200);
+    expect(done.body.winnerId).toBe(bobId);
+  });
+
+  it('the player asked to confirm can counter-propose, back and forth as often as they like', async () => {
+    const { body } = await create({ kind: 'number', guess: '2' }).expect(201);
+    const id = body.id;
+    await bob.post(`/api/bets/${id}/guess`).send({ guess: '5' }).expect(200);
+    await ann.post(`/api/bets/${id}/propose`).send({ outcome: '5' }).expect(200);
+    await ann.post(`/api/bets/${id}/propose`).send({ outcome: '2' }).expect(409); // can't counter your own proposal
+    let proposer = bob;
+    let other = ann;
+    for (let round = 0; round < 12; round++) {
+      const view = (await proposer.post(`/api/bets/${id}/propose`).send({ outcome: String(round) }).expect(200)).body;
+      expect(view).toMatchObject({ status: 'awaiting_confirmation', outcome: String(round), outcomeProposedByMe: true });
+      expect((await other.get(`/api/bets/${id}`)).body).toMatchObject({ outcomeProposedByMe: false, needsMyAction: true });
+      [proposer, other] = [other, proposer];
+    }
+    const done = await proposer.post(`/api/bets/${id}/confirm`).expect(200); // after the last swap, `proposer` is the one being asked
+    expect(done.body).toMatchObject({ status: 'settled', outcome: '11' });
+  });
+
+  it('a player can withdraw their own proposal, putting the bet back in play', async () => {
+    const { body } = await create({ kind: 'text', guess: 'a' }).expect(201);
+    const id = body.id;
+    await bob.post(`/api/bets/${id}/guess`).send({ guess: 'b' }).expect(200);
+    await ann.post(`/api/bets/${id}/withdraw`).expect(409); // nothing pending
+    await ann.post(`/api/bets/${id}/propose`).send({ outcome: 'b', winner: 'them' }).expect(200);
+    await bob.post(`/api/bets/${id}/withdraw`).expect(409); // it isn't Bob's proposal
+    const view = (await ann.post(`/api/bets/${id}/withdraw`).expect(200)).body;
+    expect(view).toMatchObject({ status: 'active', outcome: null, proposedVerdict: null, outcomeProposedByMe: null });
+    await bob.post(`/api/bets/${id}/confirm`).expect(409); // the withdrawn proposal can't be confirmed
+    await ann.post(`/api/bets/${id}/propose-tie`).expect(200);
+    await ann.post(`/api/bets/${id}/withdraw`).expect(200); // ties too
+    expect((await ann.get(`/api/bets/${id}`)).body.status).toBe('active');
+  });
+
   it('duration bets compare by closeness', async () => {
     const { body } = await create({ kind: 'duration', guess: '3:05' }).expect(201);
     expect(body.myGuess).toBe('11100');
