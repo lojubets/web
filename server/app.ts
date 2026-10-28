@@ -93,6 +93,11 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   const emails = await db.execute({ sql: 'SELECT email, verified FROM user_emails WHERE user_id = ? ORDER BY created_at, email', args: [id] });
   const primary = String(r.email ?? '').toLowerCase();
   const logins = await db.execute({ sql: 'SELECT provider, subject, account FROM identities WHERE user_id = ? ORDER BY rowid', args: [id] });
+  // Addresses that a social login (Google, Microsoft, Apple) reported as its account: they belong to that sign-in
+  const socialAddresses = new Map<string, string>();
+  for (const l of logins.rows) {
+    if (l.provider !== 'password' && l.account) socialAddresses.set(String(l.account).trim().toLowerCase(), PROVIDER_LABELS[String(l.provider)] ?? String(l.provider));
+  }
   const passwordLogins = new Set(logins.rows.filter((l) => l.provider === 'password').map((l) => String(l.subject)));
   const verifiedEmails = emails.rows.filter((e) => e.verified).map((e) => String(e.email));
   const verifiedCount = verifiedEmails.length;
@@ -117,16 +122,19 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
     const movesPasswordTo = signsInWithPassword && onlyPasswordLogin ? (candidates.find((c) => !usedByOthers.has(c)) ?? null) : null;
     // Removing an address never leaves the account without a verified address, or without a way to sign in
     // (removing an address also removes the password login that uses it, unless that login moves to another address).
+    // It also never pulls the address out from under a social login that was set up with it.
     const removeBlocked =
       verifiedCount - (e.verified ? 1 : 0) < 1
         ? e.verified
           ? 'This is your only verified email address.'
           : 'Verify an email address first: you need at least one verified address.'
-        : signsInWithPassword && onlyPasswordLogin && !movesPasswordTo
-          ? candidates.length
-            ? 'Your password login cannot move to your other address, because a different LoJuBets account already uses it. Merge the accounts first.'
-            : 'This address is your only way to sign in.'
-          : null;
+        : socialAddresses.has(email)
+          ? `This address belongs to your ${socialAddresses.get(email)} sign-in. Remove that sign-in first if you no longer want it.`
+          : signsInWithPassword && onlyPasswordLogin && !movesPasswordTo
+            ? candidates.length
+              ? 'Your password login cannot move to your other address, because a different LoJuBets account already uses it. Merge the accounts first.'
+              : 'This address is your only way to sign in.'
+            : null;
     return { email, verified: !!e.verified, primary: email === primary, signsInWithPassword, movesPasswordTo, removeBlocked };
   });
   // The primary address first
