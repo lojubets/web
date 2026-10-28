@@ -584,7 +584,7 @@ describe('merging accounts', () => {
     const me = (await a.get('/api/me').expect(200)).body;
     expect(me).toMatchObject({ id: aId, email: 'mia.work@example.com', profileName: 'Mia (work)', hasAvatar: true, emailVerified: true });
     expect(me.emails).toEqual([
-      { email: 'mia.work@example.com', verified: true, primary: true, signsInWithPassword: true, movesPasswordTo: null, removeBlocked: null },
+      { email: 'mia.work@example.com', verified: true, primary: true, signsInWithPassword: true, movesPasswordTo: null, removeBlocked: expect.stringMatching(/primary/) },
       { email: 'mia@example.com', verified: true, primary: false, signsInWithPassword: false, movesPasswordTo: null, removeBlocked: expect.stringMatching(/Development login/) },
     ]);
 
@@ -737,6 +737,7 @@ describe('removing email addresses', () => {
   const id = async (a: Agent) => (await a.get('/api/me')).body.id as string;
   const emails = async (a: Agent) => (await a.get('/api/me')).body.emails as { email: string; primary: boolean; verified: boolean; removeBlocked: string | null; signsInWithPassword: boolean }[];
   const remove = (a: Agent, email: string) => a.delete(`/api/me/emails/${encodeURIComponent(email)}`);
+  const primary = (a: Agent, email: string) => a.post(`/api/me/emails/${encodeURIComponent(email)}/primary`);
   const canLogin = async (email: string, password: string) => (await request(app).post('/api/auth/login').send({ email, password })).status === 200;
   const addRaw = (userId: string, email: string, verified: boolean) =>
     db.execute({ sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, ?, ?)', args: [userId, email, verified ? 1 : 0, Date.now() + 1] });
@@ -778,17 +779,20 @@ describe('removing email addresses', () => {
     await remove(a, 'ola@example.com').expect(409);
   });
 
-  it('removing the primary promotes the other verified address once the provider login behind the old one is gone', async () => {
+  it('never removes the primary address, nor one tied to a provider login, until it is no longer primary and the login is gone', async () => {
     const a = await login('Pam');
     await login('Pamb');
     await mergeInto(a, 'pamb@example.com');
 
-    // Each address belongs to the (development stand-in for a social) login it was set up with
-    expect((await emails(a)).map((e) => e.removeBlocked)).toEqual([expect.stringMatching(/Development login/), expect.stringMatching(/Development login/)]);
+    // The primary address can't be removed; the other one belongs to the (development stand-in for a social) login it was set up with
+    expect((await emails(a)).map((e) => e.removeBlocked)).toEqual([expect.stringMatching(/primary/), expect.stringMatching(/Development login/)]);
     await remove(a, 'pam@example.com').expect(409);
+    await remove(a, 'pamb@example.com').expect(409);
 
     const devLogin = ((await a.get('/api/me')).body.logins as { provider: string; subject: string; account: string | null }[]).find((l) => l.account === 'pam@example.com')!;
     await a.delete(`/api/me/logins/${devLogin.provider}/${encodeURIComponent(devLogin.subject)}`).expect(200);
+    await remove(a, 'pam@example.com').expect(409); // still primary
+    await primary(a, 'pamb@example.com').expect(200);
 
     await remove(a, 'pam@example.com').expect(200);
     const me = (await a.get('/api/me')).body;
@@ -797,7 +801,7 @@ describe('removing email addresses', () => {
     expect(me.emails[0]).toMatchObject({ email: 'pamb@example.com', primary: true });
   });
 
-  it("keeps the address of the account's only social login, but lets the other address go", async () => {
+  it("keeps the address of the account's only social login, but lets an unrelated address go", async () => {
     // A password login on one address, a (stand-in) Google login that reported another, then the password login is deleted
     const u = await verifiedUser('keeper.work@example.com');
     const userId = await id(u);
@@ -807,7 +811,10 @@ describe('removing email addresses', () => {
 
     const list = await emails(u);
     expect(list.find((e) => e.email === 'keeper@example.com')!.removeBlocked).toMatch(/Google/);
-    expect(list.find((e) => e.email === 'keeper.work@example.com')!.removeBlocked).toBeNull();
+    expect(list.find((e) => e.email === 'keeper.work@example.com')!.removeBlocked).toMatch(/primary/);
+    await addRaw(userId, 'spare.keeper@example.com', true);
+    expect((await emails(u)).find((e) => e.email === 'spare.keeper@example.com')!.removeBlocked).toBeNull();
+    await remove(u, 'spare.keeper@example.com').expect(200);
     await remove(u, 'keeper@example.com').expect(409);
     expect((await emails(u)).map((e) => e.email).sort()).toEqual(['keeper.work@example.com', 'keeper@example.com']);
 
@@ -837,6 +844,8 @@ describe('removing email addresses', () => {
   it("moves the password login to another verified address when removing the address that is the account's only login", async () => {
     const u = await verifiedUser('onlylogin@example.com');
     await addRaw(await id(u), 'spare@example.com', true); // a verified address with no login of its own
+    expect((await emails(u)).find((e) => e.email === 'onlylogin@example.com')!.removeBlocked).toMatch(/primary/);
+    await primary(u, 'spare@example.com').expect(200);
     expect((await emails(u)).find((e) => e.email === 'onlylogin@example.com')).toMatchObject({ removeBlocked: null, movesPasswordTo: 'spare@example.com' });
     await remove(u, 'onlylogin@example.com').expect(200);
     expect(await canLogin('onlylogin@example.com', PW)).toBe(false);
@@ -848,6 +857,7 @@ describe('removing email addresses', () => {
     const u = await verifiedUser('mover@example.com');
     await addRaw(await id(u), 'taken@example.com', true);
     await verifiedUser('someone.registered@example.com');
+    await primary(u, 'taken@example.com').expect(200); // the primary address can't go, so make the other one primary
     // another account holds a password login under taken@example.com
     await db.execute({ sql: `UPDATE identities SET subject = 'taken@example.com' WHERE provider = 'password' AND subject = 'someone.registered@example.com'`, args: [] });
     const e = (await emails(u)).find((x) => x.email === 'mover@example.com')!;
