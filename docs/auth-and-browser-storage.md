@@ -8,7 +8,8 @@ Section 7 onwards is assessment and recommendation; sections 1–6 are descripti
 >
 > Sections 1–6 and the "Findings" below describe the code **as it was on `main` at `9f5a039` on 2026-10-28**. The same PR then
 > fixed most of the findings; §10 lists what changed and what is still open. Where §1–§6 say "no X", read §10 for the
-> current state.
+> current state. §11 re-assesses everything against `main` at `c70b9fc` (after account deletion and the privacy policy
+> landed): all fixes in §10 still hold, and four new findings (R9–R12) came with the account-deletion work.
 
 > ## ⚠️ Findings that deserve attention first
 >
@@ -269,3 +270,44 @@ tickets, `kid` for secret rotation.
 **Deploy notes:** the `session_version` column and `rate_limits` table are created automatically on first request.
 Because of the `__Host-` rename, all users have to sign in once after this ships. Rate-limit counters count every attempt
 (successful or not) in the window, so a user who logs in more than 10 times in 15 minutes with one email is throttled.
+
+## 11. Re-assessment on 2026-10-28 (`main` at `c70b9fc`)
+
+Since §10, three PRs landed: account deletion (#6, `server/deletion.ts`, `src/components/DeleteAccount.tsx`), the privacy
+policy page (#5) and cosmetic changes (#9). I re-read `server/auth.ts`, `env.ts`, `rateLimit.ts`, `merge.ts`, `deletion.ts`,
+the CSRF middleware in `server/app.ts`, and `src/api.ts` / `Login.tsx`.
+
+### Previously fixed findings: still fixed
+
+| Finding | Re-check |
+|---|---|
+| R1 `?next=` | Still guarded: `safeNext` (`src/api.ts:20`) is used in `Login.tsx:12`. |
+| R2 revocation / renewal | `session_version` check, 1-day renewal and 180-day cap are intact (`readSessionUser`). Merge still calls `revokeSessions`. Account deletion removes the user row, so every session for it fails the lookup. |
+| R3 rate limiting | Intact on login, register, merge-password and verify-email, **but the new deletion endpoint is not covered (R10).** |
+| R4 dev login / fallback secret | Intact (`devLoginAllowed`, remote-DB guard in `env.ts`). |
+| R8 callback `error` | Intact. |
+| CSRF Origin check, `__Host-` cookies, `typ` claims | Intact. |
+
+### New findings
+
+| # | Finding | Where | Severity |
+|---|---|---|---|
+| R9 | **The "recent sign-in" check for account deletion is broken in production and weaker than intended.** `sessionIssuedAt` reads `req.cookies.session`, but in production the cookie is `__Host-session`, so it always returns null. Sign-in-provider-only users (no password) therefore *always* get `reauth_required` and cannot delete their account at all. Tests do not catch it because dev uses the plain name. If it were fixed by only changing the cookie name, it would still be wrong: it reads the token's `iat`, which is reset whenever the session renews (any request after 1 day), so a stolen cookie that is used once a day always looks "recently signed in". It also skips the `typ` and `session_version` checks. | `server/auth.ts:151-158`, `server/deletion.ts:238` | **Medium**: a GDPR right (erasure) is unusable for social-login users, and the intended protection does not work |
+| R10 | `POST /api/me/deletion` verifies a password via `verifyPassword` with no rate limit, a password oracle for the signed-in account (the same class as R3's `/merge/password`, which is limited). Also the `/me/contact` throttle is an in-memory `Map`, which does not hold across serverless instances (§7's point about shared stores). | `server/deletion.ts:230-249` | Low–medium (needs a session) |
+| R11 | After deletion the response clears a cookie named `session`, not `__Host-session`, so in production the (now useless) session cookie stays in the browser until it expires. Harmless for access, since the user row is gone, but untidy next to a privacy feature. | `server/deletion.ts:248` | Low |
+| R12 | The privacy policy says the sign-in cookie keeps you signed in "for 30 days". Since the session overhaul it renews with use, up to 180 days from the actual sign-in. | `src/pages/Privacy.tsx:65` | Low (accuracy of a public statement) |
+
+**Fix for R9–R11 (not applied in this pass):** export a helper from `auth.ts` that reads the session through the same
+`verify(token, 'session')` and `SESSION_COOKIE` as `readSessionUser`, returns the `auth` claim (time of the actual sign-in,
+which renewal preserves) and checks `session_version`; export `clearSessionCookie(res)` and use it in logout and deletion;
+put `rateLimit('delete', { perIp: 30, perBody … })` or a per-user key on the deletion route. Add a test that runs the
+deletion flow with `NODE_ENV=production`-style cookie names.
+
+### Open items: status changes
+
+- **Recent-auth for sensitive actions:** *partly done.* Deletion now requires a password or a recent sign-in (see R9 for why the latter does not work). Still missing for changing/removing emails and logins and for merge confirmation.
+- **R5, R6, R7, per-device session list, PKCE, security headers/CSP, scrypt cost, hashing invitation tokens, single-use merge tickets, `kid`:** unchanged, still open. R7 (password reset) remains the biggest functional gap.
+- **§1 inventory:** unchanged. Still no `localStorage`, `sessionStorage`, IndexedDB or service worker (the new components and the privacy page add none, as the policy states). The only addition is the new `/privacy` route, which needs no session.
+- **New small improvement:** OAuth sign-in now refuses providers that share no email address (`auth.ts:443`), which keeps every account reachable.
+
+Updated priority order: R9 (fix with R10/R11, a small change) → R7 password reset → remaining recent-auth gates → the rest of §9.
