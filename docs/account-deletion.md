@@ -1,6 +1,6 @@
 # Proposal: account deletion (GDPR right to erasure)
 
-Status: **proposal, no code**. Written against the schema in `server/db.ts` and the routes in `server/app.ts`, `server/auth.ts` and `server/merge.ts` as of `main`.
+Status: **implemented in this PR** (`server/deletion.ts`, its tests, and the Profile and Bets UI); the rest of this document is the design it follows. Written against the schema in `server/db.ts` and the routes in `server/app.ts`, `server/auth.ts` and `server/merge.ts` as of `main`.
 
 ## 1. Goal
 

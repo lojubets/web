@@ -249,6 +249,22 @@ deletionRouter.post('/me/deletion', async (req, res) => {
   res.json({ deleted });
 });
 
+// "I'm stuck": a message to the maintainer, whose address stays server-side.
+const lastContact = new Map<string, number>();
+deletionRouter.post('/me/contact', async (req, res) => {
+  const body = z.object({ message: z.string().trim().min(5).max(2000) }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Write a message of 5 to 2000 characters' });
+  if (!env.supportEmail) return res.status(503).json({ error: "Contact isn't set up on this server" });
+  const me = uid(res);
+  const last = lastContact.get(me) ?? 0;
+  if (Date.now() - last < 60_000) return res.status(429).json({ error: 'Please wait a minute before sending another message' });
+  lastContact.set(me, Date.now());
+  const { name, email } = await contactOf(me);
+  const sent = await sendMail(env.supportEmail, `Lojubets: help with account deletion (${name})`, `From: ${name} <${email ?? 'no verified email'}>, user ${me}\n\n${body.data.message}`);
+  if (!sent) return res.status(502).json({ error: "We couldn't send your message. Try again later." });
+  res.json({ ok: true });
+});
+
 deletionRouter.delete('/me/deletion', async (_req, res) => {
   await withdrawDeletion(uid(res));
   res.json({ ok: true });

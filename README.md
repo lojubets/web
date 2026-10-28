@@ -75,6 +75,7 @@ Production does **not** use a dotenv file. Vercel stores the variables you confi
 | `CRON_SECRET` | yes | protects `/api/cron`; Vercel Cron sends it automatically |
 | `GOOGLE_*`, `MICROSOFT_*`, `APPLE_*` | per provider | see [Sign-in providers](#sign-in-providers) |
 | `RESEND_API_KEY`, `RESEND_FROM` | optional | see [Email](#email-invitations-and-verification) |
+| `SUPPORT_EMAIL` | optional | where "I'm stuck deleting my account" messages go (needs Resend); never shown on the site |
 
 `APP_URL` must be the public address people use. If it is still `http://localhost:5173` (easy to do when copying values from `.env.cloud`), Google sends users back to localhost after signing in; the app now refuses to start the sign-in and says so. After changing any variable, **redeploy**: Vercel applies new values only to new deployments.
 

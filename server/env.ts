@@ -34,6 +34,8 @@ export const env = {
   appUrl: defaultAppUrl(),
   // The dev login can sign in as any email, so against a remote database it must be asked for explicitly.
   devLogin: !isProd && (localDatabase ? process.env.DEV_LOGIN !== 'off' : process.env.DEV_LOGIN === 'on'),
+  // Where "I'm stuck deleting my account" messages go. Never shown on the site or returned from the API.
+  supportEmail: process.env.SUPPORT_EMAIL || undefined,
   resendApiKey: process.env.RESEND_API_KEY,
   resendFrom: process.env.RESEND_FROM || 'Lojubets <onboarding@resend.dev>',
 };

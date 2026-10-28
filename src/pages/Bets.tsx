@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Bet, Friend } from '../../shared/types';
 import BetCard from '../components/BetCard';
+import CancelRequests from '../components/CancelRequests';
 import Icon from '../components/Icon';
 import { useFetch } from '../hooks';
 
@@ -41,6 +42,7 @@ export default function Bets() {
         </div>
       )}
       {!bets.loading && friends.data?.length ? list.length === 0 && <div className="empty"><img className="empty-can" src="/can-256.png" width="80" height="80" alt="" /><p>No bets yet. Start one!</p></div> : null}
+      <CancelRequests onAnswered={bets.reload} />
       {section('Your move', yourMove)}
       {section('Tipping point approaching', headsUp)}
       {section('In play', inPlay)}

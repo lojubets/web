@@ -280,6 +280,14 @@ describe('deleting with ongoing bets', () => {
   });
 });
 
+describe('contact', () => {
+  it('forwards a message to the maintainer without revealing the address, once a minute', async () => {
+    const u = await user('Stuck');
+    await u.a.post('/api/me/contact').send({ message: 'hi' }).expect(400);
+    await u.a.post('/api/me/contact').send({ message: 'My bet is stuck, please help' }).expect(503); // SUPPORT_EMAIL not set
+  });
+});
+
 describe('export', () => {
   it("lists what we hold about the user, without anyone's secrets", async () => {
     const ann = await user('Ann');
