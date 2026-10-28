@@ -87,11 +87,14 @@ describe('bets between friends', () => {
     await bob.post(`/api/bets/${id}/confirm`).expect(200); // call it off, leaving balances alone
   });
 
-  it('lets the creator guess later even before the opponent has answered, and a blank guess means none', async () => {
-    const created = await ann.post('/api/bets').send({ opponentId: bobId, question: 'Final score?', kind: 'number', guess: '  ' }).expect(201);
+  it('lets the creator guess later even before the opponent has answered; whitespace-only guesses are refused and others trimmed', async () => {
+    await ann.post('/api/bets').send({ opponentId: bobId, question: 'Final score?', kind: 'number', guess: '  ' }).expect(400);
+    await ann.post('/api/bets').send({ opponentId: bobId, question: 'Who scores?', kind: 'text', guess: ' \t ' }).expect(400);
+    const created = await ann.post('/api/bets').send({ opponentId: bobId, question: 'Final score?', kind: 'number', guess: '' }).expect(201);
     const id = created.body.id;
     expect(created.body).toMatchObject({ status: 'awaiting_guess', myGuess: null });
-    await ann.post(`/api/bets/${id}/guess`).send({ guess: '3' }).expect(200);
+    await ann.post(`/api/bets/${id}/guess`).send({ guess: '   ' }).expect(400);
+    await ann.post(`/api/bets/${id}/guess`).send({ guess: ' 3 ' }).expect(200);
     expect((await ann.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'awaiting_guess', myGuess: '3', needsMyAction: false });
     expect((await bob.get(`/api/bets/${id}`)).body).toMatchObject({ theirGuessIn: true, theirGuess: null, needsMyAction: true });
     await bob.post(`/api/bets/${id}/guess`).send({ guess: '1' }).expect(200);

@@ -657,8 +657,10 @@ app.post('/api/bets', async (req, res) => {
   const { opponentId, question, kind } = body.data;
   const params = buildParams(kind, body.data.params);
   if (!params.ok) return res.status(400).json({ error: params.error });
-  // Your own guess is optional: leave it out to record the bet now and guess later
-  const hasGuess = !!body.data.guess?.trim();
+  // Your own guess is optional: leave it out (or empty) to record the bet now and guess later. A guess made only of
+  // whitespace is not a guess. Guesses are stored trimmed.
+  if (body.data.guess && !body.data.guess.trim()) return res.status(400).json({ error: "A guess can't be blank. Leave it empty to guess later" });
+  const hasGuess = !!body.data.guess;
   const guess = hasGuess ? normalizeAnswer(kind, params.value, body.data.guess!, { now: Date.now(), role: 'guess' }) : { ok: true as const, value: '' };
   if (!guess.ok) return res.status(400).json({ error: guess.error });
   if (!(await areConnected(uid(res), opponentId))) return res.status(403).json({ error: 'You can only bet with connected friends' });
