@@ -346,6 +346,32 @@ app.post('/api/me/password', rateLimit('change-password', { perIp: 60, perUser: 
   res.json({ ok: true });
 });
 
+// Add a password as another way of signing in, for an account that has none (it signs in with a provider only). The
+// password belongs to one of the account's verified addresses, which becomes the email to sign in with. Needs a recent
+// sign-in (see `reauthenticate`): there is no password to prove yet, and a stolen session alone must not be able to
+// attach one.
+app.post('/api/me/password/add', rateLimit('add-password', { perIp: 60, perUser: 10 }), async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const body = z.object({ email: z.string().max(320), newPassword: z.string().min(8).max(200) }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Choose a password of at least 8 characters' });
+  if (me.logins.some((l) => l.provider === 'password')) return res.status(409).json({ error: 'Your account already has a password. Change it instead.' });
+  const email = body.data.email.trim().toLowerCase();
+  if (!me.emails.some((e) => e.email === email && e.verified)) return res.status(400).json({ error: 'Choose one of your verified email addresses to sign in with' });
+  const auth = await reauthenticate(req, me.id, 'add a password');
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error, code: auth.code });
+  const taken = await db.execute({ sql: `SELECT 1 FROM identities WHERE provider = 'password' AND subject = ?`, args: [email] });
+  if (taken.rows.length) return res.status(409).json({ error: 'A different LoJuBets account already signs in with that address and a password. Merge the accounts first.' });
+  await db.batch(
+    [
+      { sql: `INSERT INTO identities (provider, subject, user_id) VALUES ('password', ?, ?)`, args: [email, me.id] },
+      { sql: 'INSERT OR REPLACE INTO password_credentials (subject, password_hash) VALUES (?, ?)', args: [email, await hashPassword(body.data.newPassword)] },
+      { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [email] },
+    ],
+    'write',
+  );
+  res.json({ ok: true });
+});
+
 // First step of connecting another provider account: the same proof as for deleting the account (password, or a recent
 // sign-in). The browser then goes to /api/auth/<provider>?connect=1, which spends the ticket this issues.
 app.post('/api/me/connect', rateLimit('connect', { perIp: 60, perUser: 10 }), async (req, res) => {
