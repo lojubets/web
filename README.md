@@ -2,7 +2,7 @@
 
 # LoJuBets
 
-Bets between friends. Closest guess wins, and the prize is always one lonkero (the Finnish nickname for a long drink).
+Bets between friends. Closest guess wins, and the prize is always one Gin & Tonic (GT).
 
 - **Frontend:** React + TypeScript (Vite), mobile-first
 - **Backend:** Express + TypeScript, served as a single Vercel serverless function under `/api`
@@ -20,7 +20,7 @@ Bets between friends. Closest guess wins, and the prize is always one lonkero (t
    - **Yes or no:** "Will Kane win the Ballon d'Or?" The right answer wins; if you both picked the same answer (or, with multiple choice, neither of you was right), it's a draw.
    - **Multiple choice:** 2–8 options you write ("quit", "get fired", "get reassigned"). Each of you picks one; the one who picked the actual outcome wins.
    - **Freeform:** "What will Jose say?" Each of you writes an answer (up to 300 characters). There's nothing to measure, so whoever enters the result also says who was right (you, your friend, or neither), and the other player confirms or rejects that.
-4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one lonkero; equal distance is a draw.
+4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one GT; equal distance is a draw.
 5. **Cancelling and ties:** a bet can be cancelled by either player only until the other has locked in a guess (the opponent declining it, or the creator withdrawing it). Once you've both guessed, either of you can **propose a tie**; if the other agrees, the bet is called off with no winner (it stays in the history, and no balance changes, an all-in stake included). If they refuse, the bet carries on.
 6. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
 7. **Merging accounts:** signed up twice (say with Google and with an email and password)? On the Profile page choose **Merge accounts**, sign in to the other account (you stay signed in as this one), then choose whose email address, display name and photo the merged account keeps. Rules:

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api';
 import Icon from '../components/Icon';
-import Wave from '../components/Wave';
+import Rule from '../components/Rule';
 import { useAction } from '../hooks';
 
 export default function ForgotPassword() {
@@ -17,7 +17,7 @@ export default function ForgotPassword() {
         <h1>Forgot your password?</h1>
         <p>{sent ? 'Check your inbox.' : "Enter the email you signed up with and we'll send you a link to choose a new one."}</p>
       </section>
-      <Wave />
+      <Rule />
       <main className="page auth-page">
         {sent ? (
           // The same message whether or not the address has an account, so this page can't be used to look people up.

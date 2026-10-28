@@ -223,7 +223,7 @@ export interface SettledBetLike {
   stake: number;
 }
 
-/** Lonkeros `other` owes `me` across settled bets (negative: I owe them). */
+/** GTs `other` owes `me` across settled bets (negative: I owe them). */
 export function balanceFor(me: string, bets: SettledBetLike[]): number {
   return bets.reduce((sum, b) => (b.winnerId === null ? sum : sum + (b.winnerId === me ? b.stake : -b.stake)), 0);
 }

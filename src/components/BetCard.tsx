@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom';
 import type { Bet, Friend } from '../../shared/types';
 import Avatar from './Avatar';
 import Icon from './Icon';
-import { formatValue, lonkeros } from '../format';
+import { formatValue, gts } from '../format';
 
 const until = (ms: number) => {
   const h = Math.max(1, Math.round((ms - Date.now()) / 3_600_000));
@@ -21,7 +21,7 @@ export function statusLabel(b: Bet, name: string): string {
       return b.outcomeProposedByMe ? `Waiting for ${name} to confirm` : 'Confirm the outcome';
     case 'settled':
       if (b.settledBy === 'tie') return 'Called off by agreement';
-      return b.winnerId === null ? 'Draw, no lonkero' : b.winnerId === b.otherUserId ? `${name} won` : 'You won';
+      return b.winnerId === null ? 'Draw, no GT' : b.winnerId === b.otherUserId ? `${name} won` : 'You won';
     default:
       return b.status;
   }
@@ -41,9 +41,9 @@ export default function BetCard({ bet, friend }: { bet: Bet; friend?: Friend }) 
         </div>
         {(bet.needsMyAction || bet.tippingSoon || bet.allIn) && (
           <div className="tags">
-            {bet.needsMyAction && <span className="pill pill-yellow">Your move</span>}
-            {bet.tippingSoon && bet.tippingPoint && <span className="pill pill-navy"><Icon name="clock" size={14} />{until(bet.tippingPoint)}</span>}
-            {bet.allIn && <span className="pill pill-navy"><Icon name="flame" size={14} />All-in {lonkeros(bet.stake)}</span>}
+            {bet.needsMyAction && <span className="pill pill-cherry">Your move</span>}
+            {bet.tippingSoon && bet.tippingPoint && <span className="pill pill-dare"><Icon name="clock" size={14} />{until(bet.tippingPoint)}</span>}
+            {bet.allIn && <span className="pill pill-dare"><Icon name="flame" size={14} />All-in {gts(bet.stake)}</span>}
           </div>
         )}
       </div>

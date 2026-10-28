@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import type { AppConfig } from '../../shared/types';
 import { api, safeNext } from '../api';
-import Wave from '../components/Wave';
+import Rule from '../components/Rule';
 import { useAction, useFetch } from '../hooks';
 
 const LABELS = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' } as const;
@@ -21,11 +21,11 @@ export default function Login() {
   return (
     <>
       <section className="hero">
-        <img className="hero-can" src="/can-256.png" width="112" height="112" alt="" />
+        <img className="hero-glass" src="/glass-256.png" width="112" height="112" alt="" />
         <h1>LoJuBets</h1>
-        <p>Settle it with a friend. Closest guess wins a lonkero.</p>
+        <p>Settle it with a friend. Closest guess wins a Gin & Tonic.</p>
       </section>
-      <Wave />
+      <Rule />
       <main className="page auth-page">
         {params.get('error') && <p className="error">{params.get('error')}</p>}
         <form

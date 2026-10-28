@@ -1,8 +1,8 @@
 import type { SVGProps } from 'react';
 
-/** The icon set: 24px grid, 2px stroke, round caps and joins, no fill, currentColor. See docs/brand-guide.md section 8. */
+/** The icon set: 24px grid, 2px stroke, round caps and joins, no fill, currentColor. See docs/guidelines/visual/new/brand-guide.html section 8. */
 const PATHS = {
-  can: 'M7 4h10l1 3v11a2.5 2.5 0 0 1-2.5 2.5h-7A2.5 2.5 0 0 1 6 18V7l1-3zM6 7h12M9.5 12.5h5M9.5 15.5h5',
+  glass: 'M5.5 4h13l-1.4 14.2a2.2 2.2 0 0 1-2.2 2H9.1a2.2 2.2 0 0 1-2.2-2L5.5 4zM6.3 14h11.4M14 4.5l2.8 3.6',
   friends: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.6-3.4 3.1-5.2 6.5-5.2s5.9 1.8 6.5 5.2M16 4.3a3.5 3.5 0 0 1 0 6.4M18 14.9c1.8.7 3 2.3 3.5 5.1',
   user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4.5 20.5c.7-3.6 3.5-5.5 7.5-5.5s6.8 1.9 7.5 5.5',
   plus: 'M12 5v14M5 12h14',

@@ -75,7 +75,7 @@ describe('bets between friends', () => {
 
   const balanceOnAnn = async () => (await ann.get('/api/friends')).body[0].balance as number;
 
-  it('settles a bet: closer guess wins one lonkero', async () => {
+  it('settles a bet: closer guess wins one GT', async () => {
     const id = await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' });
     const { body } = await settle(id, '3');
     expect(body.winnerId).toBe(annId);
@@ -83,7 +83,7 @@ describe('bets between friends', () => {
   });
 
   it('all-in: only the debtor, double or nothing', async () => {
-    // Bob owes Ann 1 lonkero. Make it 3 by winning two more for Ann.
+    // Bob owes Ann 1 GT. Make it 3 by winning two more for Ann.
     for (let i = 0; i < 2; i++) await settle(await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' }), '3');
     expect(await balanceOnAnn()).toBe(3);
 
@@ -509,7 +509,7 @@ describe('cancelling and calling a bet off', () => {
   });
 
   it('leaves balances alone, even for an all-in, and frees the all-in slot', async () => {
-    // Lin owes Kai 1 lonkero
+    // Lin owes Kai 1 GT
     const won = await activeBet();
     await kai.post(`/api/bets/${won}/propose`).send({ outcome: '2' }).expect(200);
     await lin.post(`/api/bets/${won}/confirm`).expect(200);

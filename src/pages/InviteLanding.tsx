@@ -1,6 +1,6 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
-import Wave from '../components/Wave';
+import Rule from '../components/Rule';
 import { useAction, useFetch } from '../hooks';
 
 export default function InviteLanding({ signedIn, locked }: { signedIn: boolean; locked: boolean }) {
@@ -12,7 +12,7 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
   return (
     <>
       <section className="hero">
-        <img className="hero-can" src="/can-256.png" width="112" height="112" alt="" />
+        <img className="hero-glass" src="/glass-256.png" width="112" height="112" alt="" />
         {error ? (
           <>
             <h1>Invitation not found</h1>
@@ -21,7 +21,7 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
           </>
         ) : data ? (
           <>
-            <h1>{data.inviterName} wants to bet you a lonkero</h1>
+            <h1>{data.inviterName} wants to bet you a Gin & Tonic</h1>
             {locked ? (
               <>
                 <p>Verify your email address first, then open this link again to accept.</p>
@@ -50,7 +50,7 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
           </>
         ) : null}
       </section>
-      <Wave />
+      <Rule />
       {act.error && <main className="page"><p className="error">{act.error}</p></main>}
     </>
   );

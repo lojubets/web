@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import type { Friend } from '../../shared/types';
 import { useFetch } from '../hooks';
 import Icon from './Icon';
-import Wave from './Wave';
+import Rule from './Rule';
 
 export default function Layout({ locked }: { locked: boolean }) {
   const { data: friends } = useFetch<Friend[]>(locked ? null : '/friends');
@@ -11,11 +11,11 @@ export default function Layout({ locked }: { locked: boolean }) {
     <>
       <header className="masthead">
         <div className="masthead-inner">
-          <img src="/can-64.png" alt="" />
+          <img src="/glass-64.png" alt="" />
           <span className="wordmark">LoJuBets</span>
         </div>
       </header>
-      <Wave />
+      <Rule />
       <main className="page">
         <Outlet />
       </main>
@@ -23,7 +23,7 @@ export default function Layout({ locked }: { locked: boolean }) {
         {!locked && (
           <>
             <NavLink to="/" end>
-              <span className="tab-icon"><Icon name="can" size={24} /></span>
+              <span className="tab-icon"><Icon name="glass" size={24} /></span>
               Bets
               {actions > 0 && <b className="badge" aria-label={`${actions} waiting for you`}>{actions}</b>}
             </NavLink>

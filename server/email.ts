@@ -23,6 +23,6 @@ export async function sendMail(to: string, subject: string, text: string): Promi
 export const sendInviteEmail = (to: string, inviterName: string, link: string) =>
   sendMail(
     to,
-    `${inviterName} wants to bet you a lonkero`,
-    `${inviterName} invited you to LoJuBets, where friends settle disputes one lonkero at a time.\n\nAccept the invitation: ${link}`,
+    `${inviterName} wants to bet you a Gin & Tonic`,
+    `${inviterName} invited you to LoJuBets, where friends settle disputes one Gin & Tonic at a time.\n\nAccept the invitation: ${link}`,
   );

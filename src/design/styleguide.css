@@ -8,11 +8,11 @@
 .sg-meta code, .sg-code { font: 500 0.75rem / 1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .sg-specimen { display: flex; flex-direction: column; gap: var(--space-1); padding-bottom: var(--space-3); border-bottom: 1px solid var(--border); }
 .sg-space { display: flex; align-items: center; gap: var(--space-3); font-size: var(--text-small); }
-.sg-space i { display: block; height: 1rem; background: var(--yellow-500); border: 2px solid var(--navy-900); border-radius: var(--radius-sm); }
+.sg-space i { display: block; height: 1rem; background: var(--cherry-700); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
 .sg-icons { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); }
 .sg-icons figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: var(--space-2); font-size: var(--text-caption); color: var(--text-muted); }
 .sg-preview { border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--border); background: var(--surface-page); }
 .sg-preview .hero { padding-top: var(--space-6); }
 .tabbar.sg-tabbar { position: static; border-radius: var(--radius-lg); overflow: hidden; }
-.sg-do { border-left: 6px solid var(--green-500); padding-left: var(--space-3); }
+.sg-do { border-left: 6px solid var(--champagne-500); padding-left: var(--space-3); }
 .sg-dont { border-left: 6px solid var(--signal-700); padding-left: var(--space-3); }
