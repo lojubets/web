@@ -1,6 +1,6 @@
 {
-  "name": "Lojubets",
-  "short_name": "Lojubets",
+  "name": "LoJuBets",
+  "short_name": "LoJuBets",
   "description": "Bets between friends. Closest guess wins a lonkero.",
   "start_url": "/",
   "display": "standalone",

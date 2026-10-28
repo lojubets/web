@@ -1,6 +1,6 @@
-# Lojubets brand guide & design system
+# LoJuBets brand guide & design system
 
-Lojubets is a small, friendly app for settling arguments between friends, one **lonkero** at a time. The look is taken straight from the pineapple can: **sunny yellow, deep navy, leaf green**, round shapes, lots of air.
+LoJuBets is a small, friendly app for settling arguments between friends, one **lonkero** at a time. The look is taken straight from the pineapple can: **sunny yellow, deep navy, leaf green**, round shapes, lots of air.
 
 This guide is the rulebook. The code that implements it is:
 
@@ -28,14 +28,14 @@ If a screen needs something the system doesn't have, add it to the system first 
 
 ## 2. The can and the wordmark
 
-The pineapple can is our logo mark; **Lojubets** set in the display font is our wordmark. There is no other logo.
+The pineapple can is our logo mark; **LoJuBets** set in the display font is our wordmark. There is no other logo.
 
 - **Files:** use the transparent PNGs from `icons/` (`can-64.png` / `can-256.png` in `public/` for the app). Never redraw it or rebuild it from shapes.
 - **Clear space:** keep at least **half a can-width** free on every side.
 - **Minimum size:** 24 px tall in UI, 16 px in a favicon (use the supplied favicon files).
 - **Backgrounds it works on:** navy, cream, white, leaf green (see `icons/previews/background-variants.png`).
 - **Never** place it on pineapple yellow (the can disappears; put it on a navy or white tile instead), and never recolor, crop, stretch, rotate, outline or add shadows to it.
-- **Wordmark:** Fredoka 700, sentence-case "Lojubets", in **yellow on navy** or **navy on light**. Never green, never all-caps, never with the can's emoji.
+- **Wordmark:** Fredoka 700, camel-case "LoJuBets" (capital L, J and B), in **yellow on navy** or **navy on light**. Never green, never all-caps, never with the can's emoji.
 - The can appears **once per screen**, as an anchor (masthead, hero or welcome), not as decoration or wallpaper.
 
 ## 3. Color

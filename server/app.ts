@@ -3,7 +3,7 @@ import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, UserSummary } from '../shared/types.js';
-import { authRouter, enabledProviders, requireAuth } from './auth.js';
+import { authRouter, devLoginAllowed, enabledProviders, requireAuth } from './auth.js';
 import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
 import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
@@ -15,9 +15,20 @@ import { runCron } from './reminders.js';
 import { sendVerification } from './verification.js';
 
 const app = express();
+if (env.isProd) app.set('trust proxy', 1); // behind Vercel's proxy, so req.ip is the client (for rate limiting)
 app.use(express.json({ limit: '600kb' }));
-app.use(express.urlencoded({ extended: false })); // Apple's form_post callback
+// Only Apple's form_post callback sends a form body; accepting forms elsewhere would widen the CSRF surface.
+app.use('/api/auth/apple/callback', express.urlencoded({ extended: false }));
 app.use(cookieParser());
+// CSRF defence in depth on top of SameSite=Lax: refuse state-changing requests that a browser says came from another site.
+// Apple's callback is a legitimate cross-site POST (protected by the signed `state`).
+app.use('/api', (req, res, next) => {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method) || req.path === '/auth/apple/callback') return next();
+  const origin = req.get('origin');
+  const crossSite = origin ? origin === 'null' || URL.parse(origin)?.host !== req.get('host') : ['cross-site', 'same-site'].includes(req.get('sec-fetch-site') ?? '');
+  if (crossSite) return res.status(403).json({ error: 'Cross-site request refused' });
+  next();
+});
 app.use('/api', async (_req, _res, next) => {
   await ensureSchema();
   next();
@@ -29,8 +40,8 @@ const pair = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 
 // ---------- public ----------
 
-app.get('/api/config', (_req, res) => {
-  const cfg: AppConfig = { providers: enabledProviders(), devLogin: env.devLogin };
+app.get('/api/config', (req, res) => {
+  const cfg: AppConfig = { providers: enabledProviders(), devLogin: devLoginAllowed(req) };
   res.json(cfg);
 });
 app.use('/api/auth', authRouter);

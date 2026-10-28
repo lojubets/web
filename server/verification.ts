@@ -28,8 +28,8 @@ export async function sendVerification(userId: string): Promise<SendResult> {
   });
   const sent = await sendMail(
     u.email,
-    'Confirm your email for Lojubets',
-    `Confirm this is your email address by opening this link (valid for 24 hours):\n\n${env.appUrl}/verify-email?token=${token}\n\nIf you didn't create a Lojubets account, ignore this message.`,
+    'Confirm your email for LoJuBets',
+    `Confirm this is your email address by opening this link (valid for 24 hours):\n\n${env.appUrl}/verify-email?token=${token}\n\nIf you didn't create a LoJuBets account, ignore this message.`,
   );
   if (sent) return 'sent';
   return mailConfigured() ? 'failed' : 'not_configured';
