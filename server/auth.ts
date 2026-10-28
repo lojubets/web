@@ -226,6 +226,11 @@ export const clearMergeTicket = (res: Response) => res.clearCookie(MERGE_COOKIE,
 
 // ---------- users ----------
 
+/** Keeps the email a provider last shared for a login, which is what tells several logins of one provider apart. */
+async function rememberAccount(provider: string, subject: string, account?: string | null) {
+  if (account) await db.execute({ sql: 'UPDATE identities SET account = ? WHERE provider = ? AND subject = ?', args: [account, provider, subject] });
+}
+
 async function findOrCreateUser(opts: {
   provider: string;
   subject: string;
@@ -238,7 +243,10 @@ async function findOrCreateUser(opts: {
     sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?',
     args: [opts.provider, opts.subject],
   });
-  if (existing.rows.length) return { userId: existing.rows[0].user_id as string, created: false };
+  if (existing.rows.length) {
+    await rememberAccount(opts.provider, opts.subject, opts.email);
+    return { userId: existing.rows[0].user_id as string, created: false };
+  }
 
   let userId: string | undefined;
   let created = false;
@@ -266,8 +274,8 @@ async function findOrCreateUser(opts: {
     }
   }
   await db.execute({
-    sql: 'INSERT INTO identities (provider, subject, user_id) VALUES (?, ?, ?)',
-    args: [opts.provider, opts.subject, userId],
+    sql: 'INSERT INTO identities (provider, subject, user_id, account) VALUES (?, ?, ?, ?)',
+    args: [opts.provider, opts.subject, userId, opts.email ?? null],
   });
   return { userId, created };
 }
@@ -479,6 +487,7 @@ async function handleCallback(req: Request, res: Response) {
       if (!identity.rows.length) return back("No LoJuBets account uses that sign-in. Sign in with the other account's own login.");
       const other = identity.rows[0].user_id as string;
       if (other === flow.merge) return back("That's the account you're already signed in with.");
+      await rememberAccount(providerId, subject, payload.email as string | undefined);
       await issueMergeTicket(res, flow.merge, other);
       return back();
     }

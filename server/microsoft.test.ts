@@ -119,4 +119,27 @@ describe('signing in with Microsoft', () => {
     const mine = (await db.execute({ sql: `SELECT subject FROM identities WHERE provider = 'microsoft' AND user_id = ?`, args: [id] })).rows.map((r) => String(r.subject));
     expect(mine).toEqual([`${TENANT_A}:legacy-sub`]);
   });
+
+  it('shows which Microsoft account each login is, so several can be told apart', async () => {
+    const first = await signIn({ sub: 'acct-1', tid: TENANT_A, iss: iss(TENANT_A), email: 'work@contoso.example' });
+    const logins = (await first.agent.get('/api/me')).body.logins as { provider: string; account: string | null }[];
+    expect(logins.filter((l) => l.provider === 'microsoft').map((l) => l.account)).toEqual(['work@contoso.example']);
+    const other = await signIn({ sub: 'acct-2', tid: CONSUMERS, iss: iss(CONSUMERS), email: 'me@outlook.example' });
+    expect(((await other.agent.get('/api/me')).body.logins as { account: string }[])[0].account).toBe('me@outlook.example');
+  });
+
+  it('fills in the account of a login saved before it was recorded, and follows an email change', async () => {
+    const dev = request.agent(app);
+    await dev.post('/api/auth/dev').send({ name: 'Old', email: 'oldms@example.com' }).expect(200);
+    const id = (await dev.get('/api/me')).body.id as string;
+    await db.execute({ sql: `INSERT INTO identities (provider, subject, user_id) VALUES ('microsoft', ?, ?)`, args: [`${TENANT_A}:no-account`, id] });
+    const before = (await dev.get('/api/me')).body.logins as { provider: string; account: string | null }[];
+    expect(before.find((l) => l.provider === 'microsoft')!.account).toBeNull();
+
+    const { agent } = await signIn({ sub: 'no-account', tid: TENANT_A, iss: iss(TENANT_A), email: 'now@contoso.example' });
+    expect(((await agent.get('/api/me')).body.logins as { provider: string; account: string }[]).find((l) => l.provider === 'microsoft')!.account).toBe('now@contoso.example');
+    await signIn({ sub: 'no-account', tid: TENANT_A, iss: iss(TENANT_A), email: 'renamed@contoso.example' });
+    const row = (await db.execute({ sql: `SELECT account FROM identities WHERE subject = ?`, args: [`${TENANT_A}:no-account`] })).rows[0];
+    expect(row.account).toBe('renamed@contoso.example');
+  });
 });

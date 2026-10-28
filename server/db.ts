@@ -125,6 +125,9 @@ async function migrate() {
   // Account deletion: a pending request, and the marker on the placeholder that stands in for a deleted user
   if (!userCols.includes('deletion_requested_at')) await db.execute('ALTER TABLE users ADD COLUMN deletion_requested_at INTEGER');
   if (!userCols.includes('deleted_at')) await db.execute('ALTER TABLE users ADD COLUMN deleted_at INTEGER');
+  // Which account at the provider a login is (the email it shared), so people with several can tell them apart
+  const identityCols = (await db.execute('PRAGMA table_info(identities)')).rows.map((r) => r.name);
+  if (!identityCols.includes('account')) await db.execute('ALTER TABLE identities ADD COLUMN account TEXT');
   // Bumping this signs the account out everywhere: session tokens carry the version they were issued under.
   if (!userCols.includes('session_version')) await db.execute('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
   // 'date' bets became 'instant' bets with day precision and no restrictions
