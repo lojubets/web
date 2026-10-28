@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
-import type { OwnEmailAddress } from '../../shared/types';
+import type { OwnEmailAddress, OwnLogin } from '../../shared/types';
 import DeleteAccount from '../components/DeleteAccount';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useMe } from '../hooks';
@@ -47,6 +47,15 @@ export default function Profile() {
     if (!window.confirm(lines.join('\n\n'))) return;
     rm.run(async () => {
       await api(`/me/emails/${encodeURIComponent(e.email)}`, 'DELETE');
+      reload();
+    });
+  };
+
+  const removeLogin = (l: OwnLogin) => {
+    const what = l.email ? `the email and password login for ${l.email}` : `your ${l.label} login`;
+    if (!window.confirm(`Remove ${what}?\n\nYou will no longer be able to sign in this way. Your email addresses stay on your account.`)) return;
+    rm.run(async () => {
+      await api(`/me/logins/${encodeURIComponent(l.provider)}/${encodeURIComponent(l.subject)}`, 'DELETE');
       reload();
     });
   };
@@ -140,6 +149,25 @@ export default function Profile() {
             </div>
           ))}
           {rm.error && <p className="error"><Icon name="alert" size={20} />{rm.error}</p>}
+        </section>
+      )}
+      {me.logins.length > 0 && (
+        <section className="stack">
+          <h2>Ways to sign in</h2>
+          {me.logins.map((l) => (
+            <div className="stack" key={`${l.provider}:${l.subject}`}>
+              <div className="row row-wrap">
+                <span className="grow">
+                  <strong>{l.label}</strong>
+                  {l.email && <span className="muted small"> · {l.email}</span>}
+                </span>
+                <button className="btn btn-small btn-secondary" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
+                  Remove
+                </button>
+              </div>
+              {l.removeBlocked && <small className="muted">{l.removeBlocked}</small>}
+            </div>
+          ))}
         </section>
       )}
       {me.emailVerified && (

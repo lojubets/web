@@ -53,7 +53,22 @@ export interface OwnEmailAddress extends EmailAddress {
   removeBlocked: string | null;
 }
 
+/** A way of signing in to the signed-in user's own account. */
+export interface OwnLogin {
+  provider: string;
+  /** The provider's id for the person; for a password login, the email address it uses. */
+  subject: string;
+  /** What to show: "Google", or "Email and password" with `email` set. */
+  label: string;
+  /** The address of a password login. */
+  email: string | null;
+  /** Why it can't be removed right now, or null if it can. */
+  removeBlocked: string | null;
+}
+
 export interface Me extends UserSummary {
+  /** Every way of signing in to the account. */
+  logins: OwnLogin[];
   /** Every address on the account, the primary first, each with its own verification status. */
   emails: OwnEmailAddress[];
   /** The display name the user chose; empty when not set. */

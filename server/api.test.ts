@@ -844,3 +844,59 @@ describe('public config', () => {
     expect(res.body.privacyContactEmail).toBeNull();
   });
 });
+
+describe('login methods on the profile', () => {
+  type Agent = ReturnType<typeof request.agent>;
+  type Login = { provider: string; subject: string; label: string; email: string | null; removeBlocked: string | null };
+  const logins = async (a: Agent) => (await a.get('/api/me')).body.logins as Login[];
+  const del = (a: Agent, l: { provider: string; subject: string }) => a.delete(`/api/me/logins/${l.provider}/${encodeURIComponent(l.subject)}`);
+
+  /** An account with a development login (standing in for Google) and an emailed-and-verified password login. */
+  const twoLogins = async (name: string) => {
+    const a = await login(name);
+    const pwEmail = `${name.toLowerCase()}.pw@example.com`;
+    await verifiedUser(pwEmail);
+    await a.post('/api/merge/password').send({ email: pwEmail, password: 'correct horse' }).expect(200);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(200);
+    return { a, pwEmail };
+  };
+
+  it('lists a single login, which cannot be removed', async () => {
+    const u = await verifiedUser('single.login@example.com');
+    const l = await logins(u);
+    expect(l).toMatchObject([{ provider: 'password', label: 'Email and password', email: 'single.login@example.com' }]);
+    expect(l[0].removeBlocked).toBeTruthy();
+    await del(u, l[0]).expect(409);
+    expect(await logins(u)).toHaveLength(1);
+  });
+
+  it('lists both logins of a merged account and lets either one go, but never the last', async () => {
+    const { a, pwEmail } = await twoLogins('Lena');
+    const both = await logins(a);
+    expect(both.map((l) => l.provider).sort()).toEqual(['dev', 'password']);
+    expect(both.every((l) => l.removeBlocked === null)).toBe(true);
+
+    await del(a, both.find((l) => l.provider === 'password')!).expect(200);
+    const left = await logins(a);
+    expect(left.map((l) => l.provider)).toEqual(['dev']);
+    expect(left[0].removeBlocked).toBeTruthy();
+    await del(a, left[0]).expect(409);
+    // the password no longer works, but the address is still on the account
+    await request(app).post('/api/auth/login').send({ email: pwEmail, password: 'correct horse' }).expect(401);
+    expect(((await a.get('/api/me')).body.emails as { email: string }[]).map((e) => e.email)).toContain(pwEmail);
+  });
+
+  it('can remove the other login instead', async () => {
+    const { a, pwEmail } = await twoLogins('Lars');
+    await del(a, (await logins(a)).find((l) => l.provider === 'dev')!).expect(200);
+    expect((await logins(a)).map((l) => l.provider)).toEqual(['password']);
+    await request(app).post('/api/auth/login').send({ email: pwEmail, password: 'correct horse' }).expect(200);
+  });
+
+  it('does not remove logins that are not yours', async () => {
+    const { a } = await twoLogins('Liisa');
+    const other = await verifiedUser('someone.else@example.com');
+    await del(a, { provider: 'password', subject: 'someone.else@example.com' }).expect(404);
+    expect(await logins(other)).toHaveLength(1);
+  });
+});
