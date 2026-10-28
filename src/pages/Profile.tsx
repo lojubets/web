@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api } from '../api';
+import { api, ApiError } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import type { OwnEmailAddress, OwnLogin } from '../../shared/types';
@@ -40,9 +40,41 @@ export default function Profile() {
     });
   };
 
+  const [newEmail, setNewEmail] = useState('');
+  const [emailNote, setEmailNote] = useState<string | null>(null);
+  const addMail = useAction();
+  const note = (r: { result: string }, email: string) =>
+    setEmailNote(
+      {
+        sent: `We sent a confirmation link to ${email}. Open it, and the address is yours to use.`,
+        throttled: 'Please wait a minute before requesting another email.',
+        not_configured: "This server can't send email yet, so verification isn't available.",
+        failed: "We couldn't send the email. Try again later.",
+      }[r.result] ?? 'Done.',
+    );
+  const addEmail = (ev: React.FormEvent) => {
+    ev.preventDefault();
+    const email = newEmail.trim();
+    addMail.run(async () => {
+      note(await api<{ result: string }>('/me/emails', 'POST', { email }), email.toLowerCase());
+      setNewEmail('');
+      reload();
+    });
+  };
+  const resend = (e: OwnEmailAddress) =>
+    addMail.run(async () => {
+      try {
+        note(await api<{ result: string }>(`/me/emails/${encodeURIComponent(e.email)}/verify`, 'POST'), e.email);
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 429) note({ result: 'throttled' }, e.email);
+        else throw err;
+      }
+    });
+
   const removeEmail = (e: OwnEmailAddress) => {
     const lines = [`Remove ${e.email} from your account?`];
-    if (e.signsInWithPassword) lines.push('You will no longer be able to sign in with this address and your password.');
+    if (e.movesPasswordTo) lines.push(`You will sign in with ${e.movesPasswordTo} and your password from now on.`);
+    else if (e.signsInWithPassword) lines.push('You will no longer be able to sign in with this address and your password.');
     if (e.primary) lines.push('Another verified address becomes your primary one.');
     if (!window.confirm(lines.join('\n\n'))) return;
     rm.run(async () => {
@@ -139,8 +171,7 @@ export default function Profile() {
         <button className="btn" disabled={act.busy || name.trim() === me.profileName}>{saved ? <><Icon name="check" size={18} />Saved</> : 'Save'}</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>
-      {me.emails.length > 0 && (
-        <section className="stack">
+      <section className="stack">
           <h2>Email addresses</h2>
           {me.emails.map((e) => (
             <div className="stack" key={e.email}>
@@ -152,6 +183,11 @@ export default function Profile() {
               </div>
               {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
               <div className="row row-wrap">
+                {!e.verified && (
+                  <button className="btn btn-small btn-secondary" disabled={addMail.busy} onClick={() => resend(e)}>
+                    Send verification email
+                  </button>
+                )}
                 {!e.primary && e.verified && (
                   <button className="btn btn-small btn-secondary" disabled={rm.busy} onClick={() => makePrimary(e)}>
                     Make primary
@@ -165,8 +201,17 @@ export default function Profile() {
             </div>
           ))}
           {rm.error && <p className="error"><Icon name="alert" size={20} />{rm.error}</p>}
-        </section>
-      )}
+          <form className="stack" onSubmit={addEmail}>
+            <label className="field">
+              <span>Add an email address</span>
+              <input type="email" autoComplete="email" required value={newEmail} placeholder="you@example.com" onChange={(e) => setNewEmail(e.target.value)} />
+              <small className="muted">We'll email a link to confirm it. Once it's confirmed you can make it your primary address and remove the old one.</small>
+            </label>
+            <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()}>Add address</button>
+            {emailNote && <small>{emailNote}</small>}
+            {addMail.error && <p className="error"><Icon name="alert" size={20} />{addMail.error}</p>}
+          </form>
+      </section>
       {me.logins.length > 0 && (
         <section className="stack">
           <h2>Ways to sign in</h2>
