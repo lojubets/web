@@ -297,7 +297,7 @@ the CSRF middleware in `server/app.ts`, and `src/api.ts` / `Login.tsx`.
 | R11 | After deletion the response clears a cookie named `session`, not `__Host-session`, so in production the (now useless) session cookie stays in the browser until it expires. Harmless for access, since the user row is gone, but untidy next to a privacy feature. | `server/deletion.ts:248` | Low |
 | R12 | The privacy policy says the sign-in cookie keeps you signed in "for 30 days". Since the session overhaul it renews with use, up to 180 days from the actual sign-in. | `src/pages/Privacy.tsx:65` | Low (accuracy of a public statement) |
 
-**Status: R9 and R11 are fixed** (`lastSignInAt` in `auth.ts` replaces `sessionIssuedAt`: it uses `SESSION_COOKIE`, `typ`, `session_version` and the `auth` claim; `clearSessionCookie` is shared by logout and deletion). **R10 and R12 are still open.** Original proposal: export a helper from `auth.ts` that reads the session through the same
+**Status: R9 and R11 are fixed** (`lastSignInAt` in `auth.ts` replaces `sessionIssuedAt`: it uses `SESSION_COOKIE`, `typ`, `session_version` and the `auth` claim; `clearSessionCookie` is shared by logout and deletion). **R12 is fixed** (the privacy policy now describes the renewing session and the 180-day cap). **R10 is still open.** Original proposal: export a helper from `auth.ts` that reads the session through the same
 `verify(token, 'session')` and `SESSION_COOKIE` as `readSessionUser`, returns the `auth` claim (time of the actual sign-in,
 which renewal preserves) and checks `session_version`; export `clearSessionCookie(res)` and use it in logout and deletion;
 put `rateLimit('delete', { perIp: 30, perBody … })` or a per-user key on the deletion route. Add a test that runs the
