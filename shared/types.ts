@@ -120,6 +120,8 @@ export interface Invitation {
 export interface AppConfig {
   providers: ('google' | 'microsoft' | 'apple')[];
   devLogin: boolean;
+  /** Contact address for privacy requests, from the PRIVACY_CONTACT_EMAIL environment variable. */
+  privacyContactEmail: string | null;
 }
 
 /** One of the two accounts in a merge. */

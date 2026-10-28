@@ -41,7 +41,7 @@ const pair = (a: string, b: string) => (a < b ? [a, b] : [b, a]);
 // ---------- public ----------
 
 app.get('/api/config', (req, res) => {
-  const cfg: AppConfig = { providers: enabledProviders(), devLogin: devLoginAllowed(req) };
+  const cfg: AppConfig = { providers: enabledProviders(), devLogin: devLoginAllowed(req), privacyContactEmail: env.privacyContactEmail ?? null };
   res.json(cfg);
 });
 app.use('/api/auth', authRouter);

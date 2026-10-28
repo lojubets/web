@@ -837,3 +837,10 @@ describe('session security', () => {
     expect(last).toBe(429);
   });
 });
+
+describe('public config', () => {
+  it('leaves the privacy contact address out until PRIVACY_CONTACT_EMAIL is set', async () => {
+    const res = await request(app).get('/api/config').expect(200);
+    expect(res.body.privacyContactEmail).toBeNull();
+  });
+});

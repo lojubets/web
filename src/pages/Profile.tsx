@@ -173,6 +173,7 @@ export default function Profile() {
         Sign out everywhere
       </button>
       {me.emailVerified && <DeleteAccount />}
+      <p className="muted small center"><Link to="/privacy">Privacy policy</Link></p>
     </>
   );
 }
