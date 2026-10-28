@@ -195,7 +195,7 @@ export default function Profile() {
       <section className="stack">
           <h2>Email addresses</h2>
           {me.emails.map((e) => (
-            <div className="stack" key={e.email}>
+            <div className="card stack" key={e.email}>
               <div className="item">
                 <div className="item-main">
                   <strong className="item-title">{e.email}</strong>
@@ -204,25 +204,23 @@ export default function Profile() {
                     {e.verified ? <span className="pill pill-positive"><Icon name="check" size={14} />Verified</span> : <span className="pill">Not verified</span>}
                   </div>
                 </div>
-                <button className="btn btn-icon btn-secondary" aria-label={`Remove ${e.email}`} title="Remove" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
-                  <Icon name="trash" size={22} />
-                </button>
-              </div>
-              {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
-              {(!e.verified || (!e.primary && e.verified)) && (
-                <div className="row row-wrap">
+                <div className="item-actions">
                   {!e.verified && (
-                    <button className="btn btn-small btn-secondary" disabled={addMail.busy} onClick={() => resend(e)}>
-                      Send verification email
+                    <button className="btn btn-icon btn-secondary" aria-label={`Send verification email to ${e.email}`} title="Send verification email" disabled={addMail.busy} onClick={() => resend(e)}>
+                      <Icon name="mail" size={22} />
                     </button>
                   )}
                   {!e.primary && e.verified && (
-                    <button className="btn btn-small btn-secondary" disabled={rm.busy} onClick={() => makePrimary(e)}>
-                      Make primary
+                    <button className="btn btn-icon btn-secondary" aria-label={`Make ${e.email} primary`} title="Make primary" disabled={rm.busy} onClick={() => makePrimary(e)}>
+                      <Icon name="star" size={22} />
                     </button>
                   )}
+                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${e.email}`} title="Remove" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
+                    <Icon name="trash" size={22} />
+                  </button>
                 </div>
-              )}
+              </div>
+              {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
               {e.removeBlocked && <small className="muted">{e.removeBlocked}</small>}
             </div>
           ))}
@@ -242,15 +240,17 @@ export default function Profile() {
         <section className="stack">
           <h2>Ways to sign in</h2>
           {me.logins.map((l) => (
-            <div className="stack" key={`${l.provider}:${l.subject}`}>
+            <div className="card stack" key={`${l.provider}:${l.subject}`}>
               <div className="item">
                 <div className="item-main">
                   <strong className="item-title">{l.label}</strong>
                   {(l.email ?? l.account) && <span className="muted small">{l.email ?? l.account}</span>}
                 </div>
-                <button className="btn btn-icon btn-secondary" aria-label={`Remove ${l.label}`} title="Remove" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
-                  <Icon name="trash" size={22} />
-                </button>
+                <div className="item-actions">
+                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${l.label}`} title="Remove" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
+                    <Icon name="trash" size={22} />
+                  </button>
+                </div>
               </div>
               {l.provider !== 'password' && l.provider !== 'dev' && !l.account && <small className="muted">Sign in with it once more to see which account it is.</small>}
               {l.removeBlocked && <small className="muted">{l.removeBlocked}</small>}
