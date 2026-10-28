@@ -24,5 +24,5 @@ export const sendInviteEmail = (to: string, inviterName: string, link: string) =
   sendMail(
     to,
     `${inviterName} wants to bet you a lonkero`,
-    `${inviterName} invited you to Lojubets, where friends settle disputes one lonkero at a time.\n\nAccept the invitation: ${link}`,
+    `${inviterName} invited you to LoJuBets, where friends settle disputes one lonkero at a time.\n\nAccept the invitation: ${link}`,
   );

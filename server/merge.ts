@@ -1,9 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { MergeChoices, MergePreview, MergeSide } from '../shared/types.js';
-import { clearMergeTicket, hashPassword, issueMergeTicket, readMergeTicket, verifyPassword } from './auth.js';
+import { clearMergeTicket, devLoginAllowed, hashPassword, issueMergeTicket, readMergeTicket, revokeSessions, verifyPassword } from './auth.js';
 import { db } from './db.js';
-import { env } from './env.js';
+import { rateLimit } from './rateLimit.js';
 
 /**
  * Merging account B into account A (the one you're signed in to):
@@ -101,7 +101,7 @@ async function startMerge(res: Response, b: string | null | undefined) {
 }
 
 // Step 1: prove you can sign in to the other account. (Providers do this through /api/auth/:provider?merge=1.)
-mergeRouter.post('/password', async (req, res) => {
+mergeRouter.post('/password', rateLimit('merge-password', { perIp: 30, perBody: { field: 'email', max: 10 } }), async (req, res) => {
   const body = z.object({ email: z.email(), password: z.string().min(1).max(200) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Enter the email and password of the other account' });
   return startMerge(res, await verifyPassword(body.data.email, body.data.password));
@@ -109,7 +109,7 @@ mergeRouter.post('/password', async (req, res) => {
 
 // Development only, so the flow can be tried without any OAuth setup.
 mergeRouter.post('/dev', async (req, res) => {
-  if (!env.devLogin) return res.status(404).json({ error: 'Not found' });
+  if (!devLoginAllowed(req)) return res.status(404).json({ error: 'Not found' });
   const body = z.object({ email: z.email() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Enter an email' });
   const r = first(await db.execute({ sql: `SELECT user_id FROM identities WHERE provider = 'dev' AND subject = ?`, args: [body.data.email.toLowerCase()] }));
@@ -224,5 +224,7 @@ mergeRouter.post('/confirm', async (req, res) => {
   );
 
   clearMergeTicket(res);
+  // The account now has B's logins too: sign out every other session, keep this one.
+  await revokeSessions(res, a);
   res.json({ ok: true });
 });

@@ -20,7 +20,7 @@ export default function VerifyEmail() {
             <h1>Email verified</h1>
             <p>You can connect with friends and wage bets now.</p>
             {/* A full page load, so the app re-reads the (now verified) account instead of using the stale one. */}
-            <a className="btn" href="/">Continue to Lojubets</a>
+            <a className="btn" href="/">Continue to LoJuBets</a>
           </>
         ) : (
           <>

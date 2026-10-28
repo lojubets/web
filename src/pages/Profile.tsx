@@ -4,6 +4,7 @@ import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import type { OwnEmailAddress } from '../../shared/types';
+import DeleteAccount from '../components/DeleteAccount';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useMe } from '../hooks';
 
@@ -61,7 +62,7 @@ export default function Profile() {
       )}
       {me.email && !me.emailVerified && (
         <div className="card accent stack">
-          <h2>Welcome to Lojubets!</h2>
+          <h2>Welcome to LoJuBets!</h2>
           <span>
             Once you've verified your email address, you can connect with friends and wage bets. Until then, this profile page is all there is.
             You can set your display name and picture in the meantime.
@@ -160,6 +161,18 @@ export default function Profile() {
       >
         Sign out
       </button>
+      <button
+        className="btn btn-secondary"
+        onClick={async () => {
+          if (!confirm('Sign out on every device, including this one?')) return;
+          await api('/auth/logout-everywhere', 'POST');
+          await api('/auth/logout', 'POST');
+          location.href = '/login';
+        }}
+      >
+        Sign out everywhere
+      </button>
+      {me.emailVerified && <DeleteAccount />}
       <p className="muted small center"><Link to="/privacy">Privacy policy</Link></p>
     </>
   );

@@ -35,6 +35,8 @@ export interface UserSummary {
   name: string;
   hasAvatar: boolean;
   avatarVersion: number;
+  /** A placeholder standing in for someone who deleted their account. */
+  deleted: boolean;
 }
 
 export interface EmailAddress {
@@ -58,6 +60,8 @@ export interface Me extends UserSummary {
   profileName: string;
   email: string | null;
   emailVerified: boolean;
+  /** When the user asked to delete their account, while it waits on ongoing bets. */
+  deletionRequestedAt: number | null;
 }
 
 export interface Friend extends UserSummary {
@@ -116,6 +120,8 @@ export interface Invitation {
 export interface AppConfig {
   providers: ('google' | 'microsoft' | 'apple')[];
   devLogin: boolean;
+  /** Contact address for privacy requests, from the PRIVACY_CONTACT_EMAIL environment variable. */
+  privacyContactEmail: string | null;
 }
 
 /** One of the two accounts in a merge. */
@@ -150,4 +156,27 @@ export interface MergeChoices {
   email: 'a' | 'b';
   name: 'a' | 'b';
   photo: 'a' | 'b' | 'none';
+}
+
+/** What the signed-in user's pending or possible account deletion looks like. */
+export interface DeletionStatus {
+  requestedAt: number | null;
+  lapseDays: number;
+  ongoing: {
+    betId: string;
+    question: string;
+    status: BetStatus;
+    other: { id: string; name: string };
+    request: { response: 'pending' | 'accepted' | 'refused' | 'lapsed'; createdAt: number; lapsesAt: number } | null;
+  }[];
+}
+
+/** Someone who is deleting their account asks to cancel a bet with me. */
+export interface CancelRequest {
+  betId: string;
+  question: string;
+  status: BetStatus;
+  from: { id: string; name: string };
+  createdAt: number;
+  lapsesAt: number;
 }

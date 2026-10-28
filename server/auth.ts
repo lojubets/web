@@ -5,6 +5,7 @@ import { SignJWT, jwtVerify, createRemoteJWKSet, importPKCS8, type JWTPayload } 
 import { z } from 'zod';
 import { db } from './db.js';
 import { env, publicUrlProblem } from './env.js';
+import { rateLimit } from './rateLimit.js';
 import { consumeVerification, sendVerification } from './verification.js';
 
 type ProviderId = 'google' | 'microsoft' | 'apple';
@@ -85,39 +86,87 @@ export function enabledProviders(): ProviderId[] {
 // ---------- sessions ----------
 
 const secret = new TextEncoder().encode(env.sessionSecret);
+// A session lasts 30 days from the last renewal (any request more than a day after the last one re-issues it, so active
+// users stay signed in), but never more than SESSION_MAX_DAYS after the actual sign-in.
 const SESSION_DAYS = 30;
+const SESSION_MAX_DAYS = 180;
+const RENEW_AFTER_S = 86_400;
+
+// __Host- cookies must be Secure, Path=/ and host-only, so they only work over HTTPS (production).
+const cookieName = (n: string) => (env.isProd ? `__Host-${n}` : n);
+const SESSION_COOKIE = cookieName('session');
+const OAUTH_COOKIE = cookieName('oauth');
+const MERGE_COOKIE = cookieName('merge');
 
 const cookieBase = { httpOnly: true, secure: env.isProd, path: '/' } as const;
 
-async function startSession(res: Response, userId: string) {
-  const token = await new SignJWT({})
-    .setProtectedHeader({ alg: 'HS256' })
-    .setSubject(userId)
-    .setIssuedAt()
-    .setExpirationTime(`${SESSION_DAYS}d`)
-    .sign(secret);
-  res.cookie('session', token, { ...cookieBase, sameSite: 'lax', maxAge: SESSION_DAYS * 86_400_000 });
+// Every token kind shares one key, so each carries a `typ` and is only accepted as that kind.
+const sign = (typ: string, claims: JWTPayload, ttl: string) =>
+  new SignJWT({ ...claims, typ }).setProtectedHeader({ alg: 'HS256' }).setIssuedAt().setExpirationTime(ttl).sign(secret);
+const verify = async (token: string, typ: string) => {
+  const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
+  if (payload.typ !== typ) throw new Error('wrong token type');
+  return payload;
+};
+
+async function issueSession(res: Response, userId: string, version: number, authAt: number) {
+  const token = await sign('session', { sub: userId, ver: version, auth: authAt }, `${SESSION_DAYS}d`);
+  res.cookie(SESSION_COOKIE, token, { ...cookieBase, sameSite: 'lax', maxAge: SESSION_DAYS * 86_400_000 });
 }
 
-/** The signed-in user's id, or null (no cookie, expired, or the account no longer exists). */
-export async function readSessionUser(req: Request): Promise<string | null> {
+async function startSession(res: Response, userId: string) {
+  const u = await db.execute({ sql: 'SELECT session_version FROM users WHERE id = ?', args: [userId] });
+  await issueSession(res, userId, Number(u.rows[0]?.session_version ?? 0), Math.floor(Date.now() / 1000));
+}
+
+/** Signs the account out everywhere (every token issued so far stops working) and keeps this browser signed in. */
+export async function revokeSessions(res: Response, userId: string) {
+  await db.execute({ sql: 'UPDATE users SET session_version = session_version + 1 WHERE id = ?', args: [userId] });
+  await startSession(res, userId);
+}
+
+/**
+ * The signed-in user's id, or null (no cookie, expired, revoked, or the account no longer exists).
+ * Pass `res` to let an old-enough session renew itself.
+ */
+export async function readSessionUser(req: Request, res?: Response): Promise<string | null> {
   try {
-    const token = req.cookies?.session;
+    const token = req.cookies?.[SESSION_COOKIE];
     if (!token) return null;
-    const { payload } = await jwtVerify(token, secret, { algorithms: ['HS256'] });
-    const user = await db.execute({ sql: 'SELECT id FROM users WHERE id = ?', args: [payload.sub!] });
-    return user.rows.length ? (payload.sub as string) : null;
+    const payload = await verify(token, 'session');
+    const userId = payload.sub;
+    if (!userId) return null;
+    const user = await db.execute({ sql: 'SELECT session_version FROM users WHERE id = ?', args: [userId] });
+    if (!user.rows.length || Number(user.rows[0].session_version) !== Number(payload.ver ?? 0)) return null;
+    const now = Math.floor(Date.now() / 1000);
+    const authAt = Number(payload.auth ?? payload.iat ?? 0);
+    if (now - authAt > SESSION_MAX_DAYS * 86_400) return null;
+    if (res && now - Number(payload.iat ?? 0) > RENEW_AFTER_S) await issueSession(res, userId, Number(user.rows[0].session_version), authAt);
+    return userId;
+  } catch {
+    return null;
+  }
+}
+
+/** When the current session cookie was issued (ms since epoch), or null. */
+export async function sessionIssuedAt(req: Request): Promise<number | null> {
+  try {
+    const { payload } = await jwtVerify(req.cookies?.session ?? '', secret, { algorithms: ['HS256'] });
+    return payload.iat ? payload.iat * 1000 : null;
   } catch {
     return null;
   }
 }
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const userId = await readSessionUser(req);
+  const userId = await readSessionUser(req, res);
   if (!userId) return res.status(401).json({ error: 'Not signed in' });
   res.locals.userId = userId;
   next();
 }
+
+/** The dev login can sign in as anyone, so it only answers requests addressed to this machine. */
+export const devLoginAllowed = (req: Request) => env.devLogin && /^(localhost|127\.0\.0\.1|\[::1\]|[^:]+\.localhost)$/i.test(req.hostname);
 
 // ---------- merge tickets ----------
 // While signed in as account A, proving you can sign in to account B yields a short-lived ticket naming both.
@@ -126,20 +175,20 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 const MERGE_MINUTES = 10;
 
 export async function issueMergeTicket(res: Response, a: string, b: string) {
-  const ticket = await new SignJWT({ a, b }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime(`${MERGE_MINUTES}m`).sign(secret);
-  res.cookie('merge', ticket, { ...cookieBase, sameSite: 'lax', maxAge: MERGE_MINUTES * 60_000 });
+  const ticket = await sign('merge', { a, b }, `${MERGE_MINUTES}m`);
+  res.cookie(MERGE_COOKIE, ticket, { ...cookieBase, sameSite: 'lax', maxAge: MERGE_MINUTES * 60_000 });
 }
 
 export async function readMergeTicket(req: Request): Promise<{ a: string; b: string } | null> {
   try {
-    const { payload } = await jwtVerify(req.cookies?.merge ?? '', secret, { algorithms: ['HS256'] });
+    const payload = await verify(req.cookies?.[MERGE_COOKIE] ?? '', 'merge');
     return typeof payload.a === 'string' && typeof payload.b === 'string' ? { a: payload.a, b: payload.b } : null;
   } catch {
     return null;
   }
 }
 
-export const clearMergeTicket = (res: Response) => res.clearCookie('merge', { ...cookieBase, sameSite: 'lax' });
+export const clearMergeTicket = (res: Response) => res.clearCookie(MERGE_COOKIE, { ...cookieBase, sameSite: 'lax' });
 
 // ---------- users ----------
 
@@ -219,7 +268,7 @@ export const authRouter = Router();
 
 
 authRouter.post('/dev', async (req, res) => {
-  if (!env.devLogin) return res.status(404).json({ error: 'Not found' });
+  if (!devLoginAllowed(req)) return res.status(404).json({ error: 'Not found' });
   const body = z.object({ name: z.string().default(''), email: z.email() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'name and email required' });
   const { name, email } = body.data;
@@ -237,7 +286,7 @@ authRouter.post('/dev', async (req, res) => {
 
 const credentials = z.object({ email: z.email(), password: z.string().min(8).max(200) });
 
-authRouter.post('/register', async (req, res) => {
+authRouter.post('/register', rateLimit('register', { perIp: 10, windowMs: 3_600_000 }), async (req, res) => {
   const body = credentials.safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Enter a valid email and a password of at least 8 characters' });
   const email = body.data.email.trim().toLowerCase();
@@ -271,7 +320,7 @@ export async function verifyPassword(email: string, password: string): Promise<s
   return found && ok ? found.user_id : null;
 }
 
-authRouter.post('/login', async (req, res) => {
+authRouter.post('/login', rateLimit('login', { perIp: 60, perBody: { field: 'email', max: 10 } }), async (req, res) => {
   const body = credentials.safeParse(req.body);
   const userId = body.success ? await verifyPassword(body.data.email, body.data.password) : null;
   if (!userId) return res.status(401).json({ error: 'Wrong email or password' });
@@ -279,14 +328,22 @@ authRouter.post('/login', async (req, res) => {
   res.json({ ok: true });
 });
 
-authRouter.post('/verify-email', async (req, res) => {
+authRouter.post('/verify-email', rateLimit('verify', { perIp: 30 }), async (req, res) => {
   const token = typeof req.body?.token === 'string' ? req.body.token : '';
   if (!token || !(await consumeVerification(token))) return res.status(400).json({ error: 'This link is invalid or has expired. Request a new one from your profile.' });
   res.json({ ok: true });
 });
 
 authRouter.post('/logout', (_req, res) => {
-  res.clearCookie('session', { ...cookieBase, sameSite: 'lax' });
+  res.clearCookie(SESSION_COOKIE, { ...cookieBase, sameSite: 'lax' });
+  res.json({ ok: true });
+});
+
+// Invalidates every session of the account (other devices, a copied cookie) and keeps this browser signed in.
+authRouter.post('/logout-everywhere', async (req, res) => {
+  const userId = await readSessionUser(req);
+  if (!userId) return res.status(401).json({ error: 'Not signed in' });
+  await revokeSessions(res, userId);
   res.json({ ok: true });
 });
 
@@ -305,9 +362,9 @@ authRouter.get('/:provider', async (req, res) => {
     merge = (await readSessionUser(req)) ?? undefined;
     if (!merge) return res.redirect(`${env.appUrl}/login`);
   }
-  const flow = await new SignJWT({ state, nonce, next, ...(merge ? { merge } : {}) }).setProtectedHeader({ alg: 'HS256' }).setExpirationTime('10m').sign(secret);
+  const flow = await sign('oauth', { state, nonce, next, ...(merge ? { merge } : {}) }, '10m');
   // Apple posts back cross-site, so this cookie must be SameSite=None.
-  res.cookie('oauth', flow, {
+  res.cookie(OAUTH_COOKIE, flow, {
     ...cookieBase,
     secure: env.isProd,
     sameSite: req.params.provider === 'apple' && env.isProd ? 'none' : 'lax',
@@ -333,9 +390,12 @@ async function handleCallback(req: Request, res: Response) {
   const params: Record<string, string | undefined> = { ...(req.query as any), ...(req.body ?? {}) };
   const fail = (msg: string) => res.redirect(`${env.appUrl}/login?error=${encodeURIComponent(msg)}`);
   try {
-    if (params.error) return fail(params.error);
-    const flow = (await jwtVerify(req.cookies?.oauth ?? '', secret)).payload as { state: string; nonce: string; next: string; merge?: string };
-    res.clearCookie('oauth', { ...cookieBase, sameSite: providerId === 'apple' && env.isProd ? 'none' : 'lax' });
+    if (params.error) {
+      console.warn('OAuth provider returned an error:', params.error);
+      return fail('Sign-in was cancelled or failed');
+    }
+    const flow = (await verify(req.cookies?.[OAUTH_COOKIE] ?? '', 'oauth')) as unknown as { state: string; nonce: string; next: string; merge?: string };
+    res.clearCookie(OAUTH_COOKIE, { ...cookieBase, sameSite: providerId === 'apple' && env.isProd ? 'none' : 'lax' });
     if (!params.code || params.state !== flow.state) return fail('Sign-in expired, please try again');
 
     const tokenRes = await fetch(p.tokenUrl, {
@@ -363,7 +423,7 @@ async function handleCallback(req: Request, res: Response) {
       // Only an existing account can be merged: never create one here, and never replace the session.
       const back = (error?: string) => res.redirect(`${env.appUrl}/merge${error ? `?error=${encodeURIComponent(error)}` : ''}`);
       const identity = await db.execute({ sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?', args: [providerId, payload.sub!] });
-      if (!identity.rows.length) return back("No Lojubets account uses that sign-in. Sign in with the other account's own login.");
+      if (!identity.rows.length) return back("No LoJuBets account uses that sign-in. Sign in with the other account's own login.");
       const other = identity.rows[0].user_id as string;
       if (other === flow.merge) return back("That's the account you're already signed in with.");
       await issueMergeTicket(res, flow.merge, other);
@@ -379,6 +439,8 @@ async function handleCallback(req: Request, res: Response) {
       } catch {}
     }
     const email = (payload.email as string | undefined) ?? null;
+    // Every account has an email address: it is how the other bettors' requests and our notices reach people.
+    if (!email) return fail("That sign-in didn't share an email address with us, and we need one to create your account.");
     const trusted = p.trustsEmail(payload);
     const { userId, created } = await findOrCreateUser({
       provider: providerId,

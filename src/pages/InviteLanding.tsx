@@ -17,7 +17,7 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
           <>
             <h1>Invitation not found</h1>
             <p>{error}</p>
-            <Link className="btn" to="/">Go to Lojubets</Link>
+            <Link className="btn" to="/">Go to LoJuBets</Link>
           </>
         ) : data ? (
           <>
@@ -29,7 +29,7 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
               </>
             ) : signedIn ? (
               <>
-                <p>Accept to become friends on Lojubets and start betting.</p>
+                <p>Accept to become friends on LoJuBets and start betting.</p>
                 <button
                   className="btn"
                   disabled={act.busy}
@@ -43,7 +43,7 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
               </>
             ) : (
               <>
-                <p>Accept to become friends on Lojubets and start betting.</p>
+                <p>Accept to become friends on LoJuBets and start betting.</p>
                 <Link className="btn" to={`/login?next=${encodeURIComponent(`/invite/${token}`)}`}>Sign in to accept</Link>
               </>
             )}
