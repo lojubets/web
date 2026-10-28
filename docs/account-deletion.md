@@ -132,7 +132,7 @@ Rejected alternatives: voiding all ongoing bets at once (changes the other parti
 1. The OAuth callback in `auth.ts` does `email = payload.email ?? null` and creates the account anyway, so a provider that omits the claim (Microsoft personal accounts being the likeliest) yields an account with no email.
 2. `requireVerifiedEmail` in `app.ts` deliberately lets such accounts through, because "an account with no email at all can never verify".
 
-The change: refuse sign-in and account creation when a provider returns no email ("we need an email address to create your account"), and remove the exemption in `requireVerifiedEmail`, so no account can ever bet without a verified address. A cancellation request therefore always has somewhere to land, and the 30-day default is never caused by an unreachable counterparty. The production check (`users` rows with a null or empty email) was run by the maintainer and found none, so no existing account is affected and **no notice period is needed** for this part. The one remaining thing worth a look before the deletion feature goes live: accounts whose email is still unverified but that have bets from before the verification gate (they cannot act on a cancellation request until they verify).
+The change: refuse sign-in and account creation when a provider returns no email ("we need an email address to create your account"), and remove the exemption in `requireVerifiedEmail`, so no account can ever bet without a verified address. A cancellation request therefore always has somewhere to land, and the 30-day default is never caused by an unreachable counterparty. The production check (`users` rows with a null or empty email) was run by the maintainer and found none, so no existing account is affected and **no notice period is needed** for this part. A second production check, for accounts with an unverified email that have bets, also found none, so every current bettor is reachable.
 
 **A later erasure request by the counterparty.** A refusal answers one request only. Requests are keyed by `(bet_id, requested_by)`, so if the person who refused later requests their own erasure, that triggers a fresh request to each of *their* counterparties for every bet still ongoing, including the bet they once refused, and the same accept/refuse/30-day rules apply to it. When both people on a bet are in "deletion requested", each one's request is also a prompt to the other; the UI should offer a one-click accept, and the bet is cancelled as soon as either accepts.
 
@@ -212,7 +212,7 @@ The maintainer's address is not shown anywhere on the site (spam) and is deliber
 
 ## 14. Implementation outline
 
-0. **Prerequisite:** make an email mandatory for every account: reject OAuth sign-ins that return none, and remove the no-email exemption in `requireVerifiedEmail`, so friends, invitations and bets require a verified email for everyone. The production check for no-email accounts found none, so no notice period is needed; just check for unverified accounts with older bets (section 6).
+0. **Prerequisite:** make an email mandatory for every account: reject OAuth sign-ins that return none, and remove the no-email exemption in `requireVerifiedEmail`, so friends, invitations and bets require a verified email for everyone. The production check for no-email accounts found none, so no notice period is needed; a second check for unverified accounts that have bets also found none.
 1. **Placeholder users.** Add `users.deleted_at`. At deletion, create a fresh placeholder row (random id, name `Deleted user`, `email NULL`, no identities, `deleted_at` set) and re-point the bets and connections at it. Exclude placeholders from merge and invitation lookups and from `areConnected` for new bets. Add a test that no route lets anyone act as one.
 2. **Shared deletion helper** (`server/deleteUser.ts`) that takes a user id and a list of statements, used by both deletion and merge's cleanup. Runs in one `db.batch(..., 'write')`.
 3. **Schema:** `users.deletion_requested_at` (nullable) and a `bet_cancel_requests` table (section 6). Add both in `db.ts` `schema`/`migrate`.
@@ -232,4 +232,4 @@ The maintainer's address is not shown anywhere on the site (spam) and is deliber
 
 ## 15. Open questions for the maintainer
 
-None outstanding: every question raised during review has been decided and is reflected in the sections above. Likely to surface during implementation: whether any unverified accounts have bets from before the verification gate.
+None outstanding: every question raised during review has been decided and is reflected in the sections above, and both production checks (no-email accounts, unverified accounts with bets) came back empty.
