@@ -61,7 +61,6 @@ export default function Profile() {
   };
 
   const passwordLogins = me.logins.filter((l) => l.provider === 'password');
-  const [pwEmail, setPwEmail] = useState('');
   const [currentPw, setCurrentPw] = useState('');
   const [newPw, setNewPw] = useState('');
   const [pwChanged, setPwChanged] = useState(false);
@@ -69,7 +68,7 @@ export default function Profile() {
   const changePassword = (e: React.FormEvent) => {
     e.preventDefault();
     pw.run(async () => {
-      await api('/me/password', 'POST', { email: pwEmail || passwordLogins[0]?.subject, currentPassword: currentPw, newPassword: newPw });
+      await api('/me/password', 'POST', { currentPassword: currentPw, newPassword: newPw });
       setCurrentPw('');
       setNewPw('');
       setPwChanged(true);
@@ -190,14 +189,6 @@ export default function Profile() {
       {passwordLogins.length > 0 && (
         <form className="card stack" onSubmit={changePassword}>
           <h2>Change password</h2>
-          {passwordLogins.length > 1 && (
-            <label className="field">
-              <span>Login</span>
-              <select value={pwEmail || passwordLogins[0].subject} onChange={(e) => setPwEmail(e.target.value)}>
-                {passwordLogins.map((l) => <option key={l.subject} value={l.subject}>{l.email}</option>)}
-              </select>
-            </label>
-          )}
           <label className="field">
             <span>Current password</span>
             <input type="password" autoComplete="current-password" required value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} />

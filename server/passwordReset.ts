@@ -36,7 +36,8 @@ async function sendReset(email: string): Promise<void> {
 
 /**
  * Sets a new password if the token is valid. Whoever opened the link controls the mailbox, so that address counts as
- * verified, every existing session of the account is signed out, and every other pending link is void.
+ * verified, every existing session of the account is signed out, every password login of the account gets the new password,
+ * and every other pending link is void.
  */
 async function consumeReset(token: string, password: string): Promise<boolean> {
   const row = (await db.execute({ sql: 'SELECT subject, expires_at FROM password_resets WHERE token_hash = ?', args: [hash(token)] })).rows[0] as unknown as
@@ -47,13 +48,19 @@ async function consumeReset(token: string, password: string): Promise<boolean> {
     | { user_id: string }
     | undefined;
   if (!owner) return false;
+  // Each password login of the account (a merged account has several) keeps its own copy of the hash: replace them all,
+  // so the account keeps one password that works with every one of its emails.
+  const subjects = (await db.execute({ sql: `SELECT subject FROM identities WHERE provider = 'password' AND user_id = ?`, args: [owner.user_id] })).rows.map((r) => String(r.subject));
+  const newHash = await hashPassword(password);
   await db.batch(
     [
-      { sql: 'UPDATE password_credentials SET password_hash = ? WHERE subject = ?', args: [await hashPassword(password), row.subject] },
+      ...subjects.flatMap((subject) => [
+        { sql: 'UPDATE password_credentials SET password_hash = ? WHERE subject = ?', args: [newHash, subject] },
+        { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [subject] },
+      ]),
       { sql: 'UPDATE users SET email_verified = 1 WHERE id = ? AND lower(email) = ?', args: [owner.user_id, row.subject] },
       { sql: 'UPDATE user_emails SET verified = 1 WHERE user_id = ? AND email = ?', args: [owner.user_id, row.subject] },
       { sql: 'UPDATE users SET session_version = session_version + 1 WHERE id = ?', args: [owner.user_id] },
-      { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [row.subject] },
     ],
     'write',
   );

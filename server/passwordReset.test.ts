@@ -46,6 +46,26 @@ describe('password reset', () => {
     expect((await fresh.get('/api/me')).body.emailVerified).toBe(true); // opening the mailed link proved the mailbox
   });
 
+  it('on a merged account, sets the password for every email, not just the one the link went to', async () => {
+    const one = await register();
+    const two = await register();
+    // merging needs both addresses verified
+    for (const e of [one.email, two.email]) {
+      await db.execute({ sql: 'UPDATE user_emails SET verified = 1 WHERE email = ?', args: [e] });
+      await db.execute({ sql: 'UPDATE users SET email_verified = 1 WHERE lower(email) = ?', args: [e] });
+    }
+    await one.a.post('/api/merge/password').send({ email: two.email, password: 'correct horse' }).expect(200);
+    await one.a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none', newPassword: 'merged passphrase' }).expect(200);
+
+    await forgot(two.email).expect(200);
+    await request(app).post('/api/auth/reset-password').send({ token: tokenIn(mails[0]), password: 'a brand new one' }).expect(200);
+
+    for (const email of [one.email, two.email]) {
+      await request(app).post('/api/auth/login').send({ email, password: 'merged passphrase' }).expect(401);
+      await request(app).post('/api/auth/login').send({ email, password: 'a brand new one' }).expect(200);
+    }
+  });
+
   it('works once only', async () => {
     const { email } = await register();
     await forgot(email).expect(200);
