@@ -27,7 +27,7 @@ const SUPPORT = [
   { name: 'Signal 100', token: '--signal-100', hex: '#FBE7E5', ink: '#B3261E', use: 'Error tint' },
 ];
 const SPACES = [4, 8, 12, 16, 24, 32, 48, 64, 96];
-const ICONS: IconName[] = ['glass', 'friends', 'user', 'plus', 'chevron-left', 'clock', 'flame', 'lock', 'mail', 'check', 'pencil', 'alert', 'trophy'];
+const ICONS: IconName[] = ['glass', 'friends', 'user', 'plus', 'chevron-left', 'clock', 'flame', 'lock', 'mail', 'check', 'pencil', 'alert', 'trash', 'star', 'trophy'];
 
 function Swatch({ s, big }: { s: (typeof BRAND)[number]; big?: boolean }) {
   return (

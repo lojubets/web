@@ -195,40 +195,45 @@ export default function Profile() {
       <section className="stack">
           <h2>Email addresses</h2>
           {me.emails.map((e) => (
-            <div className="stack" key={e.email}>
-              <div className="row row-wrap">
-                <span className="grow">
-                  <strong>{e.email}</strong> <span className="muted small">{e.verified ? '(verified ✓)' : '(not verified)'}</span>
-                </span>
-                {e.primary && <span className="pill">Primary</span>}
+            <div className="card stack" key={e.email}>
+              <div className="item">
+                <div className="item-main">
+                  <strong className="item-title">{e.email}</strong>
+                  <div className="item-tags">
+                    {e.primary && <span className="pill pill-cherry"><Icon name="star" size={14} />Primary</span>}
+                    {e.verified ? <span className="pill pill-positive"><Icon name="check" size={14} />Verified</span> : <span className="pill">Not verified</span>}
+                  </div>
+                </div>
+                <div className="item-actions">
+                  {!e.verified && (
+                    <button className="btn btn-icon btn-secondary" aria-label={`Send verification email to ${e.email}`} title="Send verification email" disabled={addMail.busy} onClick={() => resend(e)}>
+                      <Icon name="mail" size={22} />
+                    </button>
+                  )}
+                  {!e.primary && e.verified && (
+                    <button className="btn btn-icon btn-secondary" aria-label={`Make ${e.email} primary`} title="Make primary" disabled={rm.busy} onClick={() => makePrimary(e)}>
+                      <Icon name="star" size={22} />
+                    </button>
+                  )}
+                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${e.email}`} title="Remove" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
+                    <Icon name="trash" size={22} />
+                  </button>
+                </div>
               </div>
               {e.signsInWithPassword && <small className="muted">You can sign in with this address and your password.</small>}
-              <div className="row row-wrap">
-                {!e.verified && (
-                  <button className="btn btn-small btn-secondary" disabled={addMail.busy} onClick={() => resend(e)}>
-                    Send verification email
-                  </button>
-                )}
-                {!e.primary && e.verified && (
-                  <button className="btn btn-small btn-secondary" disabled={rm.busy} onClick={() => makePrimary(e)}>
-                    Make primary
-                  </button>
-                )}
-                <button className="btn btn-small btn-secondary" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
-                  Remove
-                </button>
-              </div>
               {e.removeBlocked && <small className="muted">{e.removeBlocked}</small>}
             </div>
           ))}
           {rm.error && <p className="error"><Icon name="alert" size={20} />{rm.error}</p>}
           <form className="stack" onSubmit={addEmail}>
-            <label className="field">
-              <span>Add an email address</span>
-              <input type="email" autoComplete="email" required value={newEmail} placeholder="you@example.com" onChange={(e) => setNewEmail(e.target.value)} />
+            <div className="field">
+              <label htmlFor="new-email">Add an email address</label>
+              <div className="field-row">
+                <input id="new-email" type="email" autoComplete="email" required value={newEmail} placeholder="you@example.com" onChange={(e) => setNewEmail(e.target.value)} />
+                <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()}>Add</button>
+              </div>
               <small className="muted">We'll email a link to confirm it. Once it's confirmed you can make it your primary address and remove the old one.</small>
-            </label>
-            <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()}>Add address</button>
+            </div>
             {emailNote && <small>{emailNote}</small>}
             {addMail.error && <p className="error"><Icon name="alert" size={20} />{addMail.error}</p>}
           </form>
@@ -237,15 +242,17 @@ export default function Profile() {
         <section className="stack">
           <h2>Ways to sign in</h2>
           {me.logins.map((l) => (
-            <div className="stack" key={`${l.provider}:${l.subject}`}>
-              <div className="row row-wrap">
-                <span className="grow">
-                  <strong>{l.label}</strong>
-                  {(l.email ?? l.account) && <span className="muted small"> · {l.email ?? l.account}</span>}
-                </span>
-                <button className="btn btn-small btn-secondary" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
-                  Remove
-                </button>
+            <div className="card stack" key={`${l.provider}:${l.subject}`}>
+              <div className="item">
+                <div className="item-main">
+                  <strong className="item-title">{l.label}</strong>
+                  {(l.email ?? l.account) && <span className="muted small">{l.email ?? l.account}</span>}
+                </div>
+                <div className="item-actions">
+                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${l.label}`} title="Remove" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
+                    <Icon name="trash" size={22} />
+                  </button>
+                </div>
               </div>
               {l.provider !== 'password' && l.provider !== 'dev' && !l.account && <small className="muted">Sign in with it once more to see which account it is.</small>}
               {l.removeBlocked && <small className="muted">{l.removeBlocked}</small>}
@@ -304,6 +311,8 @@ export default function Profile() {
           <Link className="btn btn-secondary" to="/merge">Merge accounts</Link>
         </section>
       )}
+      <section className="stack">
+      <h2>Sign out</h2>
       <button
         className="btn btn-secondary"
         onClick={async () => {
@@ -311,7 +320,7 @@ export default function Profile() {
           location.href = '/login';
         }}
       >
-        Sign out
+        Sign out on this device
       </button>
       <button
         className="btn btn-secondary"
@@ -324,6 +333,7 @@ export default function Profile() {
       >
         Sign out everywhere
       </button>
+      </section>
       {me.emailVerified && <DeleteAccount />}
       <p className="muted small center"><Link to="/privacy">Privacy policy</Link></p>
     </>
