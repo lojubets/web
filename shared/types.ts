@@ -64,6 +64,8 @@ export interface OwnLogin {
   label: string;
   /** The address of a password login. */
   email: string | null;
+  /** For a provider login, the email that account at the provider uses (null until it has signed in since this was recorded). */
+  account: string | null;
   /** Why it can't be removed right now, or null if it can. */
   removeBlocked: string | null;
 }

@@ -84,7 +84,7 @@ export default function Profile() {
   };
 
   const removeLogin = (l: OwnLogin) => {
-    const what = l.email ? `the email and password login for ${l.email}` : `your ${l.label} login`;
+    const what = l.email ? `the email and password login for ${l.email}` : `your ${l.label} login${l.account ? ` (${l.account})` : ''}`;
     if (!window.confirm(`Remove ${what}?\n\nYou will no longer be able to sign in this way. Your email addresses stay on your account.`)) return;
     rm.run(async () => {
       await api(`/me/logins/${encodeURIComponent(l.provider)}/${encodeURIComponent(l.subject)}`, 'DELETE');
@@ -220,12 +220,13 @@ export default function Profile() {
               <div className="row row-wrap">
                 <span className="grow">
                   <strong>{l.label}</strong>
-                  {l.email && <span className="muted small"> · {l.email}</span>}
+                  {(l.email ?? l.account) && <span className="muted small"> · {l.email ?? l.account}</span>}
                 </span>
                 <button className="btn btn-small btn-secondary" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
                   Remove
                 </button>
               </div>
+              {l.provider !== 'password' && l.provider !== 'dev' && !l.account && <small className="muted">Sign in with it once more to see which account it is.</small>}
               {l.removeBlocked && <small className="muted">{l.removeBlocked}</small>}
             </div>
           ))}

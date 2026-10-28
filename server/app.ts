@@ -92,7 +92,7 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   if (!r) return undefined;
   const emails = await db.execute({ sql: 'SELECT email, verified FROM user_emails WHERE user_id = ? ORDER BY created_at, email', args: [id] });
   const primary = String(r.email ?? '').toLowerCase();
-  const logins = await db.execute({ sql: 'SELECT provider, subject FROM identities WHERE user_id = ? ORDER BY rowid', args: [id] });
+  const logins = await db.execute({ sql: 'SELECT provider, subject, account FROM identities WHERE user_id = ? ORDER BY rowid', args: [id] });
   const passwordLogins = new Set(logins.rows.filter((l) => l.provider === 'password').map((l) => String(l.subject)));
   const verifiedEmails = emails.rows.filter((e) => e.verified).map((e) => String(e.email));
   const verifiedCount = verifiedEmails.length;
@@ -131,7 +131,7 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   });
   // The primary address first
   list.sort((x, y) => Number(y.primary) - Number(x.primary));
-  const loginList = loginMethods(logins.rows as unknown as { provider: unknown; subject: unknown }[], emails.rows.filter((e) => e.verified).map((e) => String(e.email)));
+  const loginList = loginMethods(logins.rows as unknown as { provider: unknown; subject: unknown; account: unknown }[], emails.rows.filter((e) => e.verified).map((e) => String(e.email)));
   return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, deletionRequestedAt: r.deletion_requested_at ?? null, profileName: r.profile_name ?? '', emails: list, logins: loginList };
 }
 
@@ -142,7 +142,7 @@ const PROVIDER_LABELS: Record<string, string> = { google: 'Google', microsoft: '
  * uses its own email, and a provider login relies on the account having a verified address (providers don't tell us
  * which one they used). The last verified login can't be removed, so the account always keeps a way in.
  */
-function loginMethods(rows: { provider: unknown; subject: unknown }[], verifiedEmails: string[]): OwnLogin[] {
+function loginMethods(rows: { provider: unknown; subject: unknown; account: unknown }[], verifiedEmails: string[]): OwnLogin[] {
   const verified = new Set(verifiedEmails);
   const all = rows.map((l) => {
     const provider = String(l.provider);
@@ -153,6 +153,7 @@ function loginMethods(rows: { provider: unknown; subject: unknown }[], verifiedE
       subject,
       label: isPassword ? 'Email and password' : (PROVIDER_LABELS[provider] ?? provider),
       email: isPassword ? subject : null,
+      account: !isPassword && l.account ? String(l.account) : null,
       verified: isPassword ? verified.has(subject) : verified.size > 0,
     };
   });
