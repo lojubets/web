@@ -32,7 +32,7 @@ Balances (the running "Lonkeros X owes Y" tally, `balanceFor` in `betLogic.ts`) 
 
 1. Opens a confirmation flow (section 7).
 2. Offers a data export first (section 10).
-3. Refuses while ongoing bets exist (section 6): the user must settle or cancel them first.
+3. If the account has ongoing bets, it does **not** delete yet. It puts the account into "deletion requested" and asks each counterparty to cancel the bet (section 6). Deletion then happens by itself as soon as nothing ongoing is left, or by default after 30 days of silence. With no ongoing bets, deletion is immediate.
 4. In one transaction: hard-deletes the account's personal data (section 4) and rewrites the bets it participated in according to the chosen policy (section 5).
 5. Clears the session cookie and shows a "your account was deleted" page.
 
@@ -100,27 +100,36 @@ C plus: for *settled* bets keep only what B needs to preserve the result (questi
 
 ## 6. Ongoing bets
 
-**Decision (maintainer): deletion is blocked until the account has no ongoing bets.**
+**Decision (maintainer):** ongoing bets are not voided unilaterally. Erasure waits for them, but not forever: the user asks each counterparty to cancel, and if 30 days pass without the counterparty responding, erasure proceeds by default.
 
-Statuses that block: `awaiting_guess`, `active`, `awaiting_confirmation`. (`settled` and `cancelled` are historical and do not block.) This mirrors what merge already does: `previewFor` in `merge.ts` refuses while unfinished bets exist between the two accounts, with a list of blockers shown to the user.
+Statuses that count as ongoing: `awaiting_guess`, `active`, `awaiting_confirmation`. (`settled` and `cancelled` are historical and do not hold up deletion.) This builds on what merge already does: `previewFor` in `merge.ts` lists unfinished bets as blockers.
 
-Why this is the cleanest option: the service never invents an outcome, never changes the other participant's bets or balance behind their back, and needs no new status or notification-on-deletion flow. Alternatives considered and rejected: voiding all ongoing bets (changes B's records unilaterally), auto-resolving (the service cannot know who won).
+Rejected alternatives: voiding all ongoing bets at once (changes the other participant's records unilaterally) and auto-resolving (the service cannot know who won).
 
-How it works:
+### The flow
 
-- `GET /api/me/deletion-preview` returns blockers: each ongoing bet (id, question, counterparty display name, status) and what the user can do about it.
-- The delete endpoint re-checks inside the same transaction as the deletion and returns `409` if any ongoing bet exists, so a bet created or accepted between preview and confirm cannot slip through.
-- The user's own ways out, all existing actions: cancel an `awaiting_guess` bet (`/api/bets/:id/cancel`); settle an `active`/`awaiting_confirmation` bet via the normal propose/confirm/tie/not-happened flow. A cancelled bet is then removed per option D.
-- Counterparties are not emailed on deletion, because nothing happens to their bets. They are notified only by the ordinary bet events they already get.
+1. **Request.** The user confirms deletion (section 7). If there are no ongoing bets, deletion runs immediately and the flow ends here.
+2. **Account enters "deletion requested".** A new `users.deletion_requested_at` timestamp is set. The user can still sign in (to settle bets and see status) and can withdraw the request. While requested, the account cannot start new bets or send invitations, and counterparties cannot start new bets with it (otherwise the set of ongoing bets never shrinks). Note this is the opposite of a cooling-off period: nothing is "undoable later", the account simply waits on its obligations.
+3. **Cancellation requests.** For each ongoing bet the app creates a cancellation request to the counterparty (a new `bet_cancel_requests` table: bet id, requested_by, created_at, response `pending|accepted|refused`, responded_at). `awaiting_guess` bets that the user created can simply be cancelled with the existing `/api/bets/:id/cancel`, no request needed. The counterparty gets an email (verified addresses only; same `sendMail` pattern as `reminders.ts`) and an in-app prompt: "Matti wants to delete their account and asks to cancel this bet. Accept or refuse." Reminder emails at day 7 and day 23.
+4. **Counterparty responds:**
+   - **Accepts:** the bet becomes `cancelled` (existing status, no balance impact) and no longer holds up deletion.
+   - **Refuses:** the bet stays ongoing and keeps holding up deletion. The counterparty's explicit refusal is a response, and their interest in the bet wins until it is settled or they change their mind (see open question 1).
+   - **Does not respond within 30 days** of the request: the request lapses and the bet is **force-cancelled by default**, to let erasure proceed.
+   - Independently, the bet can be settled the normal way (propose/confirm/tie/not-happened) at any time.
+5. **Deletion trigger.** Whenever a bet leaves the ongoing set (settled, cancelled, accepted, lapsed), the system checks the requester: if no ongoing bet remains, deletion runs right away ("delete immediately when we can"). A daily step in `/api/cron` (which already exists) lapses requests older than 30 days and runs the check.
+6. **Final re-check.** The deletion transaction re-verifies that there are no ongoing bets and aborts if one slipped in; the cron retries.
+7. **Notification afterwards.** The user is emailed that the deletion completed. Counterparties whose bets were force-cancelled get an email saying the bet was cancelled because they did not respond within 30 days.
 
-Legal footing: erasure is not absolute. Art. 17(3)(e) lets the controller keep data needed for the establishment, exercise or defence of legal claims, and processing that is necessary to perform a contract (Art. 6(1)(b)) does not stop being necessary because one party asks to be forgotten. This is the same reason closing a bank account does not cancel the loan. An open bet is a (very informal) agreement between two people, and the other participant has a legitimate interest in it being honoured or properly closed, not erased out from under them. Caveat: a friendly bet whose stake is a "lonkero" tally is unlikely to be legally enforceable, so we should not rely on 17(3)(e) formally; the stronger argument is simply the counterparty's interest and fairness, which the privacy policy should state. Once the bet is settled or cancelled, that justification ends and erasure proceeds as in section 5.
+Counterparties without a verified email cannot be emailed; they would only see the prompt on their next visit. Whether silence from someone who was never reachable should count is open question 2.
 
-Known risks of blocking, to be accepted explicitly:
+Legal footing: erasure is not absolute. Art. 17(3)(e) lets the controller keep data needed for the establishment, exercise or defence of legal claims, and processing that is necessary to perform a contract (Art. 6(1)(b)) does not stop being necessary because one party asks to be forgotten. This is the same reason closing a bank account does not cancel the loan. An open bet is a (very informal) agreement between two people, and the other participant has a legitimate interest in it being honoured or properly closed, not erased out from under them. Caveat: a friendly bet whose stake is a "lonkero" tally is unlikely to be legally enforceable, so we should not rely on 17(3)(e) formally; the stronger argument is simply the counterparty's interest and fairness, which the privacy policy should state. Once the bet is settled or cancelled, that justification ends and erasure proceeds as in section 5. The 30-day default treats a counterparty who never responds as not asserting that interest; it is a balance between their interest and the erasing user's right to timely erasure, which is why it needs the notice and reminders described in the flow.
 
-1. **Erasure "without undue delay" (Art. 12(3): one month).** A bet awaiting a real-world event can run for a year, and a counterparty can stall on confirming. Blocking indefinitely is the weak point under GDPR. Mitigations: the blocker list gives the user a concrete path (propose "not happened"/tie, or cancel), and the UI must say plainly what is blocking and what to do. Because the counterparty has a real interest (above), a force-cancel escape hatch is *not* recommended by default; if added at all, it should require the counterparty's agreement or a long inactivity period (see open question 1).
-2. **Support path.** Someone stuck behind a blocker still has a right to erasure; a documented contact address for erasure requests that a maintainer can act on by hand covers the gap (open question 9).
-3. **No dodging.** Because ongoing bets must finish first, deleting cannot be used to escape a debt: the settled result and balance survive as an anonymized record.
+Known risks, to be accepted explicitly:
 
+1. **Timing against GDPR.** Art. 12(3) wants erasure within one month, extendable by two further months for complex or numerous requests with notice to the user. The 30-day default fits this only if the 30 days run from the request date and the user is told up front. A refusal by the counterparty can extend it beyond that, on the basis above; the user should be told this plainly in the UI and given the support contact (open question 9).
+2. **Personal data lingers during the wait.** The account's data still exists while the request is pending. Mitigation: the account is in a restricted mode (no new bets or invitations), and the doc/privacy policy states the reason and the maximum wait.
+3. **No dodging.** Deletion cannot be used to escape a lost bet: ongoing bets either finish, are cancelled with the counterparty's consent, or are cancelled after the counterparty ignores the request for 30 days. Settled results and balances survive as anonymized records.
+4. **Abuse by silence.** A user who wants out of a bet could request deletion and hope the counterparty ignores the emails. Accepting that: the cancelled bet carries no result, and the counterparty has two reminders and 30 days to act.
 
 ## 7. Confirmation UX
 
@@ -129,7 +138,7 @@ Account deletion is irreversible, so friction is appropriate but must not be a d
 - **Re-authentication.** Require the password (password logins), or a fresh provider sign-in (Google/Apple), within the last few minutes. Sessions are long-lived JWTs (`SESSION_DAYS`), so "signed in" is not proof the person at the keyboard is the owner. The merge feature already has a pattern for re-proving a login (`/api/merge/password` + a short-lived signed ticket); reuse the idea with a `delete` ticket.
 - **Typed confirmation.** The user types their email or the word `DELETE`. One cheap guard against mis-taps, especially on mobile.
 - **Plain summary before confirming:** how many friends, bets (by status) and what the other side will see.
-- **Cooling-off period (optional).** Delete immediately, or "deactivate for 14 days, then delete". With stateless sessions, deactivation needs a `deleted_at` column on `users` that the session check treats as signed out, plus a cron step (`/api/cron` already exists). Benefits: undo for accidents and for hacked accounts. Costs: new state, a longer window in which the data still exists. GDPR is fine with a short grace period if disclosed, but immediate deletion is the safer default. Proposed default: **immediate, with the cooling-off as an opt-in later** (open question 2).
+- **No cooling-off period (decided).** Deletion happens immediately when it can, i.e. when no ongoing bets remain. The "deletion requested" wait in section 6 exists because of the bets, not as a grace period, and the user may withdraw the request while it is pending. Consequence: once the transaction runs there is no undo, which is why the re-auth and typed confirmation matter.
 - **Confirmation email** after deletion to the primary verified email, which is the *last* use of that address and is not logged.
 
 ## 8. Invitations pointing at the deleted email
@@ -173,34 +182,38 @@ Art. 20 (portability) is adjacent, and exporting just before an irreversible del
 
 ## 13. Recommendation
 
-1. **Immediate, self-service deletion** from the Profile page, behind re-authentication and a typed confirmation, with a prior optional data export.
+1. **Immediate, self-service deletion** from the Profile page, behind re-authentication and a typed confirmation, with a prior optional data export. If ongoing bets exist, deletion happens as soon as they are cleared (section 6).
 2. **Hard-delete** all identity and credential data (section 4) in a single transaction.
-3. **Bets: option D.** Settled bets are anonymized to a "Deleted user" placeholder with the deleted user's guess removed; cancelled bets are deleted; **deletion is blocked while any bet is ongoing**.
+3. **Bets: option D.** Settled bets are anonymized to a "Deleted user" placeholder with the deleted user's guess removed; cancelled bets are deleted; **ongoing bets are cancelled by asking the counterparty; a refusal keeps the bet alive, and 30 days of silence lets erasure proceed by default**.
 4. **Single shared sentinel** vs. per-deletion placeholder: start with a single sentinel for simplicity; accept the conflation caveat (open question 3).
-5. Cooling-off period and "delete bet from my side" are **follow-ups**, not part of the first cut.
+5. No cooling-off period. "Delete bet from my side" is a **follow-up**, not part of the first cut.
 
 ## 14. Implementation outline
 
 1. **Sentinel user.** Seed a `users` row with a fixed id, name `Deleted user`, `email NULL`, no identities (so it can never sign in). Exclude it from friends, merge and invitation lookups. Add a test that no route lets anyone act as it.
 2. **Shared deletion helper** (`server/deleteUser.ts`) that takes a user id and a list of statements, used by both deletion and merge's cleanup. Runs in one `db.batch(..., 'write')`.
-3. **Pre-flight endpoint** `GET /api/me/deletion-preview`: counts of friends and of bets by status, list of ongoing bets (the blockers) and their counterparties.
+3. **Schema:** `users.deletion_requested_at` (nullable) and a `bet_cancel_requests` table (section 6). Add both in `db.ts` `schema`/`migrate`.
+3b. **Pre-flight endpoint** `GET /api/me/deletion-preview`: counts of friends and of bets by status, list of ongoing bets and the cancellation-request state of each.
 4. **Re-auth ticket**: `POST /api/me/deletion/reauth` (password or provider re-sign-in) that issues a short-lived signed cookie, modelled on `issueMergeTicket`.
-5. **Delete endpoint** `DELETE /api/me` requiring the ticket and a typed confirmation. Order: gather the identity `subject`s, run the transaction (which re-checks for ongoing bets and returns `409` if any), clear the `session` cookie.
-6. **Transaction contents:** assert no ongoing bets (abort with 409 otherwise); delete cancelled bets and their `bet_reminders`; rewrite `creator_id`/`opponent_id`/`winner_id`/`outcome_proposed_by` to the sentinel and null the deleted party's guess on settled bets; delete rows listed in section 4; delete the user.
+5. **Delete endpoint** `DELETE /api/me` requiring the ticket and a typed confirmation. If no ongoing bets: run the deletion now (gather identity `subject`s, transaction, clear the `session` cookie). Otherwise: set `deletion_requested_at`, create the cancellation requests, send the emails, and return "pending". `DELETE /api/me/deletion` withdraws a pending request.
+5b. **Counterparty endpoints:** `POST /api/bets/:id/cancel-request/accept` and `/refuse`. Accepting sets the bet to `cancelled` and triggers the deletion check for the requester.
+5c. **Restricted mode:** reject creating bets and invitations by or with an account that has `deletion_requested_at` set.
+5d. **Cron:** extend `runCron` to send the day-7 and day-23 reminders, lapse requests older than 30 days (force-cancel those bets), and run the deletion check for every account with `deletion_requested_at`. Use the same claim-before-send idea as `bet_reminders` so overlapping runs cannot double-send.
+6. **Transaction contents:** assert no ongoing bets (abort and retry later otherwise); delete `bet_cancel_requests` involving the user; delete cancelled bets and their `bet_reminders`; rewrite `creator_id`/`opponent_id`/`winner_id`/`outcome_proposed_by` to the sentinel and null the deleted party's guess on settled bets; delete rows listed in section 4; delete the user.
 7. **Export endpoint** `GET /api/me/export` (JSON download).
-8. **UI:** Profile page "Delete my account" in a danger zone; dialog with summary, export link, blockers list, re-auth, typed confirmation; post-deletion landing page.
+8. **UI:** Profile page "Delete my account" in a danger zone; dialog with summary, export link, ongoing-bets list, re-auth, typed confirmation; a "deletion pending" banner with per-bet status and a withdraw button; counterparty prompt to accept or refuse; post-deletion landing page.
 9. **Display:** wherever a user name is rendered for a bet opponent, handle the sentinel ("Deleted user", generic avatar, no profile link). `/api/users/:id/avatar` must 404 for it.
-10. **Tests (vitest, `server/api.test.ts` style):** every personal-data table is empty for the user afterwards (including merged accounts); the other participant's settled bets and balance are unchanged; deletion returns 409 while an `awaiting_guess`/`active`/`awaiting_confirmation` bet exists and succeeds once they are settled or cancelled; invitations by and to the user are gone; old session cookie gets 401; a live merge ticket for the deleted user fails gracefully; no email or name survives anywhere (a full-table scan test that searches for the deleted address).
+10. **Tests (vitest, `server/api.test.ts` style):** every personal-data table is empty for the user afterwards (including merged accounts); the other participant's settled bets and balance are unchanged; deletion stays pending while a bet is ongoing and runs automatically once the last one is settled, cancelled or accepted; a refusal keeps it pending; a request with no response for 30 days (use an injectable clock like `runCron(now)`) force-cancels the bet and deletes the account; a request is withdrawable; a pending account cannot create bets; invitations by and to the user are gone; old session cookie gets 401; a live merge ticket for the deleted user fails gracefully; no email or name survives anywhere (a full-table scan test that searches for the deleted address).
 11. **Docs:** privacy policy section on retention, backups and what other users still see.
 
 ## 15. Open questions for the maintainer
 
-1. **Stalled bets:** blocking is decided and rests on the counterparty's interest in the bet (like a loan outliving a closed bank account). Is that enough, or should a bet with no activity for a long period (say 12 months) be closable by the user, or by mutual agreement, so erasure is not postponed indefinitely?
-2. **Cooling-off period:** immediate deletion, or a 14-day grace period with a `deleted_at` column?
+1. **Refusal:** if the counterparty explicitly refuses, the bet stays and holds up deletion with no end date. Is that intended, or should a refusal also expire (say after 12 months of no activity) or fall under the 30-day default?
+2. **Unreachable counterparties:** if the counterparty has no verified email, may the 30-day default still apply, or only once they have had an in-app chance to respond (for example at least one visit)?
 3. **One sentinel or one per deletion?** One is simpler and more private; per-deletion keeps "same person across my bets" and per-pair views intact for B.
 4. **Free text:** are you comfortable keeping `question` text in settled bets, or should it be replaced by "[removed]" when the deleted user was its creator?
 5. **Counterparty control:** should B get a "remove this bet from my history" action as a follow-up, so B can also exercise their own erasure rights on shared records?
 6. **Balances:** the tally treats the sentinel as a regular opponent. Should B see that the debt can no longer be collected, or should balances with deleted users be hidden?
 7. **Backup retention:** what is the real retention window on the production libsql instance, and can a deletion ledger (hashed opaque id plus timestamp) be accepted?
 8. **Providers:** do we need to revoke anything with Google/Apple on deletion (Apple requires apps with account creation to also offer in-app deletion and, for Sign in with Apple, token revocation)?
-9. **Who can see this?** Is there an admin/support path for deletion requests by email (Art. 12 requires the right to be exercisable by any reasonable means)?
+9. **Support path:** is there an address for erasure requests by email, for users who are stuck pending (Art. 12 requires the right to be exercisable by reasonable means)?
