@@ -13,9 +13,13 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [zoom, setZoom] = useState(1);
   const [pos, setPos] = useState({ x: 0, y: 0 }); // image top-left, relative to the viewport
-  const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+  // Active pointers (a finger or the mouse) and the state when the current gesture began
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
+  const gesture = useRef<{ dist: number; mx: number; my: number; zoom: number; x: number; y: number; ox: number; oy: number }>(null);
 
-  const scale = natural ? (VIEW / Math.min(natural.w, natural.h)) * zoom : 1;
+  const baseScale = natural ? VIEW / Math.min(natural.w, natural.h) : 1;
+
+  const scale = baseScale * zoom;
   const fit = (p: { x: number; y: number }, s: number) =>
     natural ? { x: clamp(p.x, VIEW - natural.w * s, 0), y: clamp(p.y, VIEW - natural.h * s, 0) } : p;
 
@@ -31,11 +35,35 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
   const changeZoom = (z: number) => {
     if (!natural) return;
     const next = clamp(z, 1, MAX_ZOOM);
-    const base = VIEW / Math.min(natural.w, natural.h);
+    const base = baseScale;
     const ratio = (base * next) / scale;
     const c = VIEW / 2;
     setZoom(next);
     setPos(fit({ x: c - (c - pos.x) * ratio, y: c - (c - pos.y) * ratio }, base * next));
+  };
+
+  /** Re-bases the gesture on the pointers that are down now, so lifting or adding a finger doesn't make the picture jump. */
+  const beginGesture = (view: HTMLElement) => {
+    const [a, b] = [...pointers.current.values()];
+    if (!a) {
+      gesture.current = null;
+      return;
+    }
+    const rect = view.getBoundingClientRect();
+    gesture.current = {
+      dist: b ? Math.hypot(b.x - a.x, b.y - a.y) || 1 : 1,
+      mx: (b ? (a.x + b.x) / 2 : a.x) - rect.left,
+      my: (b ? (a.y + b.y) / 2 : a.y) - rect.top,
+      zoom,
+      x: pos.x,
+      y: pos.y,
+      ox: a.x,
+      oy: a.y,
+    };
+  };
+  const endPointer = (e: React.PointerEvent<HTMLElement>) => {
+    pointers.current.delete(e.pointerId);
+    beginGesture(e.currentTarget);
   };
 
   const save = () => {
@@ -58,7 +86,7 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
   return (
     <div className="card stack cropper">
       <h2>Adjust your picture</h2>
-      <span className="muted">Drag to move, and zoom to fit your face in the circle.</span>
+      <span className="muted">Drag to move, and pinch or use the slider to zoom so your face fits your face in the circle.</span>
       <div
         className="cropper-view"
         style={{ width: VIEW, height: VIEW }}
@@ -68,14 +96,29 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
         onKeyDown={nudge}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId);
-          drag.current = { px: e.clientX, py: e.clientY, x: pos.x, y: pos.y };
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          beginGesture(e.currentTarget);
         }}
         onPointerMove={(e) => {
-          const d = drag.current;
-          if (d) setPos(fit({ x: d.x + e.clientX - d.px, y: d.y + e.clientY - d.py }, scale));
+          if (!pointers.current.has(e.pointerId) || !gesture.current || !natural) return;
+          pointers.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+          const g = gesture.current;
+          const [a, b] = [...pointers.current.values()];
+          if (!b) {
+            setPos(fit({ x: g.x + a.x - g.ox, y: g.y + a.y - g.oy }, scale));
+            return;
+          }
+          // Pinch: scale by the change in finger distance, keeping the point under the fingers' midpoint under them
+          const rect = e.currentTarget.getBoundingClientRect();
+          const next = clamp((g.zoom * Math.hypot(b.x - a.x, b.y - a.y)) / g.dist, 1, MAX_ZOOM);
+          const ratio = next / g.zoom;
+          const mx = (a.x + b.x) / 2 - rect.left;
+          const my = (a.y + b.y) / 2 - rect.top;
+          setZoom(next);
+          setPos(fit({ x: mx - (g.mx - g.x) * ratio, y: my - (g.my - g.y) * ratio }, baseScale * next));
         }}
-        onPointerUp={() => (drag.current = null)}
-        onPointerCancel={() => (drag.current = null)}
+        onPointerUp={endPointer}
+        onPointerCancel={endPointer}
         onWheel={(e) => changeZoom(zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08))}
       >
         <img
