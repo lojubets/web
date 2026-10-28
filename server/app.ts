@@ -94,21 +94,40 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   const primary = String(r.email ?? '').toLowerCase();
   const logins = await db.execute({ sql: 'SELECT provider, subject FROM identities WHERE user_id = ? ORDER BY rowid', args: [id] });
   const passwordLogins = new Set(logins.rows.filter((l) => l.provider === 'password').map((l) => String(l.subject)));
-  const verifiedCount = emails.rows.filter((e) => e.verified).length;
+  const verifiedEmails = emails.rows.filter((e) => e.verified).map((e) => String(e.email));
+  const verifiedCount = verifiedEmails.length;
+  // When the account's only login is a password login, removing its address moves that login to another verified address
+  // (the primary one if possible) instead of leaving the account with no way in. That fails if the other address is
+  // already the password login of a different account.
+  const onlyPasswordLogin = logins.rows.length === 1 && passwordLogins.size === 1;
+  const usedByOthers = new Set(
+    onlyPasswordLogin && verifiedCount
+      ? (
+          await db.execute({
+            sql: `SELECT subject FROM identities WHERE provider = 'password' AND user_id != ? AND subject IN (${verifiedEmails.map(() => '?').join(',')})`,
+            args: [id, ...verifiedEmails],
+          })
+        ).rows.map((r) => String(r.subject))
+      : [],
+  );
   const list: OwnEmailAddress[] = emails.rows.map((e) => {
     const email = String(e.email);
     const signsInWithPassword = passwordLogins.has(email);
+    const candidates = verifiedEmails.filter((v) => v !== email).sort((x, y) => Number(y === primary) - Number(x === primary));
+    const movesPasswordTo = signsInWithPassword && onlyPasswordLogin ? (candidates.find((c) => !usedByOthers.has(c)) ?? null) : null;
     // Removing an address never leaves the account without a verified address, or without a way to sign in
-    // (removing an address also removes the password login that uses it).
+    // (removing an address also removes the password login that uses it, unless that login moves to another address).
     const removeBlocked =
       verifiedCount - (e.verified ? 1 : 0) < 1
         ? e.verified
           ? 'This is your only verified email address.'
           : 'Verify an email address first: you need at least one verified address.'
-        : logins.rows.length - (signsInWithPassword ? 1 : 0) < 1
-          ? 'This address is your only way to sign in.'
+        : signsInWithPassword && onlyPasswordLogin && !movesPasswordTo
+          ? candidates.length
+            ? 'Your password login cannot move to your other address, because a different LoJuBets account already uses it. Merge the accounts first.'
+            : 'This address is your only way to sign in.'
           : null;
-    return { email, verified: !!e.verified, primary: email === primary, signsInWithPassword, removeBlocked };
+    return { email, verified: !!e.verified, primary: email === primary, signsInWithPassword, movesPasswordTo, removeBlocked };
   });
   // The primary address first
   list.sort((x, y) => Number(y.primary) - Number(x.primary));
@@ -219,6 +238,31 @@ app.post('/api/me/verify-email', async (_req, res) => {
   res.status(result === 'throttled' ? 429 : 200).json({ result });
 });
 
+const MAX_EMAILS = 10;
+
+// Add another email address to the account. It starts unverified: a link is mailed to it, and only once it is
+// confirmed can it become the primary address or let the old one go.
+app.post('/api/me/emails', rateLimit('add-email', { perIp: 30, perUser: 10, windowMs: 3_600_000 }), async (req, res) => {
+  const body = z.object({ email: z.email() }).safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Enter a valid email address' });
+  const me = (await getUser(uid(res)))!;
+  const email = body.data.email.trim().toLowerCase();
+  if (me.emails.some((e) => e.email === email)) return res.status(409).json({ error: 'That address is already on your account.' });
+  if (me.emails.length >= MAX_EMAILS) return res.status(409).json({ error: `An account can have at most ${MAX_EMAILS} email addresses.` });
+  const taken = row(await db.execute({ sql: 'SELECT 1 AS x FROM user_emails WHERE email = ? AND verified = 1', args: [email] }));
+  if (taken) return res.status(409).json({ error: 'That address already belongs to another LoJuBets account. If both are yours, you can merge the accounts.' });
+  await db.execute({ sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, 0, ?)', args: [me.id, email, Date.now()] });
+  const result = await sendVerification(me.id, email);
+  res.status(201).json({ result });
+});
+
+// Mail the confirmation link for one of the account's unverified addresses again.
+app.post('/api/me/emails/:email/verify', async (req, res) => {
+  const result = await sendVerification(uid(res), String(req.params.email));
+  if (result === 'no_email') return res.status(404).json({ error: 'That address is not on your account' });
+  res.status(result === 'throttled' ? 429 : 200).json({ result });
+});
+
 // Make a verified address the primary one (the one friends see when there's no display name, and where emails go).
 // It has to be verified: a primary address that isn't would lock the account out of the app.
 app.post('/api/me/emails/:email/primary', async (req, res) => {
@@ -242,9 +286,17 @@ app.delete('/api/me/emails/:email', async (req, res) => {
     [
       { sql: 'DELETE FROM user_emails WHERE user_id = ? AND email = ?', args: [me.id, email] },
       { sql: 'DELETE FROM email_verifications WHERE user_id = ? AND email = ?', args: [me.id, email] },
-      // An address that is also a password login takes the login with it
-      { sql: `DELETE FROM password_credentials WHERE subject IN (SELECT subject FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?)`, args: [me.id, email] },
-      { sql: `DELETE FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?`, args: [me.id, email] },
+      // An address that is also a password login takes the login with it, unless it is the only login: then it moves
+      ...(entry.movesPasswordTo
+        ? [
+            { sql: `UPDATE identities SET subject = ? WHERE provider = 'password' AND user_id = ? AND subject = ?`, args: [entry.movesPasswordTo, me.id, email] },
+            { sql: 'UPDATE password_credentials SET subject = ? WHERE subject = ?', args: [entry.movesPasswordTo, email] },
+            { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [email] },
+          ]
+        : [
+            { sql: `DELETE FROM password_credentials WHERE subject IN (SELECT subject FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?)`, args: [me.id, email] },
+            { sql: `DELETE FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?`, args: [me.id, email] },
+          ]),
       // Removing the primary address promotes the oldest remaining verified one
       ...(entry.primary
         ? [

@@ -49,6 +49,8 @@ export interface EmailAddress {
 export interface OwnEmailAddress extends EmailAddress {
   /** This address is also a login: you can sign in with it and your password. */
   signsInWithPassword: boolean;
+  /** Removing this address moves its password login to this other verified address, because it is the account's only login. */
+  movesPasswordTo: string | null;
   /** Why it can't be removed right now, or null if it can. */
   removeBlocked: string | null;
 }
