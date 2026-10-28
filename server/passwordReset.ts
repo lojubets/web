@@ -36,7 +36,7 @@ async function sendReset(email: string): Promise<void> {
 
 /**
  * Sets a new password if the token is valid. Whoever opened the link controls the mailbox, so that address counts as
- * verified, every existing session of the account is signed out, every password login of the account gets the new password,
+ * verified (unless another account has verified it already: a verified address identifies one account only), every existing session of the account is signed out, every password login of the account gets the new password,
  * and every other pending link is void.
  */
 async function consumeReset(token: string, password: string): Promise<boolean> {
@@ -52,14 +52,19 @@ async function consumeReset(token: string, password: string): Promise<boolean> {
   // so the account keeps one password that works with every one of its emails.
   const subjects = (await db.execute({ sql: `SELECT subject FROM identities WHERE provider = 'password' AND user_id = ?`, args: [owner.user_id] })).rows.map((r) => String(r.subject));
   const newHash = await hashPassword(password);
+  const takenElsewhere = (await db.execute({ sql: 'SELECT 1 FROM user_emails WHERE email = ? AND verified = 1 AND user_id != ?', args: [row.subject, owner.user_id] })).rows.length > 0;
   await db.batch(
     [
       ...subjects.flatMap((subject) => [
         { sql: 'UPDATE password_credentials SET password_hash = ? WHERE subject = ?', args: [newHash, subject] },
         { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [subject] },
       ]),
-      { sql: 'UPDATE users SET email_verified = 1 WHERE id = ? AND lower(email) = ?', args: [owner.user_id, row.subject] },
-      { sql: 'UPDATE user_emails SET verified = 1 WHERE user_id = ? AND email = ?', args: [owner.user_id, row.subject] },
+      ...(takenElsewhere
+        ? []
+        : [
+            { sql: 'UPDATE users SET email_verified = 1 WHERE id = ? AND lower(email) = ?', args: [owner.user_id, row.subject] },
+            { sql: 'UPDATE user_emails SET verified = 1 WHERE user_id = ? AND email = ?', args: [owner.user_id, row.subject] },
+          ]),
       { sql: 'UPDATE users SET session_version = session_version + 1 WHERE id = ?', args: [owner.user_id] },
     ],
     'write',

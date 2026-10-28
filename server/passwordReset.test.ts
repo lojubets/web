@@ -66,6 +66,21 @@ describe('password reset', () => {
     }
   });
 
+  it('does not verify an address that another account has verified in the meantime', async () => {
+    const { email } = await register(); // a password account on an unverified address
+    const squatter = (await db.execute({ sql: 'SELECT user_id FROM user_emails WHERE email = ?', args: [email] })).rows[0].user_id;
+    // the real owner signs up another way and verifies the same address on a separate account
+    await db.execute({ sql: `INSERT INTO users (id, email, email_verified, name, created_at) VALUES ('owner-x', ?, 1, '', 1)`, args: [email] });
+    await db.execute({ sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, 1, 1)', args: ['owner-x', email] });
+
+    await forgot(email).expect(200);
+    await request(app).post('/api/auth/reset-password').send({ token: tokenIn(mails[0]), password: 'a brand new one' }).expect(200);
+    const verified = (await db.execute({ sql: 'SELECT user_id FROM user_emails WHERE email = ? AND verified = 1', args: [email] })).rows.map((r) => r.user_id);
+    expect(verified).toEqual(['owner-x']); // still one account per verified address
+    expect(verified).not.toContain(squatter);
+    await request(app).post('/api/auth/login').send({ email, password: 'a brand new one' }).expect(200); // the password did change
+  });
+
   it('works once only', async () => {
     const { email } = await register();
     await forgot(email).expect(200);
