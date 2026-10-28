@@ -71,7 +71,7 @@
 /* ---------- Masthead, rule, hero ---------- */
 
 .masthead {
-  background: radial-gradient(circle at 85% 20%, var(--cherry-600) 0%, var(--cherry-700) 28%, transparent 70%), var(--surface-brand);
+  background: radial-gradient(circle at 88% 10%, var(--cherry-500) 0%, transparent 65%), var(--surface-brand);
   color: var(--on-brand);
   padding: calc(env(safe-area-inset-top) + var(--space-4)) var(--space-4) var(--space-5);
 }
@@ -114,7 +114,7 @@
 }
 
 .hero {
-  background: var(--surface-brand);
+  background: radial-gradient(circle at 88% 0%, var(--cherry-500) 0%, transparent 60%), var(--surface-brand);
   color: var(--on-brand);
   text-align: center;
   padding: calc(env(safe-area-inset-top) + var(--space-7)) var(--space-4) var(--space-5);
@@ -146,8 +146,8 @@
   display: grid;
   place-items: center;
   border-radius: var(--radius-pill);
-  background: var(--champagne-500);
-  color: var(--plum-900);
+  background: var(--ivory-50);
+  color: var(--cherry-700);
 }
 .hero .btn {
   margin-top: var(--space-2);
@@ -482,7 +482,7 @@ a.card::after {
   color: var(--positive-fg);
 }
 .pill-dare {
-  background: var(--cherry-700);
+  background: var(--cherry-600);
   color: var(--ivory-50);
   box-shadow: inset 0 0 0 1.5px var(--border-strong);
 }
@@ -710,8 +710,8 @@ a.card::after {
   color: var(--accent-on-brand);
 }
 .tabbar a.active .tab-icon {
-  background: var(--cherry-700);
-  color: var(--ivory-50);
+  background: var(--ivory-50);
+  color: var(--cherry-700);
 }
 .badge {
   position: absolute;

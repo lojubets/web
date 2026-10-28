@@ -20,7 +20,10 @@
 
   /* Cherry family */
   --cherry-800: #531730; /* pressed */
-  --cherry-600: #83304e; /* hover */
+  --cherry-600: #83304e; /* hover; action on dark */
+  --cherry-500: #a03d63; /* hover on dark; glow */
+  --cherry-400: #c4668a; /* edges and borders on dark */
+  --cherry-950: #301a26; /* card on dark */
 
   /* Champagne family */
   --champagne-300: #e9d4c3; /* highlights */
@@ -29,7 +32,11 @@
 
   /* Ivory family */
   --ivory-100: #eadfd5; /* warm tint panels */
-  --paper: #fcf8f4; /* card on light */
+  --blush-50: #f6e9ee; /* page on light: a pale cherry tint */
+  --blush-100: #ecd5de; /* tinted panel on light */
+  --blush-200: #e0c4cf; /* hairline on light */
+  --blush-300: #efc9d8; /* muted text on cherry */
+  --paper: #fffafc; /* card on light */
 
   /* Plum family */
   --plum-950: #130b10; /* a step below the canvas: masthead and tab bar */
@@ -49,13 +56,13 @@
   --signal-100: #fbe7e5;
 
   /* ---------- 2. Roles (light) ---------- */
-  --surface-page: var(--ivory-50);
+  --surface-page: var(--blush-50);
   --surface-card: var(--paper);
-  --surface-tint: var(--ivory-100);
-  --surface-brand: var(--plum-900); /* masthead, hero, tab bar: dark in both modes */
+  --surface-tint: var(--blush-100);
+  --surface-brand: var(--cherry-700); /* masthead, hero, tab bar: bold cherry in both modes */
   --on-brand: var(--ivory-50);
-  --on-brand-muted: var(--mauve-300);
-  --accent-on-brand: var(--champagne-500); /* champagne on plum: wordmark, active tab, headlines */
+  --on-brand-muted: var(--blush-300);
+  --accent-on-brand: var(--ivory-50); /* headlines and the active tab on cherry */
 
   --text: var(--plum-900);
   --text-muted: var(--mauve-700);
@@ -63,7 +70,7 @@
   --text-danger: var(--signal-700);
   --text-link: var(--cherry-700);
 
-  --border: var(--mauve-200);
+  --border: var(--blush-200);
   --border-control: var(--mauve-600);
   --border-strong: var(--plum-900);
 
@@ -80,7 +87,7 @@
   --negative-fg: var(--plum-900);
   --danger-bg: var(--signal-100);
   --danger-fg: var(--signal-700);
-  --neutral-bg: var(--ivory-100);
+  --neutral-bg: var(--blush-100);
   --neutral-fg: var(--text);
   --avatar-bg: var(--cherry-700);
   --avatar-fg: var(--ivory-50);
@@ -128,9 +135,10 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --surface-page: var(--plum-900);
-    --surface-card: var(--plum-800);
+    --surface-card: var(--cherry-950);
     --surface-tint: var(--plum-700);
-    --surface-brand: var(--plum-950);
+    --surface-brand: var(--cherry-700);
+    --on-brand-muted: var(--blush-300);
     --on-brand: var(--ivory-50);
 
     --text: var(--ivory-50);
@@ -139,11 +147,14 @@
     --text-danger: var(--signal-300);
     --text-link: var(--champagne-500);
 
-    --border: var(--plum-600);
+    --border: #5c2c43;
     --border-control: var(--mauve-500);
-    --border-strong: var(--champagne-500);
+    --border-strong: var(--cherry-400);
 
-    --action-border: var(--champagne-500);
+    --action-bg: var(--cherry-600);
+    --action-bg-hover: var(--cherry-500);
+    --action-bg-pressed: var(--cherry-700);
+    --action-border: var(--cherry-400);
     --action-shadow: #000;
 
     --positive-bg: var(--plum-700);
@@ -152,8 +163,8 @@
     --danger-bg: #4a1a1c;
     --danger-fg: var(--signal-300);
     --neutral-bg: var(--plum-700);
-    --avatar-bg: var(--champagne-500);
-    --avatar-fg: var(--plum-900);
+    --avatar-bg: var(--cherry-600);
+    --avatar-fg: var(--ivory-50);
 
     --focus-ring: var(--champagne-500);
     --focus-halo: var(--plum-900);
