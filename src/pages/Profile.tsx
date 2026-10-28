@@ -311,6 +311,8 @@ export default function Profile() {
           <Link className="btn btn-secondary" to="/merge">Merge accounts</Link>
         </section>
       )}
+      <section className="stack">
+      <h2>Sign out</h2>
       <button
         className="btn btn-secondary"
         onClick={async () => {
@@ -318,7 +320,7 @@ export default function Profile() {
           location.href = '/login';
         }}
       >
-        Sign out
+        Sign out on this device
       </button>
       <button
         className="btn btn-secondary"
@@ -331,6 +333,7 @@ export default function Profile() {
       >
         Sign out everywhere
       </button>
+      </section>
       {me.emailVerified && <DeleteAccount />}
       <p className="muted small center"><Link to="/privacy">Privacy policy</Link></p>
     </>
