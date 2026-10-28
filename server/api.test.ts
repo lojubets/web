@@ -1151,3 +1151,41 @@ describe('adding email addresses', () => {
     await add(request.agent(app), 'x@example.com').expect(401);
   });
 });
+
+describe('adding a password to an account that has none', () => {
+  type Agent = ReturnType<typeof request.agent>;
+  const PW = 'correct horse';
+  const add = (a: Agent, email: string, newPassword = PW) => a.post('/api/me/password/add').send({ email, newPassword });
+  const logins = async (a: Agent) => (await a.get('/api/me')).body.logins as { provider: string; subject: string }[];
+
+  it('lets a provider-only account add a password for a verified address, and then sign in with it', async () => {
+    const a = await login('Pia'); // a development login stands in for Google; it reports a verified address
+    expect((await logins(a)).map((l) => l.provider)).toEqual(['dev']);
+    await add(a, 'pia@example.com').expect(200);
+    expect((await logins(a)).map((l) => l.provider).sort()).toEqual(['dev', 'password']);
+    await request(app).post('/api/auth/login').send({ email: 'pia@example.com', password: PW }).expect(200);
+    // The address now also shows as a password address
+    expect(((await a.get('/api/me')).body.emails as { email: string; signsInWithPassword: boolean }[]).find((e) => e.email === 'pia@example.com')!.signsInWithPassword).toBe(true);
+  });
+
+  it('refuses a short password, an address that is not its own, and an account that already has a password', async () => {
+    const a = await login('Pat');
+    await add(a, 'pat@example.com', 'short').expect(400);
+    await add(a, 'someone.else@example.com').expect(400);
+    await add(a, 'pat@example.com').expect(200);
+    await add(a, 'pat@example.com').expect(409);
+    const u = await verifiedUser('has.password@example.com');
+    await add(u, 'has.password@example.com').expect(409);
+  });
+
+  it("refuses an address that is already another account's password login", async () => {
+    const a = await login('Paz');
+    await verifiedUser('other.owner@example.com');
+    await db.execute({ sql: `UPDATE identities SET subject = 'paz@example.com' WHERE provider = 'password' AND subject = 'other.owner@example.com'`, args: [] });
+    await add(a, 'paz@example.com').expect(409);
+  });
+
+  it('is refused without a session', async () => {
+    await add(request.agent(app), 'x@example.com').expect(401);
+  });
+});

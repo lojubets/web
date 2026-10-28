@@ -113,6 +113,19 @@ export default function Profile() {
     });
   };
 
+  const verifiedAddresses = me.emails.filter((e) => e.verified);
+  const [pwEmail, setPwEmail] = useState('');
+  const [addedPw, setAddedPw] = useState('');
+  const addPw = useAction();
+  const addPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    addPw.run(async () => {
+      await api('/me/password/add', 'POST', { email: pwEmail || verifiedAddresses[0].email, newPassword: addedPw });
+      setAddedPw('');
+      reload(); // the account now has a password login, so this form gives way to "Change password"
+    });
+  };
+
   return (
     <>
       <header className="header"><h1>Profile</h1></header>
@@ -282,6 +295,29 @@ export default function Profile() {
           </div>
           {connect.error && <p className="error"><Icon name="alert" size={20} />{connect.error}</p>}
         </section>
+      )}
+      {passwordLogins.length === 0 && verifiedAddresses.length > 0 && (
+        <form className="card stack" onSubmit={addPassword}>
+          <h2>Add a password</h2>
+          <p className="muted small">You sign in without a password right now. Add one to also sign in with an email address and a password.</p>
+          {verifiedAddresses.length > 1 && (
+            <label className="field">
+              <span>Email address</span>
+              <select value={pwEmail || verifiedAddresses[0].email} onChange={(e) => setPwEmail(e.target.value)}>
+                {verifiedAddresses.map((a) => <option key={a.email} value={a.email}>{a.email}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span>Password</span>
+            <input type="password" autoComplete="new-password" required minLength={8} maxLength={200} value={addedPw} onChange={(e) => setAddedPw(e.target.value)} />
+            <small className="muted">At least 8 characters.</small>
+          </label>
+          <button className="btn" disabled={addPw.busy || addedPw.length < 8}>
+            Add password
+          </button>
+          {addPw.error && <p className="error"><Icon name="alert" size={20} />{addPw.error}</p>}
+        </form>
       )}
       {passwordLogins.length > 0 && (
         <form className="card stack" onSubmit={changePassword}>
