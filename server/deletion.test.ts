@@ -297,7 +297,24 @@ describe('deleting with ongoing bets', () => {
   });
 });
 
+describe('throttling', () => {
+  it('stops guessing the password through the deletion form', async () => {
+    const a = request.agent(app);
+    await a.post('/api/auth/register').send({ email: 'guess@example.com', password: 'correct horse' }).expect(201);
+    for (let i = 0; i < 10; i++) await a.post('/api/me/deletion').send({ confirm: 'DELETE', password: 'wrong guess' }).expect(401);
+    // even the right password is refused once the window is used up
+    await a.post('/api/me/deletion').send({ confirm: 'DELETE', password: 'correct horse' }).expect(429);
+    await a.get('/api/me').expect(200);
+  });
+});
+
 describe('contact', () => {
+  it('keeps the once-a-minute count in the database, not in process memory', async () => {
+    const { hit } = await import('./rateLimit.js');
+    expect(await hit('contact:user:test-only', 1, 60_000)).toBe(true);
+    expect(await hit('contact:user:test-only', 1, 60_000)).toBe(false);
+  });
+
   it('forwards a message to the maintainer without revealing the address, once a minute', async () => {
     const u = await user('Stuck');
     await u.a.post('/api/me/contact').send({ message: 'hi' }).expect(400);
