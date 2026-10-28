@@ -10,6 +10,8 @@ if (isProd && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET must be set in production');
 }
 
+if (isProd && process.env.SESSION_SECRET!.length < 32) console.warn('SESSION_SECRET is shorter than 32 characters; use a long random value (openssl rand -base64 48)');
+
 const databaseUrl = process.env.DATABASE_URL || 'file:local.db';
 const localDatabase = databaseUrl.startsWith('file:') || databaseUrl === ':memory:';
 
@@ -25,6 +27,9 @@ export function publicUrlProblem(appUrl: string, production: boolean): string | 
     'Set APP_URL to the public URL (for example https://your-app.vercel.app) in the Vercel environment variables, then redeploy.'
   );
 }
+
+// The built-in fallback secret is public, so it may only protect a throwaway local database.
+if (!process.env.SESSION_SECRET && !localDatabase) throw new Error('SESSION_SECRET must be set when DATABASE_URL points at a remote database');
 
 export const env = {
   isProd,
