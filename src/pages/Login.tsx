@@ -22,7 +22,7 @@ export default function Login() {
     <>
       <section className="hero">
         <img className="hero-can" src="/can-256.png" width="112" height="112" alt="" />
-        <h1>Lojubets</h1>
+        <h1>LoJuBets</h1>
         <p>Settle it with a friend. Closest guess wins a lonkero.</p>
       </section>
       <Wave />
