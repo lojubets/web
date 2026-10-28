@@ -585,7 +585,7 @@ describe('merging accounts', () => {
     expect(me).toMatchObject({ id: aId, email: 'mia.work@example.com', profileName: 'Mia (work)', hasAvatar: true, emailVerified: true });
     expect(me.emails).toEqual([
       { email: 'mia.work@example.com', verified: true, primary: true, signsInWithPassword: true, movesPasswordTo: null, removeBlocked: null },
-      { email: 'mia@example.com', verified: true, primary: false, signsInWithPassword: false, movesPasswordTo: null, removeBlocked: null },
+      { email: 'mia@example.com', verified: true, primary: false, signsInWithPassword: false, movesPasswordTo: null, removeBlocked: expect.stringMatching(/Development login/) },
     ]);
 
     // Friends and bets are combined: Cleo once, the two accounts' bets with her, and balances add up (+1 -1)
@@ -778,21 +778,52 @@ describe('removing email addresses', () => {
     await remove(a, 'ola@example.com').expect(409);
   });
 
-  it('removing the primary promotes the other verified address; provider logins are unaffected', async () => {
+  it('removing the primary promotes the other verified address once the provider login behind the old one is gone', async () => {
     const a = await login('Pam');
     await login('Pamb');
     await mergeInto(a, 'pamb@example.com');
-    const before = await id(a);
+
+    // Each address belongs to the (development stand-in for a social) login it was set up with
+    expect((await emails(a)).map((e) => e.removeBlocked)).toEqual([expect.stringMatching(/Development login/), expect.stringMatching(/Development login/)]);
+    await remove(a, 'pam@example.com').expect(409);
+
+    const devLogin = ((await a.get('/api/me')).body.logins as { provider: string; subject: string; account: string | null }[]).find((l) => l.account === 'pam@example.com')!;
+    await a.delete(`/api/me/logins/${devLogin.provider}/${encodeURIComponent(devLogin.subject)}`).expect(200);
 
     await remove(a, 'pam@example.com').expect(200);
     const me = (await a.get('/api/me')).body;
     expect(me).toMatchObject({ email: 'pamb@example.com', emailVerified: true });
     expect(me.emails).toHaveLength(1);
     expect(me.emails[0]).toMatchObject({ email: 'pamb@example.com', primary: true });
-    // a sign-in through the provider doesn't depend on the address staying on the profile
-    const again = request.agent(app);
-    await again.post('/api/auth/dev').send({ name: 'Pam', email: 'pam@example.com' }).expect(200);
-    expect(await id(again)).toBe(before);
+  });
+
+  it("keeps the address of the account's only social login, but lets the other address go", async () => {
+    // A password login on one address, a (stand-in) Google login that reported another, then the password login is deleted
+    const u = await verifiedUser('keeper.work@example.com');
+    const userId = await id(u);
+    await addRaw(userId, 'keeper@example.com', true);
+    await db.execute({ sql: `INSERT INTO identities (provider, subject, user_id, account) VALUES ('google', 'g-keeper', ?, 'Keeper@Example.com')`, args: [userId] });
+    await u.delete(`/api/me/logins/password/${encodeURIComponent('keeper.work@example.com')}`).expect(200);
+
+    const list = await emails(u);
+    expect(list.find((e) => e.email === 'keeper@example.com')!.removeBlocked).toMatch(/Google/);
+    expect(list.find((e) => e.email === 'keeper.work@example.com')!.removeBlocked).toBeNull();
+    await remove(u, 'keeper@example.com').expect(409);
+    expect((await emails(u)).map((e) => e.email).sort()).toEqual(['keeper.work@example.com', 'keeper@example.com']);
+
+    // The only login can't go either, so the address stays tied until another way in exists
+    await u.delete('/api/me/logins/google/g-keeper').expect(409);
+    await remove(u, 'keeper@example.com').expect(409);
+  });
+
+  it('frees the address again when the social login is removed', async () => {
+    const u = await verifiedUser('freed.work@example.com');
+    const userId = await id(u);
+    await addRaw(userId, 'freed@example.com', true);
+    await db.execute({ sql: `INSERT INTO identities (provider, subject, user_id, account) VALUES ('microsoft', 'm-freed', ?, 'freed@example.com')`, args: [userId] });
+    await remove(u, 'freed@example.com').expect(409);
+    await u.delete('/api/me/logins/microsoft/m-freed').expect(200);
+    await remove(u, 'freed@example.com').expect(200);
   });
 
   it('an unverified extra address can be removed', async () => {
