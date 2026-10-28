@@ -113,9 +113,11 @@ How it works:
 - The user's own ways out, all existing actions: cancel an `awaiting_guess` bet (`/api/bets/:id/cancel`); settle an `active`/`awaiting_confirmation` bet via the normal propose/confirm/tie/not-happened flow. A cancelled bet is then removed per option D.
 - Counterparties are not emailed on deletion, because nothing happens to their bets. They are notified only by the ordinary bet events they already get.
 
+Legal footing: erasure is not absolute. Art. 17(3)(e) lets the controller keep data needed for the establishment, exercise or defence of legal claims, and processing that is necessary to perform a contract (Art. 6(1)(b)) does not stop being necessary because one party asks to be forgotten. This is the same reason closing a bank account does not cancel the loan. An open bet is a (very informal) agreement between two people, and the other participant has a legitimate interest in it being honoured or properly closed, not erased out from under them. Caveat: a friendly bet whose stake is a "lonkero" tally is unlikely to be legally enforceable, so we should not rely on 17(3)(e) formally; the stronger argument is simply the counterparty's interest and fairness, which the privacy policy should state. Once the bet is settled or cancelled, that justification ends and erasure proceeds as in section 5.
+
 Known risks of blocking, to be accepted explicitly:
 
-1. **Erasure "without undue delay" (Art. 12(3): one month).** A bet awaiting a real-world event can run for a year, and a counterparty can stall on confirming. Blocking indefinitely is the weak point under GDPR. Mitigations: the blocker list gives the user a concrete path (propose "not happened"/tie, or cancel), and the UI must say plainly what is blocking and what to do. Recommended follow-up, not in the first cut: an escape hatch so a stalled bet cannot hold an account hostage (see open question 1).
+1. **Erasure "without undue delay" (Art. 12(3): one month).** A bet awaiting a real-world event can run for a year, and a counterparty can stall on confirming. Blocking indefinitely is the weak point under GDPR. Mitigations: the blocker list gives the user a concrete path (propose "not happened"/tie, or cancel), and the UI must say plainly what is blocking and what to do. Because the counterparty has a real interest (above), a force-cancel escape hatch is *not* recommended by default; if added at all, it should require the counterparty's agreement or a long inactivity period (see open question 1).
 2. **Support path.** Someone stuck behind a blocker still has a right to erasure; a documented contact address for erasure requests that a maintainer can act on by hand covers the gap (open question 9).
 3. **No dodging.** Because ongoing bets must finish first, deleting cannot be used to escape a debt: the settled result and balance survive as an anonymized record.
 
@@ -193,7 +195,7 @@ Art. 20 (portability) is adjacent, and exporting just before an irreversible del
 
 ## 15. Open questions for the maintainer
 
-1. **Escape hatch for stalled bets:** blocking is decided, but should there be a cap (say 30 days after the user requests deletion, or a bet with no activity for N days) after which the remaining ongoing bets are force-cancelled so erasure still happens within the GDPR month?
+1. **Stalled bets:** blocking is decided and rests on the counterparty's interest in the bet (like a loan outliving a closed bank account). Is that enough, or should a bet with no activity for a long period (say 12 months) be closable by the user, or by mutual agreement, so erasure is not postponed indefinitely?
 2. **Cooling-off period:** immediate deletion, or a 14-day grace period with a `deleted_at` column?
 3. **One sentinel or one per deletion?** One is simpler and more private; per-deletion keeps "same person across my bets" and per-pair views intact for B.
 4. **Free text:** are you comfortable keeping `question` text in settled bets, or should it be replaced by "[removed]" when the deleted user was its creator?
