@@ -62,7 +62,7 @@ export default function Privacy() {
         <section className="stack">
           <h2>Cookies</h2>
           <p>
-            We use only essential first-party cookies: one keeps you signed in (for 30 days), and short-lived ones carry a sign-in or
+            We use only essential first-party cookies: one keeps you signed in (it stays valid while you keep using the app, up to 180 days after you last signed in), and short-lived ones carry a sign-in or
             account-merge step through to the end. There are no analytics, no tracking or advertising cookies, and we don't use
             localStorage. That is why there is no cookie banner.
           </p>
