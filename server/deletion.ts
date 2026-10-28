@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { sessionIssuedAt, verifyPassword } from './auth.js';
+import { clearSessionCookie, lastSignInAt, verifyPassword } from './auth.js';
 import { db } from './db.js';
 import { sendMail } from './email.js';
 import { env } from './env.js';
@@ -235,7 +235,7 @@ async function reauthenticated(req: Request, res: Response): Promise<{ ok: true 
     for (const l of logins) if ((await verifyPassword(l.subject, password)) === uid(res)) return { ok: true };
     return { ok: false, status: 401, error: 'Wrong password' };
   }
-  const issued = await sessionIssuedAt(req);
+  const issued = await lastSignInAt(req);
   if (issued && Date.now() - issued <= REAUTH_WINDOW_MS) return { ok: true };
   return { ok: false, status: 403, error: 'For your security, sign out and sign in again, then delete your account within a few minutes.', code: 'reauth_required' };
 }
@@ -245,7 +245,7 @@ deletionRouter.post('/me/deletion', async (req, res) => {
   const auth = await reauthenticated(req, res);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error, code: auth.code });
   const deleted = await requestDeletion(uid(res));
-  if (deleted) res.clearCookie('session', { httpOnly: true, secure: env.isProd, path: '/', sameSite: 'lax' });
+  if (deleted) clearSessionCookie(res);
   res.json({ deleted });
 });
 

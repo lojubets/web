@@ -148,15 +148,23 @@ export async function readSessionUser(req: Request, res?: Response): Promise<str
   }
 }
 
-/** When the current session cookie was issued (ms since epoch), or null. */
-export async function sessionIssuedAt(req: Request): Promise<number | null> {
+/**
+ * When the signed-in person actually signed in (ms since epoch), or null. Unlike the token's `iat` this is not reset
+ * when the session renews itself, so a session that is merely kept alive never looks like a fresh sign-in.
+ */
+export async function lastSignInAt(req: Request): Promise<number | null> {
   try {
-    const { payload } = await jwtVerify(req.cookies?.session ?? '', secret, { algorithms: ['HS256'] });
-    return payload.iat ? payload.iat * 1000 : null;
+    const payload = await verify(req.cookies?.[SESSION_COOKIE] ?? '', 'session');
+    const user = await db.execute({ sql: 'SELECT session_version FROM users WHERE id = ?', args: [payload.sub ?? ''] });
+    if (!user.rows.length || Number(user.rows[0].session_version) !== Number(payload.ver ?? 0)) return null;
+    const at = Number(payload.auth ?? payload.iat ?? 0);
+    return at ? at * 1000 : null;
   } catch {
     return null;
   }
 }
+
+export const clearSessionCookie = (res: Response) => res.clearCookie(SESSION_COOKIE, { ...cookieBase, sameSite: 'lax' });
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
   const userId = await readSessionUser(req, res);
@@ -335,7 +343,7 @@ authRouter.post('/verify-email', rateLimit('verify', { perIp: 30 }), async (req,
 });
 
 authRouter.post('/logout', (_req, res) => {
-  res.clearCookie(SESSION_COOKIE, { ...cookieBase, sameSite: 'lax' });
+  clearSessionCookie(res);
   res.json({ ok: true });
 });
 
