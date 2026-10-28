@@ -12,6 +12,7 @@ import { afterBetEnded, deletionBlock, deletionRouter, runDeletionCron } from '.
 import { mergeRouter } from './merge.js';
 import { env } from './env.js';
 import { runCron } from './reminders.js';
+import { passwordResetRouter } from './passwordReset.js';
 import { sendVerification } from './verification.js';
 
 const app = express();
@@ -44,6 +45,7 @@ app.get('/api/config', (req, res) => {
   const cfg: AppConfig = { providers: enabledProviders(), devLogin: devLoginAllowed(req), privacyContactEmail: env.privacyContactEmail ?? null };
   res.json(cfg);
 });
+app.use('/api/auth', passwordResetRouter);
 app.use('/api/auth', authRouter);
 
 // Called daily by Vercel Cron (which sends `Authorization: Bearer $CRON_SECRET`), or by any external pinger.

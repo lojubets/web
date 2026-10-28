@@ -56,6 +56,13 @@ const schema = [
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL
   )`,
+  // One-time password reset links: only the hash of the token is kept, and the link belongs to a password login (its email).
+  `CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    subject TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
   // user_a < user_b always, so each pair is stored once
   `CREATE TABLE IF NOT EXISTS connections (
     user_a TEXT NOT NULL,

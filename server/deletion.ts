@@ -90,6 +90,7 @@ export async function tryDeleteUser(userId: string, now = Date.now()): Promise<b
             ]
           : []),
         S(`DELETE FROM invitations WHERE inviter_id = ? OR lower(email) IN (SELECT lower(email) FROM user_emails WHERE user_id = ? UNION SELECT lower(email) FROM users WHERE id = ? AND email IS NOT NULL)`, [userId, userId, userId]),
+        S(`DELETE FROM password_resets WHERE subject IN (SELECT subject FROM identities WHERE user_id = ? AND provider = 'password')`, [userId]),
         S(`DELETE FROM password_credentials WHERE subject IN (SELECT subject FROM identities WHERE user_id = ? AND provider = 'password')`, [userId]),
         S('DELETE FROM credentials WHERE user_id = ?', [userId]),
         S('DELETE FROM identities WHERE user_id = ?', [userId]),

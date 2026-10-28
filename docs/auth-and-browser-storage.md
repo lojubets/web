@@ -262,7 +262,7 @@ sessions can come later.
 | Token confusion (N3, partly) | **Added** | Session, oauth and merge JWTs carry a `typ` and are accepted only as that kind. |
 
 **Still open** (deliberately left out; each needs product decisions or UI):
-R5 Microsoft issuer/tenant validation, R6 email squatting on password registration, R7 password reset/change (the
+R5 Microsoft issuer/tenant validation, R6 email squatting on password registration, R7 password reset/change (reset is now done, see the end of §11; change-while-signed-in is not) (the
 biggest remaining gap: a session-version bump is ready for it to call), recent-auth prompts for sensitive actions, a
 per-device session list, PKCE, security headers/CSP, scrypt cost upgrade, hashing invitation tokens, single-use merge
 tickets, `kid` for secret rotation.
@@ -310,4 +310,20 @@ deletion flow with `NODE_ENV=production`-style cookie names.
 - **§1 inventory:** unchanged. Still no `localStorage`, `sessionStorage`, IndexedDB or service worker (the new components and the privacy page add none, as the policy states). The only addition is the new `/privacy` route, which needs no session.
 - **New small improvement:** OAuth sign-in now refuses providers that share no email address (`auth.ts:443`), which keeps every account reachable.
 
-Updated priority order: R7 password reset → remaining recent-auth gates → the rest of §9.
+Updated priority order: password reset is done → remaining recent-auth gates → the rest of §9.
+
+### Password reset (R7, partly)
+
+`server/passwordReset.ts` adds `POST /api/auth/forgot-password` and `POST /api/auth/reset-password`, and the pages
+`/forgot-password` and `/reset-password` (linked from the sign-in form).
+
+- **Token:** 32 random bytes, only its SHA-256 is stored (`password_resets`), valid 1 hour, single use. The link belongs to a password login (its email), so merged accounts with several password logins reset the right one. Requesting a new link is held back for a minute per address.
+- **No enumeration:** the request endpoint answers the same whether or not the address has a password login, and sends nothing to sign-in-provider-only accounts. (Registration still answers 409, see N7. Response *time* can differ slightly, because the mail is sent before answering.)
+- **Throttling:** 5 requests / 15 min per address, 20 per IP; 30 reset attempts per IP.
+- **On success:** the password is replaced, the address counts as verified (opening the mailed link proves the mailbox), `session_version` is bumped so every session, including a thief's, is signed out, and any other pending link for that login is deleted. The user is not signed in automatically; they sign in with the new password.
+- **Verification link posts:** the reset page submits with a POST, so mail scanners that prefetch the link cannot use the token up.
+- **Account deletion** also deletes pending reset links.
+
+**Interaction with R6 (email squatting):** someone who registered a victim's address can no longer lock the real owner out for good: the owner can reset that login's password, which takes the account over and verifies the address. The squatter's account is signed out. The squatter can still do the same to a *genuine* password user only by controlling the mailbox, so this is not a new takeover path.
+
+**Not included:** a "change password" form for signed-in users (needs the current password, or the recent sign-in from R9), and a notice email after a password change (§7 "sign-in alerts").

@@ -16,6 +16,8 @@ import Privacy from './pages/Privacy';
 import Profile from './pages/Profile';
 import Styleguide from './pages/Styleguide';
 import VerifyEmail from './pages/VerifyEmail';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
   const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = loading
@@ -46,6 +48,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={me ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/styleguide" element={<Styleguide />} />
       <Route path="/invite/:token" element={<InviteLanding signedIn={!!me} locked={locked} />} />
