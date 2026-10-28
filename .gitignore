@@ -7,3 +7,4 @@ dist
 *.db-journal
 .vercel
 *.tsbuildinfo
+.DS_Store
