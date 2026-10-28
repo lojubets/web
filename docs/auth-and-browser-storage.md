@@ -1,12 +1,12 @@
 # Authentication and browser storage
 
-State of the code as of `main` at commit `9f5a039`. Everything below was read from `server/auth.ts`, `server/app.ts`,
+**Analysis carried out on 2026-10-28** against `main` at commit `9f5a039` (the fixes in §10 were made the same day, on top of that commit, in the PR that introduced this document). Everything below was read from `server/auth.ts`, `server/app.ts`,
 `server/merge.ts`, `server/env.ts`, `server/verification.ts`, `src/api.ts`, `src/pages/Login.tsx` and friends.
 Section 7 onwards is assessment and recommendation; sections 1–6 are description only.
 
 > ## Status of this document
 >
-> Sections 1–6 and the "Findings" below describe the code **as it was on `main` at `9f5a039`**. The same PR then
+> Sections 1–6 and the "Findings" below describe the code **as it was on `main` at `9f5a039` on 2026-10-28**. The same PR then
 > fixed most of the findings; §10 lists what changed and what is still open. Where §1–§6 say "no X", read §10 for the
 > current state.
 
