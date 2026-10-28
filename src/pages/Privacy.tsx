@@ -34,7 +34,7 @@ export default function Privacy() {
           <ul>
             <li>Your email address and, if you sign up with a password, a hash of it (we never store the password itself).</li>
             <li>Your display name and profile photo, if you set them. Photos are stored in our database.</li>
-            <li>If you sign in with Google, Microsoft or Apple: the account identifier and email address that provider shares with us. We keep no access tokens.</li>
+            <li>If you sign in with Google: the account identifier and email address that provider shares with us. We keep no access tokens.</li>
             <li>Your friendships, the bets you create or join, and your guesses.</li>
             <li>The email addresses of friends you invite, so we can send the invitation and connect you when they join.</li>
           </ul>
@@ -55,7 +55,7 @@ export default function Privacy() {
             <li>Vercel hosts the app.</li>
             <li>Turso hosts the database.</li>
             <li>Resend sends our emails and keeps its own delivery logs.</li>
-            <li>Google, Microsoft and Apple, if you choose to sign in with them.</li>
+            <li>Google, if you choose to sign in with them.</li>
           </ul>
         </section>
 
