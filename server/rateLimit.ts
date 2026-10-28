@@ -15,13 +15,14 @@ export async function hit(key: string, max: number, windowMs: number): Promise<b
   return Number(r.rows[0].count) <= max;
 }
 
-/** Throttles by client IP, and optionally also by a value from the request body (e.g. the email being attacked). */
-export function rateLimit(name: string, opts: { perIp: number; perBody?: { field: string; max: number }; windowMs?: number }) {
+/** Throttles by client IP, and optionally also by a value from the request body (e.g. the email being attacked) or by the signed-in user. */
+export function rateLimit(name: string, opts: { perIp: number; perBody?: { field: string; max: number }; perUser?: number; windowMs?: number }) {
   const windowMs = opts.windowMs ?? 15 * 60_000;
   return async (req: Request, res: Response, next: NextFunction) => {
     const keys: [string, number][] = [[`${name}:ip:${req.ip}`, opts.perIp]];
     const v = opts.perBody && req.body?.[opts.perBody.field];
     if (typeof v === 'string' && v) keys.push([`${name}:${opts.perBody!.field}:${v.trim().toLowerCase().slice(0, 200)}`, opts.perBody!.max]);
+    if (opts.perUser && res.locals.userId) keys.push([`${name}:user:${res.locals.userId}`, opts.perUser]);
     for (const [key, max] of keys) {
       if (!(await hit(key, max, windowMs))) {
         res.set('Retry-After', String(Math.ceil(windowMs / 1000)));

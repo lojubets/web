@@ -5,6 +5,7 @@ import { clearSessionCookie, lastSignInAt, verifyPassword } from './auth.js';
 import { db } from './db.js';
 import { sendMail } from './email.js';
 import { env } from './env.js';
+import { hit, rateLimit } from './rateLimit.js';
 
 /**
  * Account deletion (GDPR erasure). The design and its reasoning live in docs/account-deletion.md:
@@ -240,7 +241,8 @@ async function reauthenticated(req: Request, res: Response): Promise<{ ok: true 
   return { ok: false, status: 403, error: 'For your security, sign out and sign in again, then delete your account within a few minutes.', code: 'reauth_required' };
 }
 
-deletionRouter.post('/me/deletion', async (req, res) => {
+// The password check below is a password oracle for whoever holds the session, so it is throttled like the login.
+deletionRouter.post('/me/deletion', rateLimit('delete', { perIp: 60, perUser: 10 }), async (req, res) => {
   if (z.literal('DELETE').safeParse(req.body?.confirm).success === false) return res.status(400).json({ error: 'Type DELETE to confirm' });
   const auth = await reauthenticated(req, res);
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error, code: auth.code });
@@ -250,15 +252,13 @@ deletionRouter.post('/me/deletion', async (req, res) => {
 });
 
 // "I'm stuck": a message to the maintainer, whose address stays server-side.
-const lastContact = new Map<string, number>();
 deletionRouter.post('/me/contact', async (req, res) => {
   const body = z.object({ message: z.string().trim().min(5).max(2000) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Write a message of 5 to 2000 characters' });
   if (!env.supportEmail) return res.status(503).json({ error: "Contact isn't set up on this server" });
   const me = uid(res);
-  const last = lastContact.get(me) ?? 0;
-  if (Date.now() - last < 60_000) return res.status(429).json({ error: 'Please wait a minute before sending another message' });
-  lastContact.set(me, Date.now());
+  // Counted in the database: serverless instances share no memory
+  if (!(await hit(`contact:user:${me}`, 1, 60_000))) return res.status(429).json({ error: 'Please wait a minute before sending another message' });
   const { name, email } = await contactOf(me);
   const sent = await sendMail(env.supportEmail, `LoJuBets: help with account deletion (${name})`, `From: ${name} <${email ?? 'no verified email'}>, user ${me}\n\n${body.data.message}`);
   if (!sent) return res.status(502).json({ error: "We couldn't send your message. Try again later." });
