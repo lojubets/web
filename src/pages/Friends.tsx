@@ -21,7 +21,7 @@ export default function Friends() {
   const refresh = () => Promise.all([friends.reload(), invites.reload()]);
 
   const share = async (link: string, to?: string) => {
-    const text = `Let's bet a lonkero on LoJuBets: ${link}`;
+    const text = `Let's bet a Gin & Tonic on LoJuBets: ${link}`;
     if (navigator.share) {
       try { await navigator.share({ text, url: link }); return; } catch { return; }
     }

@@ -68,7 +68,7 @@
   text-decoration: none;
 }
 
-/* ---------- Masthead, wave, hero ---------- */
+/* ---------- Masthead, rule, hero ---------- */
 
 .masthead {
   background: var(--surface-brand);
@@ -91,23 +91,23 @@
   width: auto;
 }
 .wordmark {
-  font: 700 1.375rem / 1 var(--font-display);
+  font: 400 1.75rem / 1 var(--font-display);
+  color: var(--on-brand);
+  letter-spacing: -0.04em;
+}
+.wordmark span {
+  margin-left: 0.5rem;
   color: var(--accent-on-brand);
-  letter-spacing: -0.01em;
+  font: 700 0.6875rem / 1 var(--font-text);
+  letter-spacing: 0.3em;
 }
 
-/* The wave echoes the stripes on the can. The only decorative graphic. */
-.wave {
+/* A hairline in champagne closes the masthead: the only decorative graphic. */
+.rule {
   display: block;
-  width: 100%;
-  height: 1.25rem;
-  background: var(--surface-brand);
-}
-.wave .wave-accent {
-  fill: var(--yellow-500);
-}
-.wave .wave-page {
-  fill: var(--surface-page);
+  height: 1px;
+  background: var(--champagne-500);
+  opacity: 0.6;
 }
 
 .hero {
@@ -121,7 +121,7 @@
   gap: var(--space-4);
 }
 .hero h1 {
-  font: 700 var(--text-display) / 1.1 var(--font-display);
+  font: 400 var(--text-display) / 1.1 var(--font-display);
   color: var(--accent-on-brand);
   max-width: 14ch;
   text-wrap: balance;
@@ -131,7 +131,7 @@
   max-width: 30ch;
   text-wrap: balance;
 }
-.hero-can {
+.hero-glass {
   display: block;
   width: 7rem;
   height: 7rem;
@@ -143,8 +143,8 @@
   display: grid;
   place-items: center;
   border-radius: var(--radius-pill);
-  background: var(--yellow-500);
-  color: var(--navy-900);
+  background: var(--champagne-500);
+  color: var(--plum-900);
 }
 .hero .btn {
   margin-top: var(--space-2);
@@ -163,10 +163,10 @@
   min-height: var(--tap);
   padding: 0 var(--space-5);
   border: var(--border-width) solid var(--action-border);
-  border-radius: var(--radius-pill);
+  border-radius: var(--radius-sm);
   background: var(--action-bg);
   color: var(--action-fg);
-  font: 600 1.0625rem / 1.1 var(--font-display);
+  font: 700 1rem / 1.1 var(--font-text);
   text-align: center;
   text-decoration: none;
   cursor: pointer;
@@ -181,14 +181,12 @@
 }
 .btn:active {
   background: var(--action-bg-pressed);
-  transform: translateY(3px);
-  box-shadow: 0 0 0 0 var(--action-shadow);
+  box-shadow: none;
 }
 .btn:disabled,
 .btn[aria-disabled='true'] {
   opacity: 0.5;
   box-shadow: none;
-  transform: translateY(3px);
   cursor: not-allowed;
 }
 .btn-secondary {
@@ -205,17 +203,16 @@
   transform: none;
 }
 .btn-danger {
-  background: var(--navy-900);
-  color: var(--yellow-500);
-  border-color: var(--border-strong);
-  box-shadow: 0 3px 0 0 var(--border-strong);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  border-color: var(--danger-fg);
+  box-shadow: none;
 }
 .btn-danger:hover {
-  background: var(--navy-800);
+  background: var(--surface-tint);
 }
 .btn-danger:active {
-  background: var(--navy-700);
-  box-shadow: 0 0 0 0 var(--border-strong);
+  background: var(--neutral-bg);
 }
 .btn-small {
   padding: 0 var(--space-4);
@@ -426,7 +423,7 @@ a.card::after {
 }
 .card.needs-action {
   border: var(--border-width) solid var(--border-strong);
-  box-shadow: inset 0.5rem 0 0 0 var(--yellow-500);
+  box-shadow: inset 0.5rem 0 0 0 var(--cherry-700);
   padding-left: calc(var(--space-4) + 0.5rem);
 }
 .card.accent {
@@ -472,18 +469,18 @@ a.card::after {
   font: 700 0.8125rem / 1.5 var(--font-text);
   white-space: nowrap;
 }
-.pill-yellow {
+.pill-cherry {
   background: var(--action-bg);
   color: var(--action-fg);
   box-shadow: inset 0 0 0 1.5px var(--action-border);
 }
-.pill-green {
+.pill-positive {
   background: var(--positive-bg);
   color: var(--positive-fg);
 }
-.pill-navy {
-  background: var(--navy-900);
-  color: var(--yellow-500);
+.pill-dare {
+  background: var(--cherry-700);
+  color: var(--ivory-50);
   box-shadow: inset 0 0 0 1.5px var(--border-strong);
 }
 
@@ -509,11 +506,12 @@ a.card::after {
 .banner-owe {
   background: var(--negative-bg);
   color: var(--negative-fg);
-  border-color: var(--navy-900);
+  border-color: var(--plum-900);
 }
 .banner-dare {
-  background: var(--navy-900);
-  color: var(--yellow-500);
+  background: var(--cherry-700);
+  color: var(--ivory-50);
+  border-color: var(--champagne-500);
 }
 .banner-danger {
   background: var(--danger-bg);
@@ -533,11 +531,11 @@ a.card::after {
   font-weight: 600;
 }
 .owe {
-  /* Owing is part of the game, not an error: a yellow marker with navy text, readable on light and navy alike. */
+  /* Owing is part of the game, not an error: a lemon marker with plum text, readable on light and dark alike. */
   padding: 0 0.35em;
   border-radius: var(--radius-sm);
-  background: var(--yellow-500);
-  color: var(--navy-900);
+  background: var(--lemon-500);
+  color: var(--plum-900);
   font-weight: 600;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
@@ -600,7 +598,7 @@ a.card::after {
   overflow: hidden;
   max-width: 100%;
   border-radius: var(--radius-sm);
-  background: var(--navy-900);
+  background: var(--plum-950);
   touch-action: none;
   cursor: grab;
 }
@@ -709,8 +707,8 @@ a.card::after {
   color: var(--accent-on-brand);
 }
 .tabbar a.active .tab-icon {
-  background: var(--yellow-500);
-  color: var(--navy-900);
+  background: var(--cherry-700);
+  color: var(--ivory-50);
 }
 .badge {
   position: absolute;
@@ -719,9 +717,9 @@ a.card::after {
   min-width: 1.25rem;
   padding: 0 0.3rem;
   border-radius: var(--radius-pill);
-  background: var(--cream-50);
-  color: var(--navy-900);
-  border: 2px solid var(--navy-900);
+  background: var(--lemon-500);
+  color: var(--plum-900);
+  border: 2px solid var(--surface-brand);
   font: 700 0.6875rem / 1.2 var(--font-text);
   text-align: center;
 }
@@ -765,7 +763,7 @@ a.card::after {
 .slot-warn {
   color: var(--negative-fg);
   background: var(--negative-bg);
-  border-color: var(--navy-900);
+  border-color: var(--plum-900);
 }
 .slot-error {
   color: var(--text-danger);
@@ -793,7 +791,7 @@ a.card::after {
 
 /* ---------- Empty states, offers ---------- */
 
-.empty-can {
+.empty-glass {
   display: block;
   width: 5rem;
   height: 5rem;

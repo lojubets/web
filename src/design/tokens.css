@@ -1,39 +1,47 @@
 /*
- * LoJuBets design tokens: the single source of truth for the visual language.
- * Rules for using them live in docs/brand-guide.md. Pairings are enforced by src/design/contrast.test.ts.
+ * LoJu Bets design tokens: the single source of truth for the visual language ("Dark Cherry").
+ * Rules for using them live in docs/guidelines/visual/new/brand-guide.html. Pairings are enforced by src/design/contrast.test.ts.
  *
  * Two layers:
- *   1. Palette  (--yellow-500 ...)  raw brand values; never used directly in components.
+ *   1. Palette  (--cherry-700 ...)  raw brand values; never used directly in components.
  *   2. Roles    (--action-bg ...)   what components use; light and dark mode remap these.
  */
 
 :root {
   /* ---------- 1. Palette ---------- */
 
-  /* The three brand colors, from the pineapple can */
-  --yellow-500: #fdd815; /* Pineapple */
-  --green-500: #4d9942; /* Leaf */
-  --navy-900: #082754; /* Navy (the brand's "black") */
+  /* The six brand colors (docs/guidelines/visual/new/COLORS.txt) */
+  --cherry-700: #6a1f3a; /* Dark Cherry: brand and primary action */
+  --lemon-500: #f6c600; /* Lemon Yellow: the slice; "attention" markers only */
+  --champagne-500: #d7b59a; /* Champagne: accent */
+  --ivory-50: #f5ede6; /* Soft Ivory: main text on dark, page on light */
+  --plum-900: #1b1218; /* Deep Plum: page canvas on dark */
+  --mauve-500: #a47e88; /* Muted Mauve: secondary accents and borders */
 
-  /* Yellow family */
-  --yellow-600: #e0bc00; /* pressed */
-  --yellow-300: #fee766; /* hover / highlights */
-  --cream-100: #fff3ce; /* warm tint panels (from the icon set) */
-  --cream-50: #fffbeb; /* page background */
+  /* Cherry family */
+  --cherry-800: #531730; /* pressed */
+  --cherry-600: #83304e; /* hover */
 
-  /* Green family */
-  --green-700: #2e6b26; /* the only green that may be small text on light surfaces */
-  --green-300: #8fd085; /* green text on navy */
-  --green-100: #e3f1e0; /* green tint */
+  /* Champagne family */
+  --champagne-300: #e9d4c3; /* highlights */
+  --champagne-100: #f1e3d6; /* champagne tint */
+  --champagne-800: #724628; /* champagne as text on light surfaces */
 
-  /* Navy family */
-  --navy-800: #0e3366; /* raised surface on navy */
-  --navy-700: #1b4276;
-  --navy-600: #4a5e80; /* muted text on light */
-  --navy-500: #5f7396; /* control borders on light (>= 3:1) */
-  --navy-200: #c9d2e1; /* hairlines */
-  --navy-100: #e7ebf2;
-  --white: #ffffff;
+  /* Ivory family */
+  --ivory-100: #eadfd5; /* warm tint panels */
+  --paper: #fcf8f4; /* card on light */
+
+  /* Plum family */
+  --plum-950: #130b10; /* a step below the canvas: masthead and tab bar */
+  --plum-800: #292027; /* card on dark */
+  --plum-700: #3a2b34; /* interactive surface on dark */
+  --plum-600: #49333d; /* hairline on dark */
+
+  /* Mauve family */
+  --mauve-700: #6b4f58; /* muted text on light */
+  --mauve-600: #86656f; /* control borders on light (>= 3:1) */
+  --mauve-300: #c4b4ba; /* muted text on dark */
+  --mauve-200: #ddd0d1; /* hairline on light */
 
   /* Functional, not brand: errors and destructive confirmation only */
   --signal-700: #b3261e;
@@ -41,52 +49,52 @@
   --signal-100: #fbe7e5;
 
   /* ---------- 2. Roles (light) ---------- */
-  --surface-page: var(--cream-50);
-  --surface-card: var(--white);
-  --surface-tint: var(--cream-100);
-  --surface-brand: var(--navy-900); /* masthead, hero, tab bar */
-  --on-brand: var(--cream-50);
-  --on-brand-muted: #b7c3d9;
-  --accent-on-brand: var(--yellow-500); /* yellow on navy: wordmark, active tab, headlines */
+  --surface-page: var(--ivory-50);
+  --surface-card: var(--paper);
+  --surface-tint: var(--ivory-100);
+  --surface-brand: var(--plum-900); /* masthead, hero, tab bar: dark in both modes */
+  --on-brand: var(--ivory-50);
+  --on-brand-muted: var(--mauve-300);
+  --accent-on-brand: var(--champagne-500); /* champagne on plum: wordmark, active tab, headlines */
 
-  --text: var(--navy-900);
-  --text-muted: var(--navy-600);
-  --text-positive: var(--green-700);
+  --text: var(--plum-900);
+  --text-muted: var(--mauve-700);
+  --text-positive: var(--champagne-800);
   --text-danger: var(--signal-700);
-  --text-link: var(--navy-900);
+  --text-link: var(--cherry-700);
 
-  --border: var(--navy-200);
-  --border-control: var(--navy-500);
-  --border-strong: var(--navy-900);
+  --border: var(--mauve-200);
+  --border-control: var(--mauve-600);
+  --border-strong: var(--plum-900);
 
-  --action-bg: var(--yellow-500);
-  --action-bg-hover: var(--yellow-300);
-  --action-bg-pressed: var(--yellow-600);
-  --action-fg: var(--navy-900);
-  --action-border: var(--navy-900);
-  --action-shadow: var(--navy-900);
+  --action-bg: var(--cherry-700);
+  --action-bg-hover: var(--cherry-600);
+  --action-bg-pressed: var(--cherry-800);
+  --action-fg: var(--ivory-50);
+  --action-border: var(--cherry-700);
+  --action-shadow: var(--cherry-800);
 
-  --positive-bg: var(--green-100);
-  --positive-fg: var(--green-700);
-  --negative-bg: var(--yellow-500); /* owing is "attention", not "error" */
-  --negative-fg: var(--navy-900);
+  --positive-bg: var(--champagne-100);
+  --positive-fg: var(--champagne-800);
+  --negative-bg: var(--lemon-500); /* owing is "attention", not "error" */
+  --negative-fg: var(--plum-900);
   --danger-bg: var(--signal-100);
   --danger-fg: var(--signal-700);
-  --neutral-bg: var(--navy-100);
+  --neutral-bg: var(--ivory-100);
   --neutral-fg: var(--text);
-  --avatar-bg: var(--navy-900);
-  --avatar-fg: var(--yellow-500);
+  --avatar-bg: var(--cherry-700);
+  --avatar-fg: var(--ivory-50);
 
-  --focus-ring: var(--navy-900);
-  --focus-halo: var(--yellow-500);
+  --focus-ring: var(--cherry-700);
+  --focus-halo: var(--champagne-500);
 
   /* ---------- Typography ---------- */
-  --font-display: 'Fredoka Variable', 'Fredoka', ui-rounded, 'Arial Rounded MT Bold', system-ui, sans-serif;
-  --font-text: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: Georgia, 'DM Serif Display', 'Times New Roman', serif;
+  --font-text: 'Inter Variable', 'Inter', Manrope, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
-  --text-display: 2.25rem; /* 36 */
-  --text-h1: 1.75rem; /* 28 */
-  --text-h2: 1.25rem; /* 20 */
+  --text-display: 2.5rem; /* 40 */
+  --text-h1: 1.875rem; /* 30 */
+  --text-h2: 1.375rem; /* 22 */
   --text-h3: 1.0625rem; /* 17 */
   --text-body: 1rem; /* 16: also the minimum for inputs, so iOS never zooms */
   --text-small: 0.875rem; /* 14 */
@@ -104,51 +112,51 @@
   --space-9: 6rem; /* 96 */
 
   /* ---------- Shape, edge, elevation, motion ---------- */
-  --radius-sm: 0.5rem;
-  --radius-md: 0.875rem;
+  --radius-sm: 0.5625rem; /* buttons: 9px */
+  --radius-md: 0.875rem; /* cards: 14px */
   --radius-lg: 1.25rem;
   --radius-pill: 999px;
-  --border-width: 2px;
-  --shadow-press: 0 3px 0 0 var(--action-shadow); /* the "can on the table" lift */
+  --border-width: 1px;
+  --shadow-press: 0 0 0 0 transparent; /* the brand is flat: no lift */
   --tap: 3rem; /* 48px minimum target */
   --content-width: 32.5rem; /* 520px */
   --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
   --duration: 150ms;
 }
 
-/* ---------- Roles (dark): navy becomes the canvas ---------- */
+/* ---------- Roles (dark): Deep Plum becomes the canvas ---------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --surface-page: var(--navy-900);
-    --surface-card: var(--navy-800);
-    --surface-tint: var(--navy-700);
-    --surface-brand: #05183a; /* a step below the canvas so the masthead and tab bar still read */
-    --on-brand: var(--cream-50);
+    --surface-page: var(--plum-900);
+    --surface-card: var(--plum-800);
+    --surface-tint: var(--plum-700);
+    --surface-brand: var(--plum-950);
+    --on-brand: var(--ivory-50);
 
-    --text: var(--cream-50);
-    --text-muted: #b7c3d9;
-    --text-positive: var(--green-300);
+    --text: var(--ivory-50);
+    --text-muted: var(--mauve-300);
+    --text-positive: var(--champagne-500);
     --text-danger: var(--signal-300);
-    --text-link: var(--yellow-500);
+    --text-link: var(--champagne-500);
 
-    --border: #2b4a7c;
-    --border-control: #7f93b5;
-    --border-strong: var(--cream-50);
+    --border: var(--plum-600);
+    --border-control: var(--mauve-500);
+    --border-strong: var(--champagne-500);
 
-    --action-border: var(--yellow-500);
-    --action-shadow: #000a1f;
+    --action-border: var(--champagne-500);
+    --action-shadow: #000;
 
-    --positive-bg: #1c4a22;
-    --positive-fg: var(--green-300);
-    --negative-bg: var(--yellow-500);
+    --positive-bg: var(--plum-700);
+    --positive-fg: var(--champagne-500);
+    --negative-bg: var(--lemon-500);
     --danger-bg: #4a1a1c;
     --danger-fg: var(--signal-300);
-    --neutral-bg: var(--navy-700);
-    --avatar-bg: var(--yellow-500);
-    --avatar-fg: var(--navy-900);
+    --neutral-bg: var(--plum-700);
+    --avatar-bg: var(--champagne-500);
+    --avatar-fg: var(--plum-900);
 
-    --focus-ring: var(--yellow-500);
-    --focus-halo: var(--navy-900);
+    --focus-ring: var(--champagne-500);
+    --focus-halo: var(--plum-900);
   }
 }
 

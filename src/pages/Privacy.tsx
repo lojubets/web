@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { AppConfig } from '../../shared/types';
 import Icon from '../components/Icon';
-import Wave from '../components/Wave';
+import Rule from '../components/Rule';
 import { useFetch } from '../hooks';
 
 export default function Privacy() {
@@ -15,7 +15,7 @@ export default function Privacy() {
         <h1>Privacy policy</h1>
         <p>What LoJuBets stores about you, and why.</p>
       </section>
-      <Wave />
+      <Rule />
       <main className="page">
         <section className="stack">
           <h2>Who is responsible</h2>

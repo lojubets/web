@@ -506,7 +506,7 @@ async function loadBets(me: string): Promise<BetRow[]> {
 
 const otherOf = (b: BetRow, me: string) => (b.creator_id === me ? b.opponent_id : b.creator_id);
 
-/** Lonkeros each friend owes me, derived from settled bets. */
+/** GTs each friend owes me, derived from settled bets. */
 function balances(me: string, bets: BetRow[]): Map<string, number> {
   const by = new Map<string, { winnerId: string | null; stake: number }[]>();
   for (const b of bets) {

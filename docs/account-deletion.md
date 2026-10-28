@@ -26,7 +26,7 @@ There are no foreign keys or `ON DELETE` clauses; every `user_id` is a plain `TE
 
 Sessions are **stateless** signed JWT cookies (`session`, `auth.ts`); there is no sessions table. The session check already treats "account no longer exists" as signed out, so deleting the `users` row invalidates every session on every device immediately. The merge cookie works the same way. Nothing to delete there, but also no way to revoke a session without deleting the user (relevant to the cooling-off option below).
 
-Balances (the running "Lonkeros X owes Y" tally, `balanceFor` in `betLogic.ts`) are *derived* from settled bets by `winnerId` and `stake`. They are not stored, which matters for the options below.
+Balances (the running "GTs X owes Y" tally, `balanceFor` in `betLogic.ts`) are *derived* from settled bets by `winnerId` and `stake`. They are not stored, which matters for the options below.
 
 ## 3. What the button does (summary)
 
@@ -64,7 +64,7 @@ Each bet is a record of an agreement between two people. Deleting A's account af
 ### Option A: cascade delete (delete every bet A took part in)
 
 - Simplest to reason about and trivially GDPR-compliant: nothing about A remains.
-- **Bad for B.** B's history shrinks silently and B's balances change retroactively. If A owed B 5 lonkeros, deleting makes the debt vanish, which is an incentive to delete one's account to dodge a loss. Also, B may have written the `question` and their own guess, which are B's data too.
+- **Bad for B.** B's history shrinks silently and B's balances change retroactively. If A owed B 5 GTs, deleting makes the debt vanish, which is an incentive to delete one's account to dodge a loss. Also, B may have written the `question` and their own guess, which are B's data too.
 - Violates the integrity of results for the surviving participant. Not recommended.
 
 ### Option B: full removal from everyone's histories
@@ -136,7 +136,7 @@ The change: refuse sign-in and account creation when a provider returns no email
 
 **A later erasure request by the counterparty.** A refusal answers one request only. Requests are keyed by `(bet_id, requested_by)`, so if the person who refused later requests their own erasure, that triggers a fresh request to each of *their* counterparties for every bet still ongoing, including the bet they once refused, and the same accept/refuse/30-day rules apply to it. When both people on a bet are in "deletion requested", each one's request is also a prompt to the other; the UI should offer a one-click accept, and the bet is cancelled as soon as either accepts.
 
-Legal footing: erasure is not absolute. Art. 17(3)(e) lets the controller keep data needed for the establishment, exercise or defence of legal claims, and processing that is necessary to perform a contract (Art. 6(1)(b)) does not stop being necessary because one party asks to be forgotten. This is the same reason closing a bank account does not cancel the loan. An open bet is a (very informal) agreement between two people, and the other participant has a legitimate interest in it being honoured or properly closed, not erased out from under them. Caveat: a friendly bet whose stake is a "lonkero" tally is unlikely to be legally enforceable, so we should not rely on 17(3)(e) formally; the stronger argument is simply the counterparty's interest and fairness, which the privacy policy should state. Once the bet is settled or cancelled, that justification ends and erasure proceeds as in section 5. The 30-day default treats a counterparty who never responds as not asserting that interest; it is a balance between their interest and the erasing user's right to timely erasure, which is why it needs the notice and reminders described in the flow.
+Legal footing: erasure is not absolute. Art. 17(3)(e) lets the controller keep data needed for the establishment, exercise or defence of legal claims, and processing that is necessary to perform a contract (Art. 6(1)(b)) does not stop being necessary because one party asks to be forgotten. This is the same reason closing a bank account does not cancel the loan. An open bet is a (very informal) agreement between two people, and the other participant has a legitimate interest in it being honoured or properly closed, not erased out from under them. Caveat: a friendly bet whose stake is a "GT" tally is unlikely to be legally enforceable, so we should not rely on 17(3)(e) formally; the stronger argument is simply the counterparty's interest and fairness, which the privacy policy should state. Once the bet is settled or cancelled, that justification ends and erasure proceeds as in section 5. The 30-day default treats a counterparty who never responds as not asserting that interest; it is a balance between their interest and the erasing user's right to timely erasure, which is why it needs the notice and reminders described in the flow.
 
 Known risks, to be accepted explicitly:
 

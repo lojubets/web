@@ -5,7 +5,7 @@ import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
-import { describeRules, formatMoment, formatValue, lonkeros } from '../format';
+import { describeRules, formatMoment, formatValue, gts } from '../format';
 import { useAction, useFetch } from '../hooks';
 
 export default function BetDetail() {
@@ -105,7 +105,7 @@ export default function BetDetail() {
         </div>
       )}
 
-      {b.allIn && <div className="banner banner-dare"><Icon name="flame" size={22} /><span>All-in: double or nothing for {lonkeros(b.stake)}</span></div>}
+      {b.allIn && <div className="banner banner-dare"><Icon name="flame" size={22} /><span>All-in: double or nothing for {gts(b.stake)}</span></div>}
 
       {b.status === 'settled' && b.settledBy === 'tie' && (
         <div className="banner">
@@ -116,14 +116,14 @@ export default function BetDetail() {
 
       {b.status === 'settled' && b.settledBy !== 'tie' && (
         <div className={`banner ${b.winnerId === null ? '' : iWon ? 'banner-win' : 'banner-owe'}`}>
-          <Icon name={iWon ? 'trophy' : 'can'} size={22} />
+          <Icon name={iWon ? 'trophy' : 'glass'} size={22} />
           <span>
           {byTipping && "You both confirmed the event hadn't happened by the tipping point. "}
           {b.winnerId === null
             ? "Dead heat, nobody owes anything."
             : iWon
-              ? `You won ${lonkeros(b.stake)}! ${friend.name} owes you.`
-              : `${friend.name} won. You owe ${lonkeros(b.stake)}.`}
+              ? `You won ${gts(b.stake)}! ${friend.name} owes you.`
+              : `${friend.name} won. You owe ${gts(b.stake)}.`}
           </span>
         </div>
       )}
@@ -220,9 +220,9 @@ export default function BetDetail() {
         <div className="card allin-offer stack">
           <strong className="row"><Icon name="flame" size={22} />You're in the red. Feeling lucky?</strong>
           <span className="muted small">
-            Go all-in: this bet is worth {lonkeros(b.allInStake)} instead of 1. Win and you're back to even, lose and you owe {lonkeros(b.allInStake * 2)}.
+            Go all-in: this bet is worth {gts(b.allInStake)} instead of 1. Win and you're back to even, lose and you owe {gts(b.allInStake * 2)}.
           </span>
-          <button className="btn btn-danger" disabled={act.busy} onClick={() => confirm(`Double or nothing on ${lonkeros(b.allInStake)}?`) && post('/all-in')}>
+          <button className="btn btn-danger" disabled={act.busy} onClick={() => confirm(`Double or nothing on ${gts(b.allInStake)}?`) && post('/all-in')}>
             <Icon name="flame" size={20} />Go all-in
           </button>
         </div>

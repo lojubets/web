@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Icon from '../components/Icon';
-import Wave from '../components/Wave';
+import Rule from '../components/Rule';
 import { useAction } from '../hooks';
 
 // Verification needs a click (a POST) so mail scanners that prefetch links can't use up the token.
@@ -32,7 +32,7 @@ export default function VerifyEmail() {
           </>
         )}
       </section>
-      <Wave />
+      <Rule />
       {error && <main className="page"><p className="error">{error}</p></main>}
     </>
   );

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Icon from '../components/Icon';
-import Wave from '../components/Wave';
+import Rule from '../components/Rule';
 import { useAction } from '../hooks';
 
 export default function ResetPassword() {
@@ -18,7 +18,7 @@ export default function ResetPassword() {
         <h1>{done ? 'Password changed' : 'Choose a new password'}</h1>
         <p>{done ? 'You were signed out everywhere. Sign in with your new password.' : 'At least 8 characters.'}</p>
       </section>
-      <Wave />
+      <Rule />
       <main className="page auth-page">
         {done ? (
           <Link className="btn" to="/login">Sign in</Link>

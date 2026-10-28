@@ -36,12 +36,12 @@ export default function Bets() {
       {bets.error && <p className="error">{bets.error}</p>}
       {!bets.loading && friends.data?.length === 0 && (
         <div className="card empty">
-          <img className="empty-can" src="/can-256.png" width="80" height="80" alt="" />
+          <img className="empty-glass" src="/glass-256.png" width="80" height="80" alt="" />
           <p>Bets are between friends. Invite someone to get started.</p>
           <Link className="btn" to="/friends">Invite a friend</Link>
         </div>
       )}
-      {!bets.loading && friends.data?.length ? list.length === 0 && <div className="empty"><img className="empty-can" src="/can-256.png" width="80" height="80" alt="" /><p>No bets yet. Start one!</p></div> : null}
+      {!bets.loading && friends.data?.length ? list.length === 0 && <div className="empty"><img className="empty-glass" src="/glass-256.png" width="80" height="80" alt="" /><p>No bets yet. Start one!</p></div> : null}
       <CancelRequests onAnswered={bets.reload} />
       {section('Your move', yourMove)}
       {section('Tipping point approaching', headsUp)}

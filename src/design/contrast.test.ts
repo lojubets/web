@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Enforces the pairing rules of docs/brand-guide.md (section 3.3) against the real tokens.css,
+ * Enforces the pairing rules of docs/guidelines/visual/new/brand-guide.html (section 3.3) against the real tokens.css,
  * in both light and dark mode. If you change a color and a pairing stops being legal, this fails.
  */
 
@@ -75,28 +75,27 @@ describe.each([
 
 describe('forbidden pairings really are forbidden', () => {
   const p = (t: string) => resolve(light, t);
-  it('yellow is unusable as text or edge on light surfaces', () => {
-    expect(ratio(p('--yellow-500'), '#ffffff')).toBeLessThan(UI);
-    expect(ratio(p('--yellow-500'), p('--cream-50'))).toBeLessThan(UI);
+  it('champagne is unusable as text on light surfaces; Champagne 800 passes', () => {
+    expect(ratio(p('--champagne-500'), p('--surface-page'))).toBeLessThan(TEXT);
+    expect(ratio(p('--champagne-800'), p('--surface-card'))).toBeGreaterThanOrEqual(TEXT);
   });
-  it('white text on leaf green fails AA, so it is banned', () => {
-    expect(ratio('#ffffff', p('--green-500'))).toBeLessThan(TEXT);
+  it('lemon is unusable as text or edge on light surfaces', () => {
+    expect(ratio(p('--lemon-500'), p('--surface-card'))).toBeLessThan(UI);
+    expect(ratio(p('--lemon-500'), p('--surface-page'))).toBeLessThan(UI);
   });
-  it('navy on leaf green only reaches large-text contrast', () => {
-    const r = ratio(p('--navy-900'), p('--green-500'));
-    expect(r).toBeGreaterThanOrEqual(UI);
-    expect(r).toBeLessThan(TEXT);
-  });
-  it('bright green as small text on light surfaces fails; Leaf 700 passes', () => {
-    expect(ratio(p('--green-500'), p('--surface-card'))).toBeLessThan(TEXT);
-    expect(ratio(p('--green-700'), p('--surface-card'))).toBeGreaterThanOrEqual(TEXT);
+  it('muted mauve is too faint for small text on ivory; Mauve 700 passes', () => {
+    expect(ratio(p('--mauve-500'), p('--surface-page'))).toBeLessThan(TEXT);
+    expect(ratio(p('--mauve-700'), p('--surface-page'))).toBeGreaterThanOrEqual(TEXT);
   });
 });
 
 describe('the brand palette matches the brief', () => {
-  it('uses the three official hex values', () => {
-    expect(light['--yellow-500'].toLowerCase()).toBe('#fdd815');
-    expect(light['--green-500'].toLowerCase()).toBe('#4d9942');
-    expect(light['--navy-900'].toLowerCase()).toBe('#082754');
+  it('uses the six official hex values (COLORS.txt)', () => {
+    expect(light['--cherry-700'].toLowerCase()).toBe('#6a1f3a');
+    expect(light['--lemon-500'].toLowerCase()).toBe('#f6c600');
+    expect(light['--champagne-500'].toLowerCase()).toBe('#d7b59a');
+    expect(light['--ivory-50'].toLowerCase()).toBe('#f5ede6');
+    expect(light['--plum-900'].toLowerCase()).toBe('#1b1218');
+    expect(light['--mauve-500'].toLowerCase()).toBe('#a47e88');
   });
 });
