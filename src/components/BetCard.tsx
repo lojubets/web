@@ -12,7 +12,7 @@ const until = (ms: number) => {
 export function statusLabel(b: Bet, name: string): string {
   switch (b.status) {
     case 'awaiting_guess':
-      return b.iAmCreator ? `Waiting for ${name}'s guess` : 'Your guess is needed';
+      return b.myGuess === null ? 'Your guess is needed' : `Waiting for ${name}'s guess`;
     case 'active':
       return b.tippingPassed ? 'Has it happened yet?' : 'In play';
     case 'awaiting_confirmation':

@@ -11,9 +11,11 @@ interface Props {
   label: string;
   /** 'outcome' answers describe something that already happened, so the bet's guess rules are not shown. */
   role?: 'guess' | 'outcome';
+  /** The answer may be left empty (e.g. a bet recorded now and guessed on later). */
+  optional?: boolean;
 }
 
-export default function ValueInput({ kind, params, value, onChange, label, role = 'guess' }: Props) {
+export default function ValueInput({ kind, params, value, onChange, label, role = 'guess', optional }: Props) {
   if (kind === 'yesno' || kind === 'choice') {
     const options = kind === 'yesno' ? [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }] : (params as ChoiceParams).options.map((o) => ({ value: o, label: o }));
     return (
@@ -21,7 +23,7 @@ export default function ValueInput({ kind, params, value, onChange, label, role 
         <legend>{label}</legend>
         {options.map((o) => (
           <label key={o.value} className="check">
-            <input type="radio" name={`answer-${label}`} checked={value === o.value} onChange={() => onChange(o.value)} required />
+            <input type="radio" name={`answer-${label}`} checked={value === o.value} onChange={() => onChange(o.value)} required={!optional} />
             {o.label}
           </label>
         ))}
@@ -32,16 +34,16 @@ export default function ValueInput({ kind, params, value, onChange, label, role 
   return (
     <label className="field">
       <span>{label}</span>
-      {kind === 'number' && <NumberField params={params as NumberParams} value={value} onChange={onChange} role={role} />}
-      {kind === 'text' && <input type="text" maxLength={300} placeholder={role === 'outcome' ? 'What actually happened?' : 'Your answer'} value={value} onChange={(e) => onChange(e.target.value)} required />}
-      {kind === 'duration' && <DurationField value={value} onChange={onChange} hint={hint} />}
-      {kind === 'instant' && <InstantField params={params as InstantParams} value={value} onChange={onChange} role={role} />}
+      {kind === 'number' && <NumberField params={params as NumberParams} value={value} onChange={onChange} role={role} optional={optional} />}
+      {kind === 'text' && <input type="text" maxLength={300} placeholder={role === 'outcome' ? 'What actually happened?' : 'Your answer'} value={value} onChange={(e) => onChange(e.target.value)} required={!optional} />}
+      {kind === 'duration' && <DurationField value={value} onChange={onChange} hint={hint} optional={optional} />}
+      {kind === 'instant' && <InstantField params={params as InstantParams} value={value} onChange={onChange} role={role} optional={optional} />}
       {kind !== 'duration' && hint && <small className="muted">{hint}</small>}
     </label>
   );
 }
 
-function NumberField({ params, value, onChange, role }: { params: NumberParams; value: string; onChange: (v: string) => void; role: string }) {
+function NumberField({ params, value, onChange, role, optional }: { params: NumberParams; value: string; onChange: (v: string) => void; role: string; optional?: boolean }) {
   // iOS's number keypads have no minus sign, so only use them when negatives are impossible.
   const nonNegative = role === 'guess' && params.min !== null && params.min >= 0;
   return (
@@ -51,7 +53,7 @@ function NumberField({ params, value, onChange, role }: { params: NumberParams; 
       placeholder={params.integer ? 'e.g. 3' : 'e.g. 2.5'}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      required
+      required={!optional}
     />
   );
 }
@@ -61,14 +63,14 @@ function NumberField({ params, value, onChange, role }: { params: NumberParams; 
  * units spelled out, so "3m" can't silently become 3 minutes when 3 months was meant. Same height in every
  * state, so the form doesn't jump while you type.
  */
-function DurationField({ value, onChange, hint }: { value: string; onChange: (v: string) => void; hint: string | null }) {
+function DurationField({ value, onChange, hint, optional }: { value: string; onChange: (v: string) => void; hint: string | null; optional?: boolean }) {
   const typed = value.trim() !== '';
   const reading = typed ? readDuration(value) : null;
   const shown = reading && describeReading(reading);
   const state = !typed ? 'hint' : !reading ? 'error' : reading.bareM ? 'warn' : 'read';
   return (
     <>
-      <input type="text" placeholder="e.g. 3:05, 25 days, 12 weeks" value={value} onChange={(e) => onChange(e.target.value)} required />
+      <input type="text" placeholder="e.g. 3:05, 25 days, 12 weeks" value={value} onChange={(e) => onChange(e.target.value)} required={!optional} />
       <small className={`slot slot-${state}`} role="status" aria-live="polite">
         {state === 'hint' && hint}
         {state === 'error' && (
@@ -93,7 +95,7 @@ function DurationField({ value, onChange, hint }: { value: string; onChange: (v:
 }
 
 /** Values travel as UTC ISO strings ('minute') or YYYY-MM-DD ('day'); the picker shows the viewer's local time. */
-function InstantField({ params, value, onChange, role }: { params: InstantParams; value: string; onChange: (v: string) => void; role: string }) {
+function InstantField({ params, value, onChange, role, optional }: { params: InstantParams; value: string; onChange: (v: string) => void; role: string; optional?: boolean }) {
   const now = Date.now();
   const earliest = !params.allowPast && role === 'guess' ? now + params.minLeadMinutes * 60_000 : undefined;
   if (params.precision === 'day') {
@@ -104,7 +106,7 @@ function InstantField({ params, value, onChange, role }: { params: InstantParams
         min={earliest === undefined ? undefined : toLocalInput(earliest).slice(0, 10)}
         max={role === 'outcome' ? toLocalInput(now).slice(0, 10) : undefined}
         onChange={(e) => onChange(e.target.value)}
-        required
+        required={!optional}
       />
     );
   }

@@ -128,16 +128,17 @@ export default function BetDetail() {
         </div>
       )}
 
-      {b.status === 'awaiting_guess' && !b.iAmCreator && (
+      {b.status === 'awaiting_guess' && b.myGuess === null && (
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
+          {b.theirGuessIn && <p className="muted">{friend.name} has locked in their guess.</p>}
           <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
           <button className="btn" disabled={act.busy}>Lock in my guess</button>
           <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/bets/${b.id}/cancel`, 'POST'); nav('/'); })}>
-            Decline bet
+            {b.iAmCreator ? 'Cancel bet' : 'Decline bet'}
           </button>
         </form>
       )}
-      {b.status === 'awaiting_guess' && b.iAmCreator && (
+      {b.status === 'awaiting_guess' && b.myGuess !== null && (
         <>
           <p className="muted">Waiting for {friend.name} to guess.</p>
           <button className="btn btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/bets/${b.id}/cancel`, 'POST'); nav('/'); })}>

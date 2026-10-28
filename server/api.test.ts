@@ -67,6 +67,46 @@ describe('bets between friends', () => {
     return id as string;
   }
 
+  it('lets the creator record a bet without a guess, and the bet starts once both have guessed (opponent first)', async () => {
+    const created = await ann.post('/api/bets').send({ opponentId: bobId, question: 'Who scores first?', kind: 'text' }).expect(201);
+    const id = created.body.id;
+    expect(created.body).toMatchObject({ status: 'awaiting_guess', myGuess: null, theirGuess: null, theirGuessIn: false, needsMyAction: true });
+    expect((await bob.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'awaiting_guess', myGuess: null, theirGuessIn: false, needsMyAction: true });
+
+    await bob.post(`/api/bets/${id}/guess`).send({ guess: 'Messi' }).expect(200);
+    // Still waiting for Ann, and Bob's guess stays hidden from her
+    const annView = (await ann.get(`/api/bets/${id}`)).body;
+    expect(annView).toMatchObject({ status: 'awaiting_guess', myGuess: null, theirGuess: null, theirGuessIn: true, needsMyAction: true });
+    expect((await bob.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'awaiting_guess', myGuess: 'Messi', needsMyAction: false });
+    await bob.post(`/api/bets/${id}/guess`).send({ guess: 'Pele' }).expect(409); // already locked in
+
+    await ann.post(`/api/bets/${id}/guess`).send({ guess: 'Mbappe' }).expect(200);
+    expect((await ann.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'active', myGuess: 'Mbappe', theirGuess: 'Messi', needsMyAction: false });
+    await ann.post(`/api/bets/${id}/guess`).send({ guess: 'Pele' }).expect(409);
+    await ann.post(`/api/bets/${id}/propose-tie`).expect(200);
+    await bob.post(`/api/bets/${id}/confirm`).expect(200); // call it off, leaving balances alone
+  });
+
+  it('lets the creator guess later even before the opponent has answered, and a blank guess means none', async () => {
+    const created = await ann.post('/api/bets').send({ opponentId: bobId, question: 'Final score?', kind: 'number', guess: '  ' }).expect(201);
+    const id = created.body.id;
+    expect(created.body).toMatchObject({ status: 'awaiting_guess', myGuess: null });
+    await ann.post(`/api/bets/${id}/guess`).send({ guess: '3' }).expect(200);
+    expect((await ann.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'awaiting_guess', myGuess: '3', needsMyAction: false });
+    expect((await bob.get(`/api/bets/${id}`)).body).toMatchObject({ theirGuessIn: true, theirGuess: null, needsMyAction: true });
+    await bob.post(`/api/bets/${id}/guess`).send({ guess: '1' }).expect(200);
+    expect((await bob.get(`/api/bets/${id}`)).body).toMatchObject({ status: 'active', myGuess: '1', theirGuess: '3' });
+    await ann.post(`/api/bets/${id}/propose-tie`).expect(200);
+    await bob.post(`/api/bets/${id}/confirm`).expect(200);
+  });
+
+  it('still validates a guess that is given, and a late guess can be refused too', async () => {
+    await ann.post('/api/bets').send({ opponentId: bobId, question: 'Final score?', kind: 'number', guess: 'banana' }).expect(400);
+    const id = (await ann.post('/api/bets').send({ opponentId: bobId, question: 'Final score?', kind: 'number' }).expect(201)).body.id;
+    await ann.post(`/api/bets/${id}/guess`).send({ guess: 'banana' }).expect(400);
+    await ann.post(`/api/bets/${id}/cancel`).expect(200);
+  });
+
   async function settle(id: string, outcome: string) {
     await ann.post(`/api/bets/${id}/propose`).send({ outcome }).expect(200);
     await ann.post(`/api/bets/${id}/confirm`).expect(409); // can't confirm own proposal
