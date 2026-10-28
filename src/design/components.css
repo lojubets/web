@@ -567,6 +567,49 @@ a.card::after {
   text-align: center;
 }
 
+/* Avatar cropper: drag and zoom a picture under a circular viewport */
+.cropper {
+  align-items: center;
+  text-align: center;
+}
+.cropper-view {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  background: var(--navy-900);
+  touch-action: none;
+  cursor: grab;
+}
+.cropper-view:active {
+  cursor: grabbing;
+}
+.cropper-view img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  user-select: none;
+}
+.cropper-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 999px rgb(0 0 0 / 0.55);
+  border: 2px solid #fff;
+  pointer-events: none;
+}
+.cropper-zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 260px;
+}
+.cropper-zoom input {
+  flex: 1;
+}
+
 /* ---------- Bet detail ---------- */
 
 .question {
