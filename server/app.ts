@@ -2,8 +2,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, UserSummary } from '../shared/types.js';
-import { authRouter, devLoginAllowed, enabledProviders, requireAuth } from './auth.js';
+import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, OwnLogin, UserSummary } from '../shared/types.js';
+import { authRouter, devLoginAllowed, enabledProviders, hashPassword, requireAuth, revokeSessions, verifyPassword } from './auth.js';
 import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
 import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
@@ -11,6 +11,7 @@ import { sendInviteEmail } from './email.js';
 import { afterBetEnded, deletionBlock, deletionRouter, runDeletionCron } from './deletion.js';
 import { mergeRouter } from './merge.js';
 import { env } from './env.js';
+import { rateLimit } from './rateLimit.js';
 import { runCron } from './reminders.js';
 import { passwordResetRouter } from './passwordReset.js';
 import { sendVerification } from './verification.js';
@@ -81,7 +82,7 @@ const summary = (r: Record<string, any>): UserSummary => ({
   deleted: !!r.deleted,
 });
 
-async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; deletionRequestedAt: number | null; profileName: string; emails: OwnEmailAddress[] }) | undefined> {
+async function getUser(id: string): Promise<(UserSummary & { email: string | null; emailVerified: boolean; deletionRequestedAt: number | null; profileName: string; emails: OwnEmailAddress[]; logins: OwnLogin[] }) | undefined> {
   const r = row(
     await db.execute({
       sql: `SELECT ${SUMMARY_SQL}, u.name AS profile_name, u.email, u.email_verified, u.deletion_requested_at FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id = ?`,
@@ -91,7 +92,7 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   if (!r) return undefined;
   const emails = await db.execute({ sql: 'SELECT email, verified FROM user_emails WHERE user_id = ? ORDER BY created_at, email', args: [id] });
   const primary = String(r.email ?? '').toLowerCase();
-  const logins = await db.execute({ sql: 'SELECT provider, subject FROM identities WHERE user_id = ?', args: [id] });
+  const logins = await db.execute({ sql: 'SELECT provider, subject FROM identities WHERE user_id = ? ORDER BY rowid', args: [id] });
   const passwordLogins = new Set(logins.rows.filter((l) => l.provider === 'password').map((l) => String(l.subject)));
   const verifiedCount = emails.rows.filter((e) => e.verified).length;
   const list: OwnEmailAddress[] = emails.rows.map((e) => {
@@ -111,7 +112,44 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
   });
   // The primary address first
   list.sort((x, y) => Number(y.primary) - Number(x.primary));
-  return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, deletionRequestedAt: r.deletion_requested_at ?? null, profileName: r.profile_name ?? '', emails: list };
+  const loginList = loginMethods(logins.rows as unknown as { provider: unknown; subject: unknown }[], emails.rows.filter((e) => e.verified).map((e) => String(e.email)));
+  return { ...summary(r), email: r.email, emailVerified: !!r.email_verified, deletionRequestedAt: r.deletion_requested_at ?? null, profileName: r.profile_name ?? '', emails: list, logins: loginList };
+}
+
+const PROVIDER_LABELS: Record<string, string> = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple', dev: 'Development login' };
+
+/**
+ * The account's ways of signing in. A login counts as verified when it is tied to a verified address: a password login
+ * uses its own email, and a provider login relies on the account having a verified address (providers don't tell us
+ * which one they used). The last verified login can't be removed, so the account always keeps a way in.
+ */
+function loginMethods(rows: { provider: unknown; subject: unknown }[], verifiedEmails: string[]): OwnLogin[] {
+  const verified = new Set(verifiedEmails);
+  const all = rows.map((l) => {
+    const provider = String(l.provider);
+    const subject = String(l.subject);
+    const isPassword = provider === 'password';
+    return {
+      provider,
+      subject,
+      label: isPassword ? 'Email and password' : (PROVIDER_LABELS[provider] ?? provider),
+      email: isPassword ? subject : null,
+      verified: isPassword ? verified.has(subject) : verified.size > 0,
+    };
+  });
+  const verifiedCount = all.filter((l) => l.verified).length;
+  return all.map(({ verified: isVerified, ...login }) => {
+    // Removing this one must leave at least one verified login behind
+    const blocked = verifiedCount - (isVerified ? 1 : 0) < 1;
+    return {
+      ...login,
+      removeBlocked: !blocked
+        ? null
+        : isVerified
+          ? 'This is your only login tied to a verified email address.'
+          : 'Verify your email address first: you need at least one login tied to a verified address.',
+    };
+  });
 }
 
 /** The addresses this account has proven it owns. */
@@ -140,7 +178,7 @@ async function connect(a: string, b: string) {
 
 app.get('/api/me', async (_req, res) => {
   const u = (await getUser(uid(res)))!;
-  const me: Me = { deletionRequestedAt: u.deletionRequestedAt, deleted: false, id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails };
+  const me: Me = { deletionRequestedAt: u.deletionRequestedAt, deleted: false, id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails, logins: u.logins };
   res.json(me);
 });
 
@@ -216,6 +254,51 @@ app.delete('/api/me/emails/:email', async (req, res) => {
             },
           ]
         : []),
+    ],
+    'write',
+  );
+  res.json({ ok: true });
+});
+
+// Change the password of one of the account's password logins. Needs the current password (a stolen session alone
+// can't take the account over), signs the account out everywhere else, and voids any pending reset links.
+app.post('/api/me/password', rateLimit('change-password', { perIp: 60, perUser: 10 }), async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const body = z
+    .object({ email: z.string().optional(), currentPassword: z.string().max(200), newPassword: z.string().min(8).max(200) })
+    .safeParse(req.body);
+  if (!body.success) return res.status(400).json({ error: 'Choose a new password of at least 8 characters' });
+  const passwordLogins = me.logins.filter((l) => l.provider === 'password');
+  const login = body.data.email ? passwordLogins.find((l) => l.subject === body.data.email!.trim().toLowerCase()) : passwordLogins.length === 1 ? passwordLogins[0] : undefined;
+  if (!login) return res.status(400).json({ error: passwordLogins.length ? 'Choose which login to change the password of' : 'Your account has no password login' });
+  if ((await verifyPassword(login.subject, body.data.currentPassword)) !== me.id) return res.status(403).json({ error: 'Your current password is wrong' });
+  await db.batch(
+    [
+      { sql: 'UPDATE password_credentials SET password_hash = ? WHERE subject = ?', args: [await hashPassword(body.data.newPassword), login.subject] },
+      { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [login.subject] },
+    ],
+    'write',
+  );
+  await revokeSessions(res, me.id);
+  res.json({ ok: true });
+});
+
+// Remove a way of signing in. The account keeps its email addresses; only the login goes (and a password with it).
+app.delete('/api/me/logins/:provider/:subject', async (req, res) => {
+  const me = (await getUser(uid(res)))!;
+  const { provider, subject } = req.params;
+  const entry = me.logins.find((l) => l.provider === provider && l.subject === subject);
+  if (!entry) return res.status(404).json({ error: 'That login is not on your account' });
+  if (entry.removeBlocked) return res.status(409).json({ error: entry.removeBlocked });
+  await db.batch(
+    [
+      ...(provider === 'password'
+        ? [
+            { sql: 'DELETE FROM password_credentials WHERE subject = ?', args: [subject] },
+            { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [subject] },
+          ]
+        : []),
+      { sql: 'DELETE FROM identities WHERE provider = ? AND subject = ? AND user_id = ?', args: [provider, subject, me.id] },
     ],
     'write',
   );

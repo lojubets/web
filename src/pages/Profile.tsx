@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
-import type { OwnEmailAddress } from '../../shared/types';
+import type { OwnEmailAddress, OwnLogin } from '../../shared/types';
 import DeleteAccount from '../components/DeleteAccount';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useMe } from '../hooks';
@@ -48,6 +48,32 @@ export default function Profile() {
     rm.run(async () => {
       await api(`/me/emails/${encodeURIComponent(e.email)}`, 'DELETE');
       reload();
+    });
+  };
+
+  const removeLogin = (l: OwnLogin) => {
+    const what = l.email ? `the email and password login for ${l.email}` : `your ${l.label} login`;
+    if (!window.confirm(`Remove ${what}?\n\nYou will no longer be able to sign in this way. Your email addresses stay on your account.`)) return;
+    rm.run(async () => {
+      await api(`/me/logins/${encodeURIComponent(l.provider)}/${encodeURIComponent(l.subject)}`, 'DELETE');
+      reload();
+    });
+  };
+
+  const passwordLogins = me.logins.filter((l) => l.provider === 'password');
+  const [pwEmail, setPwEmail] = useState('');
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [pwChanged, setPwChanged] = useState(false);
+  const pw = useAction();
+  const changePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    pw.run(async () => {
+      await api('/me/password', 'POST', { email: pwEmail || passwordLogins[0]?.subject, currentPassword: currentPw, newPassword: newPw });
+      setCurrentPw('');
+      setNewPw('');
+      setPwChanged(true);
+      setTimeout(() => setPwChanged(false), 4000);
     });
   };
 
@@ -141,6 +167,51 @@ export default function Profile() {
           ))}
           {rm.error && <p className="error"><Icon name="alert" size={20} />{rm.error}</p>}
         </section>
+      )}
+      {me.logins.length > 0 && (
+        <section className="stack">
+          <h2>Ways to sign in</h2>
+          {me.logins.map((l) => (
+            <div className="stack" key={`${l.provider}:${l.subject}`}>
+              <div className="row row-wrap">
+                <span className="grow">
+                  <strong>{l.label}</strong>
+                  {l.email && <span className="muted small"> · {l.email}</span>}
+                </span>
+                <button className="btn btn-small btn-secondary" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
+                  Remove
+                </button>
+              </div>
+              {l.removeBlocked && <small className="muted">{l.removeBlocked}</small>}
+            </div>
+          ))}
+        </section>
+      )}
+      {passwordLogins.length > 0 && (
+        <form className="card stack" onSubmit={changePassword}>
+          <h2>Change password</h2>
+          {passwordLogins.length > 1 && (
+            <label className="field">
+              <span>Login</span>
+              <select value={pwEmail || passwordLogins[0].subject} onChange={(e) => setPwEmail(e.target.value)}>
+                {passwordLogins.map((l) => <option key={l.subject} value={l.subject}>{l.email}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span>Current password</span>
+            <input type="password" autoComplete="current-password" required value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>New password</span>
+            <input type="password" autoComplete="new-password" required minLength={8} maxLength={200} value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+            <small className="muted">At least 8 characters. Your other devices will be signed out.</small>
+          </label>
+          <button className="btn" disabled={pw.busy || !currentPw || newPw.length < 8}>
+            {pwChanged ? <><Icon name="check" size={18} />Password changed</> : 'Change password'}
+          </button>
+          {pw.error && <p className="error"><Icon name="alert" size={20} />{pw.error}</p>}
+        </form>
       )}
       {me.emailVerified && (
         <section className="card stack">
