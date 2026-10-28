@@ -547,6 +547,9 @@ function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: 
     // (a deleted user's own guess is gone: stored as '')
     theirGuess: b.opponent_guess === null || theirGuess === '' ? null : theirGuess,
     outcome: b.outcome,
+    proposedVerdict: b.status !== 'awaiting_confirmation' || b.kind !== 'text' || proposalOf(b) !== 'outcome' || !b.proposed_verdict
+      ? null
+      : b.proposed_verdict === 'draw' ? 'draw' : (b.proposed_verdict === 'creator') === iAmCreator ? 'me' : 'them',
     outcomeProposedByMe: b.outcome_proposed_by ? b.outcome_proposed_by === me : null,
     winnerId: b.winner_id,
     allIn: !!b.all_in,
@@ -615,7 +618,7 @@ app.get('/api/bets/:id', async (req, res) => {
   if (b) await respondWithBet(res, b.id);
 });
 
-const kindSchema = z.enum(['number', 'duration', 'instant']);
+const kindSchema = z.enum(['number', 'duration', 'instant', 'text', 'yesno', 'choice']);
 
 app.post('/api/bets', async (req, res) => {
   const body = z
@@ -661,12 +664,23 @@ app.post('/api/bets/:id/cancel', async (req, res) => {
 app.post('/api/bets/:id/propose', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
-  if (b.status !== 'active') return res.status(409).json({ error: "The outcome can't be proposed right now" });
+  // Besides an in-play bet, the player who is being asked to confirm may answer with a proposal of their own.
+  // That replaces the pending one and hands the decision back, with no limit on how often this can happen.
+  const countering = b.status === 'awaiting_confirmation' && proposalOf(b) === 'outcome' && b.outcome_proposed_by !== uid(res);
+  if (b.status !== 'active' && !countering) return res.status(409).json({ error: "The outcome can't be proposed right now" });
   const outcome = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.outcome ?? ''), { now: Date.now(), role: 'outcome' });
   if (!outcome.ok) return res.status(400).json({ error: outcome.error });
+  // Free text can't be compared by a computer, so the proposer also says who was right.
+  let verdict: 'creator' | 'opponent' | 'draw' | null = null;
+  if (b.kind === 'text') {
+    const winner = req.body?.winner;
+    if (winner !== 'me' && winner !== 'them' && winner !== 'draw') return res.status(400).json({ error: 'Say who was right' });
+    const iAmCreator = b.creator_id === uid(res);
+    verdict = winner === 'draw' ? 'draw' : (winner === 'me') === iAmCreator ? 'creator' : 'opponent';
+  }
   await db.execute({
-    sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, proposal = 'outcome', status = 'awaiting_confirmation' WHERE id = ?`,
-    args: [outcome.value, uid(res), b.id],
+    sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, proposed_verdict = ?, proposal = 'outcome', status = 'awaiting_confirmation' WHERE id = ?`,
+    args: [outcome.value, uid(res), verdict, b.id],
   });
   await respondWithBet(res, b.id);
 });
@@ -675,7 +689,16 @@ app.post('/api/bets/:id/reject', async (req, res) => {
   const b = await betFor(req, res);
   if (!b) return;
   if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by === uid(res)) return res.status(409).json({ error: 'Nothing to reject' });
-  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, proposal = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
+  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, proposed_verdict = NULL, proposal = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
+  await respondWithBet(res, b.id);
+});
+
+// The player who made a proposal (a result, a tie, "it hasn't happened") can take it back; the bet goes back in play.
+app.post('/api/bets/:id/withdraw', async (req, res) => {
+  const b = await betFor(req, res);
+  if (!b) return;
+  if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by !== uid(res)) return res.status(409).json({ error: 'You have no proposal to withdraw' });
+  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, proposed_verdict = NULL, proposal = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
   await respondWithBet(res, b.id);
 });
 
@@ -688,7 +711,11 @@ app.post('/api/bets/:id/confirm', async (req, res) => {
   if (kind !== 'tie') {
     // "Not happened" = the event hadn't happened by the tipping point, so the later guess wins.
     const verdict =
-      kind === 'not_happened' ? tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!) : decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
+      kind === 'not_happened'
+        ? tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!)
+        : b.kind === 'text'
+          ? (b.proposed_verdict ?? 'draw')
+          : decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
     winner = verdict === 'draw' ? null : verdict === 'creator' ? b.creator_id : b.opponent_id;
   }
   // A tie is called off by agreement: it ends with no winner, so nobody's balance changes (an all-in stake included).

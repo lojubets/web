@@ -11,6 +11,9 @@ const KINDS: { kind: BetKind; title: string; hint: string }[] = [
   { kind: 'number', title: 'A number', hint: 'How many goals?' },
   { kind: 'duration', title: 'A duration', hint: 'How long will it take?' },
   { kind: 'instant', title: 'A date or time', hint: 'When will it happen?' },
+  { kind: 'yesno', title: 'Yes or no', hint: 'Will Kane win the Ballon d\'Or?' },
+  { kind: 'choice', title: 'Multiple choice', hint: 'Quit, fired or reassigned?' },
+  { kind: 'text', title: 'Freeform', hint: 'What will Jose say?' },
 ];
 
 export default function NewBet() {
@@ -63,9 +66,9 @@ export default function NewBet() {
           ))}
         </div>
         <RulesEditor kind={kind} rules={rules} onChange={setRules} />
-        <ValueInput kind={kind} params={betParams} value={guess} onChange={setGuess} label="Your guess (hidden until they answer)" />
+        <ValueInput key={kind} kind={kind} params={betParams} value={guess} onChange={setGuess} label="Your guess (hidden until they answer)" />
         {error && <p className="error">{error}</p>}
-        <button className="btn" disabled={busy || !selected}>Propose bet · 1 lonkero</button>
+        <button className="btn" disabled={busy || !selected || (kind === 'choice' && (betParams as { options: string[] }).options.length < 2)}>Propose bet · 1 lonkero</button>
       </form>
     </>
   );

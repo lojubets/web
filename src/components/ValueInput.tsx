@@ -1,5 +1,5 @@
 import { describeReading, readDuration } from '../../shared/duration';
-import type { BetKind, BetParams, InstantParams, NumberParams } from '../../shared/types';
+import type { BetKind, BetParams, ChoiceParams, InstantParams, NumberParams } from '../../shared/types';
 import { describeRules, toLocalInput } from '../format';
 import Icon from './Icon';
 
@@ -14,11 +14,26 @@ interface Props {
 }
 
 export default function ValueInput({ kind, params, value, onChange, label, role = 'guess' }: Props) {
+  if (kind === 'yesno' || kind === 'choice') {
+    const options = kind === 'yesno' ? [{ value: 'yes', label: 'Yes' }, { value: 'no', label: 'No' }] : (params as ChoiceParams).options.map((o) => ({ value: o, label: o }));
+    return (
+      <fieldset className="field choices">
+        <legend>{label}</legend>
+        {options.map((o) => (
+          <label key={o.value} className="check">
+            <input type="radio" name={`answer-${label}`} checked={value === o.value} onChange={() => onChange(o.value)} required />
+            {o.label}
+          </label>
+        ))}
+      </fieldset>
+    );
+  }
   const hint = role === 'guess' ? describeRules(kind, params).join(' · ') : null;
   return (
     <label className="field">
       <span>{label}</span>
       {kind === 'number' && <NumberField params={params as NumberParams} value={value} onChange={onChange} role={role} />}
+      {kind === 'text' && <input type="text" maxLength={300} placeholder={role === 'outcome' ? 'What actually happened?' : 'Your answer'} value={value} onChange={(e) => onChange(e.target.value)} required />}
       {kind === 'duration' && <DurationField value={value} onChange={onChange} hint={hint} />}
       {kind === 'instant' && <InstantField params={params as InstantParams} value={value} onChange={onChange} role={role} />}
       {kind !== 'duration' && hint && <small className="muted">{hint}</small>}

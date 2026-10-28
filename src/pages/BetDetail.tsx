@@ -15,6 +15,8 @@ export default function BetDetail() {
   const friends = useFetch<Friend[]>('/friends');
   const act = useAction();
   const [value, setValue] = useState('');
+  const [countering, setCountering] = useState(false);
+  const [winner, setWinner] = useState<'me' | 'them' | 'draw' | ''>('');
   const b = bet.data;
   const friend = friends.data?.find((f) => f.id === b?.otherUserId);
 
@@ -27,12 +29,38 @@ export default function BetDetail() {
       await bet.reload();
       await friends.reload();
       setValue('');
+      setWinner('');
+      setCountering(false);
     });
 
   const fv = (v: string | null) => formatValue(b.kind, b.params, v);
   const later = b.kind === 'instant' && b.myGuess !== null && b.theirGuess !== null ? (b.myGuess > b.theirGuess ? 'me' : b.myGuess < b.theirGuess ? 'them' : 'both') : null;
   const byTipping = b.settledBy === 'tipping_point';
   const iWon = b.winnerId !== null && b.winnerId !== b.otherUserId;
+
+  const withdraw = (
+    <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/withdraw')}>Withdraw my proposal</button>
+  );
+
+  const proposeForm = (
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/propose', { outcome: value, winner }); }}>
+      <ValueInput kind={b.kind} params={b.params} role="outcome" value={value} onChange={setValue} label={b.status === 'active' ? 'It happened! What was the actual result?' : 'What was the actual result?'} />
+      {b.kind === 'text' && (
+        <fieldset className="field choices">
+          <legend>Who was right?</legend>
+          {([['me', 'I was'], ['them', `${friend.name} was`], ['draw', 'Neither, or both']] as const).map(([v, label]) => (
+            <label key={v} className="check"><input type="radio" name="winner" checked={winner === v} onChange={() => setWinner(v)} required />{label}</label>
+          ))}
+        </fieldset>
+      )}
+      <button className="btn" disabled={act.busy}>Propose result</button>
+      {b.status === 'active' && b.tippingPassed && later !== 'both' && (
+        <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => post('/not-happened')}>
+          It hasn't happened yet
+        </button>
+      )}
+    </form>
+  );
 
   return (
     <>
@@ -118,17 +146,7 @@ export default function BetDetail() {
         </>
       )}
 
-      {b.status === 'active' && (
-        <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/propose', { outcome: value }); }}>
-          <ValueInput kind={b.kind} params={b.params} role="outcome" value={value} onChange={setValue} label="It happened! What was the actual result?" />
-          <button className="btn" disabled={act.busy}>Propose result</button>
-          {b.tippingPassed && later !== 'both' && (
-            <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => post('/not-happened')}>
-              It hasn't happened yet
-            </button>
-          )}
-        </form>
-      )}
+      {b.status === 'active' && proposeForm}
 
       {b.status === 'active' && (
         <div className="stack">
@@ -140,7 +158,10 @@ export default function BetDetail() {
       {b.status === 'awaiting_confirmation' &&
         (b.proposalKind === 'tie' ? (
           b.outcomeProposedByMe ? (
-            <p className="muted">Waiting for {friend.name} to agree to call the bet off as a tie.</p>
+            <div className="stack">
+              <p className="muted">Waiting for {friend.name} to agree to call the bet off as a tie.</p>
+              {withdraw}
+            </div>
           ) : (
             <div className="stack">
               <p>{friend.name} proposes a tie: call the bet off, and nobody owes anything. Agree?</p>
@@ -150,7 +171,10 @@ export default function BetDetail() {
           )
         ) : b.proposalKind === 'not_happened' ? (
           b.outcomeProposedByMe ? (
-            <p className="muted">Waiting for {friend.name} to agree that the event hasn't happened yet.</p>
+            <div className="stack">
+              <p className="muted">Waiting for {friend.name} to agree that the event hasn't happened yet.</p>
+              {withdraw}
+            </div>
           ) : (
             <div className="stack">
               <p>{friend.name} says the event still hasn't happened. If you agree, the later guess wins. Agree?</p>
@@ -159,12 +183,23 @@ export default function BetDetail() {
             </div>
           )
         ) : b.outcomeProposedByMe ? (
-          <p className="muted">Waiting for {friend.name} to confirm the result.</p>
+          <div className="stack">
+            <p className="muted">Waiting for {friend.name} to confirm the result.</p>
+            {withdraw}
+          </div>
         ) : (
           <div className="stack">
-            <p>{friend.name} says the result was <strong>{fv(b.outcome)}</strong>. Agree?</p>
+            <p>
+              {friend.name} says the result was <strong>{fv(b.outcome)}</strong>
+              {b.proposedVerdict && ` and that ${b.proposedVerdict === 'me' ? 'you were' : b.proposedVerdict === 'them' ? 'they were' : 'neither of you was'} right`}. Agree?
+            </p>
             <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>Confirm result</button>
             <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>
+            {countering ? (
+              proposeForm
+            ) : (
+              <button className="btn btn-secondary" disabled={act.busy} onClick={() => setCountering(true)}>No, I say…</button>
+            )}
           </div>
         ))}
 

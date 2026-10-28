@@ -1,5 +1,5 @@
 import { formatDurationLong } from '../shared/duration';
-import type { BetKind, BetParams, InstantParams, NumberParams } from '../shared/types';
+import type { BetKind, BetParams, ChoiceParams, InstantParams, NumberParams } from '../shared/types';
 
 export { formatValue, formatMoment } from '../shared/format';
 
@@ -13,6 +13,9 @@ export function balanceText(name: string, balance: number): string {
 
 /** The rules of a bet as short phrases, e.g. ["Whole numbers only", "At least 0 and less than 10"]. */
 export function describeRules(kind: BetKind, params: BetParams): string[] {
+  if (kind === 'text') return ['A few words, judged by you and your friend afterwards'];
+  if (kind === 'yesno') return ['Yes or no'];
+  if (kind === 'choice') return [`One of: ${(params as ChoiceParams).options.join(', ')}`];
   if (kind === 'duration') return ['A duration, e.g. 3:05, 25 days or 3 months and 2 days'];
   if (kind === 'number') {
     const p = params as NumberParams;
