@@ -21,7 +21,31 @@ interface Provider {
   clientSecret: () => Promise<string>;
   /** Whether the provider's email claim can be trusted to link/match accounts. */
   trustsEmail: (claims: JWTPayload) => boolean;
+  /** Extra checks on a signature-verified ID token. Throws to refuse it. */
+  checkClaims?: (claims: JWTPayload) => void;
+  /** The identity key for this token when `sub` alone isn't enough (default: `sub`). */
+  subjectOf?: (claims: JWTPayload) => string;
 }
+
+const MICROSOFT_CONSUMERS_TENANT = '9188040d-6c67-4c5c-b112-d4b9e8fb6d5f';
+const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Microsoft signs tokens for every tenant with the same keys, and with the `common` endpoint the issuer differs per
+ * tenant, so a fixed `issuer` can't be checked. Instead the issuer must be the one belonging to the token's own `tid`,
+ * and `tid` must be the configured tenant when one is configured.
+ */
+export function checkMicrosoftClaims(claims: JWTPayload, tenant: string) {
+  const tid = typeof claims.tid === 'string' ? claims.tid.toLowerCase() : '';
+  if (!GUID.test(tid) || claims.iss !== `https://login.microsoftonline.com/${tid}/v2.0`) throw new Error('Microsoft token has the wrong issuer');
+  const t = tenant.toLowerCase();
+  const wanted = t === 'consumers' ? MICROSOFT_CONSUMERS_TENANT : GUID.test(t) ? t : null;
+  if (wanted && tid !== wanted) throw new Error('Microsoft token is from the wrong tenant');
+  if (t === 'organizations' && tid === MICROSOFT_CONSUMERS_TENANT) throw new Error('Microsoft token is from the wrong tenant');
+}
+
+/** `sub` is only unique within a tenant, so a Microsoft identity is the tenant plus the `sub`. */
+export const microsoftSubject = (claims: JWTPayload) => `${String(claims.tid).toLowerCase()}:${claims.sub}`;
 
 function providers(): Partial<Record<ProviderId, Provider>> {
   const out: Partial<Record<ProviderId, Provider>> = {};
@@ -49,6 +73,8 @@ function providers(): Partial<Record<ProviderId, Provider>> {
       clientSecret: async () => e.MICROSOFT_CLIENT_SECRET!,
       // Microsoft's email claim is not verified (nOAuth), so never link/match on it.
       trustsEmail: () => false,
+      checkClaims: (c) => checkMicrosoftClaims(c, tenant),
+      subjectOf: microsoftSubject,
     };
   }
   if (e.APPLE_CLIENT_ID && e.APPLE_TEAM_ID && e.APPLE_KEY_ID && e.APPLE_PRIVATE_KEY) {
@@ -270,6 +296,24 @@ function safeNext(next: unknown): string {
   return typeof next === 'string' && /^\/(?![/\\])/.test(next) ? next : '/';
 }
 
+/**
+ * The identity key for a verified token. Identities created before a provider used tenant-qualified keys are stored
+ * under the bare `sub`; the first sign-in since then moves them to the new key.
+ */
+async function resolveSubject(providerId: ProviderId, p: Provider, claims: JWTPayload): Promise<string> {
+  p.checkClaims?.(claims);
+  const sub = claims.sub!;
+  const subject = p.subjectOf?.(claims) ?? sub;
+  if (subject !== sub) {
+    await db.execute({
+      sql: `UPDATE identities SET subject = ? WHERE provider = ? AND subject = ?
+            AND NOT EXISTS (SELECT 1 FROM identities WHERE provider = ? AND subject = ?)`,
+      args: [subject, providerId, sub, providerId, subject],
+    });
+  }
+  return subject;
+}
+
 const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 export const authRouter = Router();
@@ -426,11 +470,12 @@ async function handleCallback(req: Request, res: Response) {
       issuer: p.issuer,
     });
     if (payload.nonce !== flow.nonce) return fail('Sign-in failed');
+    const subject = await resolveSubject(providerId, p, payload);
 
     if (flow.merge) {
       // Only an existing account can be merged: never create one here, and never replace the session.
       const back = (error?: string) => res.redirect(`${env.appUrl}/merge${error ? `?error=${encodeURIComponent(error)}` : ''}`);
-      const identity = await db.execute({ sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?', args: [providerId, payload.sub!] });
+      const identity = await db.execute({ sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?', args: [providerId, subject] });
       if (!identity.rows.length) return back("No LoJuBets account uses that sign-in. Sign in with the other account's own login.");
       const other = identity.rows[0].user_id as string;
       if (other === flow.merge) return back("That's the account you're already signed in with.");
@@ -452,7 +497,7 @@ async function handleCallback(req: Request, res: Response) {
     const trusted = p.trustsEmail(payload);
     const { userId, created } = await findOrCreateUser({
       provider: providerId,
-      subject: payload.sub!,
+      subject,
       email,
       emailVerified: trusted,
       name: appleName || (payload.name as string | undefined),

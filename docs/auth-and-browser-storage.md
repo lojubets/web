@@ -8,7 +8,7 @@ Section 7 onwards is assessment and recommendation; sections 1–6 are descripti
 >
 > Sections 1–6 and the "Findings" below describe the code **as it was on `main` at `9f5a039` on 2026-10-28**. The same PR then
 > fixed most of the findings; §10 lists what changed and what is still open. Where §1–§6 say "no X", read §10 for the
-> current state. **§10 is the current, re-verified status of every finding** (last checked against `main` at `0e9b878`);
+> current state. **§10 is the current, re-verified status of every finding** (last checked against `main` at `93b33b7`, plus the R5 fix);
 > it supersedes the status columns and the first box below.
 
 > ## ⚠️ Findings that deserved attention first (original analysis; all three are fixed, see §10)
@@ -102,8 +102,8 @@ Authorization-code flow with a confidential client (client secret; Apple's secre
    `/login?error=<message>`.
 
 What is **not** there: **no PKCE** (`code_challenge`/`code_verifier`), no `max_age`/`prompt`, no check of `at_hash`
-(no access token is used), and the Microsoft config has no `issuer` (with tenant `common` the issuer varies by tenant, so
-the `iss` claim is not validated at all for Microsoft). State is bound to the browser by the signed cookie, which is the
+(no access token is used), and the Microsoft config had no `issuer` (with tenant `common` the issuer varies by tenant, so
+the `iss` claim was not validated at all for Microsoft; fixed since, see R5 in §10). State is bound to the browser by the signed cookie, which is the
 standard stateless-state pattern and stops login CSRF.
 
 ### 3.3 Dev login (`POST /api/auth/dev`, `/api/merge/dev`)
@@ -222,7 +222,7 @@ sessions can come later.
 | R2 | Sessions cannot be revoked; logout is client-side only; merge/credential changes don't invalidate other sessions; 30-day window | `server/auth.ts:87-113,288` | **Medium** |
 | R3 | No rate limiting on password endpoints (login, register, `/merge/password`, `/verify-email`) | `server/auth.ts`, `server/merge.ts` | **Medium** |
 | R4 | Dev login is gated by `!isProd`, and `isProd` is only `NODE_ENV=production` or `VERCEL`. A non-Vercel deployment started without `NODE_ENV=production` and with a local DB would expose passwordless sign-in as any email **and** run with the public fallback `SESSION_SECRET` (forgeable sessions). Pointing a dev server with `DEV_LOGIN=on` at a real remote DB lets anyone take over any account with a verified email (dev login links by email). | `server/env.ts` | **Medium** (config-dependent). Fail closed: also require a loopback bind/host, and refuse the fallback secret unless the DB is local. |
-| R5 | Microsoft `iss` not validated (no `issuer`, tenant `common`); identity keyed on `sub` only. Prefer validating `iss` against the token's `tid` and keying on `tid`+`sub` (or `oid`). | `server/auth.ts:42-51,356` | Low–medium |
+| R5 | Microsoft `iss` not validated, identity keyed on `sub` only | **Fixed** | `checkMicrosoftClaims` (`server/auth.ts`): the token's `iss` must be `https://login.microsoftonline.com/<tid>/v2.0` for its own `tid`, `tid` must be the configured tenant when `MICROSOFT_TENANT` is a GUID or `consumers`, and `organizations` refuses personal accounts. An identity is stored as `<tid>:<sub>` (`microsoftSubject`). Identities saved earlier under the bare `sub` are moved to the new key on their next sign-in (`resolveSubject`). Covered by an end-to-end callback test with a locally signed token (`server/microsoft.test.ts`). The UI no longer advertises Microsoft (#12), but the server still supports it whenever its environment variables are set. |
 | R6 | Email squatting: anyone can register a password account with a victim's address (unverified, no mail needed); the real owner then gets "already registered" and can never use that address for password sign-up (Google/Apple sign-in still works and creates a separate account because only *verified* addresses are linked). | `server/auth.ts:240-260` | Low–medium. Mitigate: allow a verified owner to take over an unverified registration, or require verification before the password login becomes usable. |
 | R7 | No password reset / change; users who forget a password are stuck, and there is no way to rotate a leaked one. | — | Medium (functional gap with security impact) |
 | R8 | `/api/auth/:provider/callback` reflects any `error` query value into the login page text (spoofing). | `server/auth.ts:336` | Low |
@@ -294,7 +294,7 @@ CSRF defence in depth (cross-site `Origin` / `Sec-Fetch-Site` gets 403, `urlenco
 
 1. **Recent-auth for account-security changes.** Deletion needs the password or a recent sign-in, and password change needs the current password. But removing a login method or an email address (`DELETE /api/me/logins/...`, `DELETE /api/me/emails/...`), making another address primary, and confirming a merge need nothing beyond the session, so a stolen session can strip the owner's other sign-in methods (it always leaves one verified login and one verified address, and it cannot *add* a login or promote an address without the owner's mailbox). Reuse `lastSignInAt` for these, as for deletion.
 2. **Notice emails** after a password change, a reset, or a removed login.
-3. R5 (Microsoft issuer/tenant), a per-device session list, security headers/CSP, PKCE, scrypt cost, hashing invitation tokens, single-use merge tickets, `kid`.
+3. A per-device session list, security headers/CSP, PKCE, scrypt cost, hashing invitation tokens, single-use merge tickets, `kid`.
 
 ### 10.1 What the newer account features do (all checked)
 
