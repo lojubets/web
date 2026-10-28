@@ -9,6 +9,15 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: File; busy: boolean; onCancel: () => void; onSave: (dataUrl: string) => void }) {
   const url = useMemo(() => URL.createObjectURL(file), [file]);
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  // Pinching belongs to the picture while we're open: stop the browser zooming the page, but keep scrolling
+  useEffect(() => {
+    const root = document.documentElement;
+    const before = root.style.touchAction;
+    root.style.touchAction = 'pan-x pan-y';
+    return () => {
+      root.style.touchAction = before;
+    };
+  }, []);
   const img = useRef<HTMLImageElement>(null);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [zoom, setZoom] = useState(1);
