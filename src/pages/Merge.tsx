@@ -219,7 +219,7 @@ function Choose({ preview }: { preview: MergePreview }) {
         <h2>What happens</h2>
         <ul className="examples">
           <li>Friends and bets from both accounts are combined.</li>
-          <li>You can sign in with either account's login (Google, Microsoft, Apple or email and password).</li>
+          <li>You can sign in with either account's login (Google or email and password).</li>
           {needsPw && <li>Your two passwords are replaced by the new one, which works with both email addresses.</li>}
           {preview.betsBetween > 0 && (
             <li>{preview.betsBetween} finished {preview.betsBetween === 1 ? 'bet' : 'bets'} between these two accounts will be removed.</li>
