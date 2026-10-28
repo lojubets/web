@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import Avatar from '../components/Avatar';
+import AvatarCropper from '../components/AvatarCropper';
 import Icon from '../components/Icon';
 import type { AppConfig, OwnEmailAddress, OwnLogin } from '../../shared/types';
 import DeleteAccount from '../components/DeleteAccount';
@@ -9,16 +10,6 @@ import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useFetch, useMe } from '../hooks';
 
 const PROVIDER_NAMES = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' } as const;
-
-/** Crops to a centred square and downsizes so the avatar stays a few KB. */
-async function toAvatarDataUrl(file: File, size = 256): Promise<string> {
-  const bitmap = await createImageBitmap(file);
-  const side = Math.min(bitmap.width, bitmap.height);
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  canvas.getContext('2d')!.drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, size, size);
-  return canvas.toDataURL('image/jpeg', 0.85);
-}
 
 export default function Profile() {
   const { me, reload } = useMe();
@@ -28,6 +19,7 @@ export default function Profile() {
     setName(me.profileName);
   }, [me.profileName]);
   const file = useRef<HTMLInputElement>(null);
+  const [picked, setPicked] = useState<File | null>(null);
   const act = useAction();
   const [saved, setSaved] = useState(false);
   const query = useSearchParams()[0];
@@ -147,6 +139,20 @@ export default function Profile() {
         </div>
       )}
       <VerifyEmailBanner />
+      {picked && (
+        <AvatarCropper
+          file={picked}
+          busy={act.busy}
+          onCancel={() => setPicked(null)}
+          onSave={(dataUrl) =>
+            act.run(async () => {
+              await api('/me/avatar', 'PUT', { dataUrl });
+              setPicked(null);
+              reload();
+            })
+          }
+        />
+      )}
       <div className="profile-head">
         <button className="avatar-btn" onClick={() => file.current?.click()} aria-label="Change profile picture">
           <Avatar user={me} size={96} />
@@ -158,12 +164,7 @@ export default function Profile() {
           accept="image/*"
           hidden
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            act.run(async () => {
-              await api('/me/avatar', 'PUT', { dataUrl: await toAvatarDataUrl(f) });
-              reload();
-            });
+            setPicked(e.target.files?.[0] ?? null);
             e.target.value = '';
           }}
         />
