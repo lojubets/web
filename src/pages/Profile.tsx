@@ -226,12 +226,14 @@ export default function Profile() {
           ))}
           {rm.error && <p className="error"><Icon name="alert" size={20} />{rm.error}</p>}
           <form className="stack" onSubmit={addEmail}>
-            <label className="field">
-              <span>Add an email address</span>
-              <input type="email" autoComplete="email" required value={newEmail} placeholder="you@example.com" onChange={(e) => setNewEmail(e.target.value)} />
+            <div className="field">
+              <label htmlFor="new-email">Add an email address</label>
+              <div className="field-row">
+                <input id="new-email" type="email" autoComplete="email" required value={newEmail} placeholder="you@example.com" onChange={(e) => setNewEmail(e.target.value)} />
+                <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()}>Add</button>
+              </div>
               <small className="muted">We'll email a link to confirm it. Once it's confirmed you can make it your primary address and remove the old one.</small>
-            </label>
-            <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()}>Add address</button>
+            </div>
             {emailNote && <small>{emailNote}</small>}
             {addMail.error && <p className="error"><Icon name="alert" size={20} />{addMail.error}</p>}
           </form>
