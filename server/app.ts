@@ -128,8 +128,10 @@ async function getUser(id: string): Promise<(UserSummary & { email: string | nul
         ? e.verified
           ? 'This is your only verified email address.'
           : 'Verify an email address first: you need at least one verified address.'
-        : socialAddresses.has(email)
-          ? `This address belongs to your ${socialAddresses.get(email)} sign-in. Remove that sign-in first if you no longer want it.`
+        : email === primary
+          ? 'This is your primary address. Make another verified address primary first.'
+          : socialAddresses.has(email)
+            ? `This address belongs to your ${socialAddresses.get(email)} sign-in. Remove that sign-in first if you no longer want it.`
           : signsInWithPassword && onlyPasswordLogin && !movesPasswordTo
             ? candidates.length
               ? 'Your password login cannot move to your other address, because a different LoJuBets account already uses it. Merge the accounts first.'
@@ -306,15 +308,6 @@ app.delete('/api/me/emails/:email', async (req, res) => {
             { sql: `DELETE FROM password_credentials WHERE subject IN (SELECT subject FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?)`, args: [me.id, email] },
             { sql: `DELETE FROM identities WHERE provider = 'password' AND user_id = ? AND subject = ?`, args: [me.id, email] },
           ]),
-      // Removing the primary address promotes the oldest remaining verified one
-      ...(entry.primary
-        ? [
-            {
-              sql: `UPDATE users SET email = (SELECT email FROM user_emails WHERE user_id = ? AND verified = 1 ORDER BY created_at, email LIMIT 1), email_verified = 1 WHERE id = ?`,
-              args: [me.id, me.id],
-            },
-          ]
-        : []),
     ],
     'write',
   );
