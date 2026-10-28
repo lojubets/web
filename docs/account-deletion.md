@@ -103,7 +103,7 @@ C plus: for *settled* bets keep only what B needs to preserve the result (questi
 ### 5a. Balances and "remove from my history"
 
 - **Balances (decided):** a deleted user's placeholder is shown exactly like any other friend. Because the deleted user's `connections` rows are re-pointed to the placeholder instead of deleted, `/api/friends` (which is built from `connections`), `balanceFor` and `/api/bets?with=` need no special handling beyond the name and avatar. The placeholder cannot receive new bets (`areConnected` plus a `deleted_at` check).
-- **Remove from my history (decided):** for a bet whose other participant is a placeholder, the remaining participant gets a "Remove from my history" action. Since nobody else holds the record, this hard-deletes the bet row (and its `bet_reminders`). Warn first that, for a settled bet, it changes their balance with that person. When the last bet with a placeholder is removed, the placeholder and its connection are deleted too. Not in scope: removing a bet from one side's history while both participants are live, which needs both people's consent.
+- **Remove from my history (decided):** for a bet whose other participant is a placeholder, the remaining participant gets a "Remove from my history" action. Since nobody else holds the record, this hard-deletes the bet row (and its `bet_reminders`). Warn first that, for a settled bet, it changes their balance with that person. When the last bet with a placeholder is removed, the placeholder and its connection are deleted too. Decided: this action exists **only** for bets with a since-deleted user. It is not offered for bets between two live users.
 
 ## 6. Ongoing bets
 
@@ -127,7 +127,7 @@ Rejected alternatives: voiding all ongoing bets at once (changes the other parti
 6. **Final re-check.** The deletion transaction re-verifies that there are no ongoing bets and aborts if one slipped in; the cron retries.
 7. **Notification afterwards.** The user is emailed that the deletion completed. Counterparties whose bets were force-cancelled get an email saying the bet was cancelled because they did not respond within 30 days.
 
-**Every bettor has a verified email (decided prerequisite).** Today `requireVerifiedEmail` in `app.ts` locks accounts out of bets only when they have an email that is unverified; an account with *no* email at all is exempt, because it can never verify. For this flow to work, that exemption has to go: nobody may take part in a bet without a verified address, so a cancellation request always has somewhere to land and "no response in 30 days" is never caused by an unreachable counterparty. See open question 1 about existing accounts that are exempt today.
+**Every bettor has a verified email (decided prerequisite).** Today `requireVerifiedEmail` in `app.ts` locks accounts out of bets only when they have an email that is unverified; an account with *no* email at all is exempt, because it can never verify. For this flow to work, that exemption has to go: nobody may take part in a bet without a verified address, so a cancellation request always has somewhere to land and "no response in 30 days" is never caused by an unreachable counterparty. Existing accounts with no email (username/password, Microsoft and Apple sign-ins that returned none; Google accounts always have a verified one) must add and verify an address before they can use friends, invitations or bets again. That is the same `403 email_not_verified` path unverified accounts already hit, with the UI prompting for an address. To keep the 30-day default fair, ship this change first and give those users a notice period before the deletion feature goes live (section 14, step 0), so nobody is unreachable when a cancellation request arrives.
 
 **A later erasure request by the counterparty.** A refusal answers one request only. Requests are keyed by `(bet_id, requested_by)`, so if the person who refused later requests their own erasure, that triggers a fresh request to each of *their* counterparties for every bet still ongoing, including the bet they once refused, and the same accept/refuse/30-day rules apply to it. When both people on a bet are in "deletion requested", each one's request is also a prompt to the other; the UI should offer a one-click accept, and the bet is cancelled as soon as either accepts.
 
@@ -193,7 +193,7 @@ The maintainer's address is not shown anywhere on the site (spam) and is deliber
 
 - A `SUPPORT_EMAIL` environment variable (next to the other settings in `server/env.ts`) holds the address; it is never rendered into HTML, returned from the API or committed.
 - In the pending-deletion banner, a "Contact us about this" form. It is authenticated, so it can attach the account's verified email as the reply address, and it sends to `SUPPORT_EMAIL` through the existing `sendMail`.
-- For people who cannot sign in at all (the right to erasure must be exercisable by reasonable means), a small public contact form with a rate limit and a honeypot field, which sends to the same address. Whether to build this is open question 2.
+- No public contact form for now (decided). People who cannot sign in at all are outside the in-app route; the privacy policy should say how to reach the maintainer without publishing the address (for example, by asking the person who runs the instance), and this is revisited if it proves insufficient.
 - Replies come from the maintainer by hand; no automation.
 
 ## 13. Recommendation
@@ -207,7 +207,7 @@ The maintainer's address is not shown anywhere on the site (spam) and is deliber
 
 ## 14. Implementation outline
 
-0. **Prerequisite:** require a verified email for friends, invitations and bets for every account, removing the no-email exemption in `requireVerifiedEmail` (decide how to treat existing no-email accounts first, open question 1).
+0. **Prerequisite:** require a verified email for friends, invitations and bets for every account, removing the no-email exemption in `requireVerifiedEmail`. Existing no-email accounts (not Google ones) must add and verify an email; announce it and allow a notice period before the later steps ship.
 1. **Placeholder users.** Add `users.deleted_at`. At deletion, create a fresh placeholder row (random id, name `Deleted user`, `email NULL`, no identities, `deleted_at` set) and re-point the bets and connections at it. Exclude placeholders from merge and invitation lookups and from `areConnected` for new bets. Add a test that no route lets anyone act as one.
 2. **Shared deletion helper** (`server/deleteUser.ts`) that takes a user id and a list of statements, used by both deletion and merge's cleanup. Runs in one `db.batch(..., 'write')`.
 3. **Schema:** `users.deletion_requested_at` (nullable) and a `bet_cancel_requests` table (section 6). Add both in `db.ts` `schema`/`migrate`.
@@ -227,8 +227,4 @@ The maintainer's address is not shown anywhere on the site (spam) and is deliber
 
 ## 15. Open questions for the maintainer
 
-Most earlier questions are now decided (see the sections above). What is left:
-
-1. **Existing accounts with no email.** Requiring a verified email for every bettor means accounts that today have no email at all (the `requireVerifiedEmail` exemption) can no longer bet. Is that acceptable, and are there any such accounts in production? If so, should they be asked to add and verify an email before continuing, with existing bets left alone until then?
-2. **Public contact form.** Should the support contact also exist as an unauthenticated, rate-limited form for people who cannot sign in, or is the in-app form for signed-in users enough for the first cut?
-3. **Remove from history for live participants.** The decided action covers bets whose other participant has been deleted. Should a later follow-up extend it to bets between two live users (with both people's consent)?
+None outstanding: every question raised during review has been decided and is reflected in the sections above. Likely to surface during implementation: how Apple "hide my email" relay addresses should count as a verified email, and the exact notice period for the verified-email requirement.
