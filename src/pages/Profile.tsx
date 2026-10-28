@@ -60,6 +60,23 @@ export default function Profile() {
     });
   };
 
+  const passwordLogins = me.logins.filter((l) => l.provider === 'password');
+  const [pwEmail, setPwEmail] = useState('');
+  const [currentPw, setCurrentPw] = useState('');
+  const [newPw, setNewPw] = useState('');
+  const [pwChanged, setPwChanged] = useState(false);
+  const pw = useAction();
+  const changePassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    pw.run(async () => {
+      await api('/me/password', 'POST', { email: pwEmail || passwordLogins[0]?.subject, currentPassword: currentPw, newPassword: newPw });
+      setCurrentPw('');
+      setNewPw('');
+      setPwChanged(true);
+      setTimeout(() => setPwChanged(false), 4000);
+    });
+  };
+
   return (
     <>
       <header className="header"><h1>Profile</h1></header>
@@ -169,6 +186,32 @@ export default function Profile() {
             </div>
           ))}
         </section>
+      )}
+      {passwordLogins.length > 0 && (
+        <form className="card stack" onSubmit={changePassword}>
+          <h2>Change password</h2>
+          {passwordLogins.length > 1 && (
+            <label className="field">
+              <span>Login</span>
+              <select value={pwEmail || passwordLogins[0].subject} onChange={(e) => setPwEmail(e.target.value)}>
+                {passwordLogins.map((l) => <option key={l.subject} value={l.subject}>{l.email}</option>)}
+              </select>
+            </label>
+          )}
+          <label className="field">
+            <span>Current password</span>
+            <input type="password" autoComplete="current-password" required value={currentPw} onChange={(e) => setCurrentPw(e.target.value)} />
+          </label>
+          <label className="field">
+            <span>New password</span>
+            <input type="password" autoComplete="new-password" required minLength={8} maxLength={200} value={newPw} onChange={(e) => setNewPw(e.target.value)} />
+            <small className="muted">At least 8 characters. Your other devices will be signed out.</small>
+          </label>
+          <button className="btn" disabled={pw.busy || !currentPw || newPw.length < 8}>
+            {pwChanged ? <><Icon name="check" size={18} />Password changed</> : 'Change password'}
+          </button>
+          {pw.error && <p className="error"><Icon name="alert" size={20} />{pw.error}</p>}
+        </form>
       )}
       {me.emailVerified && (
         <section className="card stack">

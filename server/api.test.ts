@@ -900,3 +900,37 @@ describe('login methods on the profile', () => {
     expect(await logins(other)).toHaveLength(1);
   });
 });
+
+describe('changing the password', () => {
+  const NEW = 'a brand new passphrase';
+  const change = (a: ReturnType<typeof request.agent>, body: object) => a.post('/api/me/password').send(body);
+
+  it('needs the current password, then switches to the new one and signs out other devices', async () => {
+    const email = 'changer@example.com';
+    const here = await verifiedUser(email);
+    const elsewhere = request.agent(app);
+    await elsewhere.post('/api/auth/login').send({ email, password: 'correct horse' }).expect(200);
+
+    await change(here, { currentPassword: 'wrong one', newPassword: NEW }).expect(403);
+    await change(here, { currentPassword: 'correct horse', newPassword: 'short' }).expect(400);
+    await request(app).post('/api/auth/login').send({ email, password: 'correct horse' }).expect(200); // unchanged so far
+
+    await change(here, { currentPassword: 'correct horse', newPassword: NEW }).expect(200);
+    await here.get('/api/me').expect(200); // this browser stays signed in
+    await elsewhere.get('/api/me').expect(401); // others don't
+    await request(app).post('/api/auth/login').send({ email, password: 'correct horse' }).expect(401);
+    await request(app).post('/api/auth/login').send({ email, password: NEW }).expect(200);
+  });
+
+  it('is refused without a session, and for accounts with no password login', async () => {
+    await change(request.agent(app), { currentPassword: 'x', newPassword: NEW }).expect(401);
+    const dev = await login('Nopass');
+    await change(dev, { currentPassword: 'x', newPassword: NEW }).expect(400);
+  });
+
+  it('throttles repeated guesses at the current password', async () => {
+    const u = await verifiedUser('guesser@example.com');
+    for (let i = 0; i < 10; i++) await change(u, { currentPassword: `wrong ${i}`, newPassword: NEW }).expect(403);
+    await change(u, { currentPassword: 'correct horse', newPassword: NEW }).expect(429);
+  });
+});
