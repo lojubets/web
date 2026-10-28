@@ -3,10 +3,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
-import type { OwnEmailAddress, OwnLogin } from '../../shared/types';
+import type { AppConfig, OwnEmailAddress, OwnLogin } from '../../shared/types';
 import DeleteAccount from '../components/DeleteAccount';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
-import { useAction, useMe } from '../hooks';
+import { useAction, useFetch, useMe } from '../hooks';
+
+const PROVIDER_NAMES = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' } as const;
 
 /** Crops to a centred square and downsizes so the avatar stays a few KB. */
 async function toAvatarDataUrl(file: File, size = 256): Promise<string> {
@@ -28,7 +30,18 @@ export default function Profile() {
   const file = useRef<HTMLInputElement>(null);
   const act = useAction();
   const [saved, setSaved] = useState(false);
-  const merged = useSearchParams()[0].get('merged');
+  const query = useSearchParams()[0];
+  const merged = query.get('merged');
+  const connected = query.get('connected');
+  const connectError = query.get('error');
+  const { data: config } = useFetch<AppConfig>('/config');
+  const connect = useAction();
+  const [connectPw, setConnectPw] = useState('');
+  const connectProvider = (provider: string) =>
+    connect.run(async () => {
+      await api('/me/connect', 'POST', { password: connectPw });
+      location.href = `/api/auth/${provider}?connect=1`; // a full page load: the provider's sign-in follows
+    });
   const rm = useAction();
 
   const makePrimary = (e: OwnEmailAddress) => {
@@ -111,6 +124,13 @@ export default function Profile() {
   return (
     <>
       <header className="header"><h1>Profile</h1></header>
+      {connected && (
+        <div className="banner banner-win">
+          <Icon name="check" size={22} />
+          <span>Sign-in connected. You can use it to sign in to this account from now on.</span>
+        </div>
+      )}
+      {connectError && <p className="error"><Icon name="alert" size={20} />{connectError}</p>}
       {merged && (
         <div className="banner banner-win">
           <Icon name="check" size={22} />
@@ -230,6 +250,29 @@ export default function Profile() {
               {l.removeBlocked && <small className="muted">{l.removeBlocked}</small>}
             </div>
           ))}
+        </section>
+      )}
+      {config && config.providers.length > 0 && (
+        <section className="stack">
+          <h2>Connect another sign-in</h2>
+          <small className="muted">
+            Add a Google, Microsoft or Apple account as another way to sign in to this account, for example one that uses the same email
+            address as an account you already have.
+          </small>
+          {passwordLogins.length > 0 && (
+            <label className="field">
+              <span>Your password</span>
+              <input type="password" autoComplete="current-password" value={connectPw} onChange={(e) => setConnectPw(e.target.value)} />
+            </label>
+          )}
+          <div className="row row-wrap">
+            {config.providers.map((p) => (
+              <button key={p} className="btn btn-small btn-secondary" disabled={connect.busy || (passwordLogins.length > 0 && !connectPw)} onClick={() => connectProvider(p)}>
+                {PROVIDER_NAMES[p]}
+              </button>
+            ))}
+          </div>
+          {connect.error && <p className="error"><Icon name="alert" size={20} />{connect.error}</p>}
         </section>
       )}
       {passwordLogins.length > 0 && (

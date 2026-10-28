@@ -3,7 +3,7 @@ import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
 import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, OwnLogin, UserSummary } from '../shared/types.js';
-import { authRouter, devLoginAllowed, enabledProviders, hashPassword, requireAuth, revokeSessions, verifyPassword } from './auth.js';
+import { authRouter, devLoginAllowed, enabledProviders, hashPassword, issueConnectTicket, reauthenticate, requireAuth, revokeSessions, verifyPassword } from './auth.js';
 import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
 import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
 import { db, ensureSchema } from './db.js';
@@ -335,6 +335,15 @@ app.post('/api/me/password', rateLimit('change-password', { perIp: 60, perUser: 
     'write',
   );
   await revokeSessions(res, me.id);
+  res.json({ ok: true });
+});
+
+// First step of connecting another provider account: the same proof as for deleting the account (password, or a recent
+// sign-in). The browser then goes to /api/auth/<provider>?connect=1, which spends the ticket this issues.
+app.post('/api/me/connect', rateLimit('connect', { perIp: 60, perUser: 10 }), async (req, res) => {
+  const auth = await reauthenticate(req, uid(res), 'connect the sign-in');
+  if (!auth.ok) return res.status(auth.status).json({ error: auth.error, code: auth.code });
+  await issueConnectTicket(res, uid(res));
   res.json({ ok: true });
 });
 
