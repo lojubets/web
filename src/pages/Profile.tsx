@@ -200,7 +200,7 @@ export default function Profile() {
                 <div className="item-main">
                   <strong className="item-title">{e.email}</strong>
                   <div className="item-tags">
-                    {e.primary && <span className="pill pill-cherry">Primary</span>}
+                    {e.primary && <span className="pill pill-cherry"><Icon name="star" size={14} />Primary</span>}
                     {e.verified ? <span className="pill pill-positive"><Icon name="check" size={14} />Verified</span> : <span className="pill">Not verified</span>}
                   </div>
                 </div>
