@@ -68,6 +68,23 @@ describe('deleting an account with nothing ongoing', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('counts the sign-in, not the last renewal, as "recent"', async () => {
+    const { SignJWT } = await import('jose');
+    const key = new TextEncoder().encode('test-secret');
+    const now = Math.floor(Date.now() / 1000);
+    const cookieFor = async (id: string, iat: number, auth: number) =>
+      `session=${await new SignJWT({ typ: 'session', ver: 0, auth }).setProtectedHeader({ alg: 'HS256' }).setSubject(id).setIssuedAt(iat).setExpirationTime(now + 3600).sign(key)}`;
+    const old = await user('Old');
+    // renewed a minute ago, but signed in two days ago: a kept-alive (possibly stolen) session
+    const res = await request(app).post('/api/me/deletion').set('Cookie', await cookieFor(old.id, now - 60, now - 2 * 86_400)).send({ confirm: 'DELETE' });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('reauth_required');
+    expect(await exists(old.id)).toBe(true);
+    // renewed long ago would not even be reachable; a sign-in a minute ago is fine
+    await request(app).post('/api/me/deletion').set('Cookie', await cookieFor(old.id, now - 60, now - 60)).send({ confirm: 'DELETE' }).expect(200);
+    expect(await exists(old.id)).toBe(false);
+  });
+
   it('removes every trace of the person', async () => {
     const ann = await user('Ann');
     const bob = await user('Bob');
