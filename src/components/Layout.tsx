@@ -12,7 +12,7 @@ export default function Layout({ locked }: { locked: boolean }) {
       <header className="masthead">
         <div className="masthead-inner">
           <img src="/glass-64.png" alt="" />
-          <span className="wordmark">LoJu<span>BETS</span></span>
+          <span className="wordmark">LoJuBets</span>
         </div>
       </header>
       <Rule />
