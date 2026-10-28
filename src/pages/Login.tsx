@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { AppConfig } from '../../shared/types';
-import { api } from '../api';
+import { api, safeNext } from '../api';
 import Wave from '../components/Wave';
 import { useAction, useFetch } from '../hooks';
 
@@ -9,7 +9,7 @@ const LABELS = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' } as c
 
 export default function Login() {
   const [params] = useSearchParams();
-  const next = params.get('next') ?? '/';
+  const next = safeNext(params.get('next'));
   const { data: config } = useFetch<AppConfig>('/config');
   const { busy, error, run } = useAction();
   const pw = useAction();
@@ -67,6 +67,10 @@ export default function Login() {
             ))}
           </section>
         )}
+
+        <p className="muted small center">
+          By signing up you agree to how we handle your data, described in our <Link to="/privacy">privacy policy</Link>.
+        </p>
 
         {config?.devLogin && (
           <form

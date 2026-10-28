@@ -10,6 +10,8 @@ if (isProd && !process.env.SESSION_SECRET) {
   throw new Error('SESSION_SECRET must be set in production');
 }
 
+if (isProd && process.env.SESSION_SECRET!.length < 32) console.warn('SESSION_SECRET is shorter than 32 characters; use a long random value (openssl rand -base64 48)');
+
 const databaseUrl = process.env.DATABASE_URL || 'file:local.db';
 const localDatabase = databaseUrl.startsWith('file:') || databaseUrl === ':memory:';
 
@@ -26,6 +28,9 @@ export function publicUrlProblem(appUrl: string, production: boolean): string | 
   );
 }
 
+// The built-in fallback secret is public, so it may only protect a throwaway local database.
+if (!process.env.SESSION_SECRET && !localDatabase) throw new Error('SESSION_SECRET must be set when DATABASE_URL points at a remote database');
+
 export const env = {
   isProd,
   databaseUrl,
@@ -34,6 +39,10 @@ export const env = {
   appUrl: defaultAppUrl(),
   // The dev login can sign in as any email, so against a remote database it must be asked for explicitly.
   devLogin: !isProd && (localDatabase ? process.env.DEV_LOGIN !== 'off' : process.env.DEV_LOGIN === 'on'),
+  // Where "I'm stuck deleting my account" messages go. Never shown on the site or returned from the API.
+  /** Public contact address shown on the privacy policy page; kept out of git. */
+  privacyContactEmail: process.env.PRIVACY_CONTACT_EMAIL || undefined,
+  supportEmail: process.env.SUPPORT_EMAIL || undefined,
   resendApiKey: process.env.RESEND_API_KEY,
   resendFrom: process.env.RESEND_FROM || 'LoJuBets <onboarding@resend.dev>',
 };

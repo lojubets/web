@@ -43,6 +43,12 @@ const schema = [
     user_id TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL
   )`,
+  // Fixed-window counters for login throttling; one row per key, shared by every serverless instance.
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS email_verifications (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL,
@@ -82,6 +88,17 @@ const schema = [
     created_at INTEGER NOT NULL,
     settled_at INTEGER
   )`,
+  // A user who is deleting their account asks the other bettor to cancel an ongoing bet. See docs/account-deletion.md.
+  `CREATE TABLE IF NOT EXISTS bet_cancel_requests (
+    bet_id TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    response TEXT NOT NULL DEFAULT 'pending',
+    responded_at INTEGER,
+    reminded_7_at INTEGER,
+    reminded_23_at INTEGER,
+    PRIMARY KEY (bet_id, requested_by)
+  )`,
   `CREATE TABLE IF NOT EXISTS bet_reminders (
     bet_id TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -97,6 +114,12 @@ async function migrate() {
   if (!cols.includes('settled_by')) await db.execute('ALTER TABLE bets ADD COLUMN settled_by TEXT');
   // What a pending proposal says: 'outcome' | 'not_happened' | 'tie' (older rows: inferred from outcome)
   if (!cols.includes('proposal')) await db.execute('ALTER TABLE bets ADD COLUMN proposal TEXT');
+  const userCols = (await db.execute('PRAGMA table_info(users)')).rows.map((r) => r.name);
+  // Account deletion: a pending request, and the marker on the placeholder that stands in for a deleted user
+  if (!userCols.includes('deletion_requested_at')) await db.execute('ALTER TABLE users ADD COLUMN deletion_requested_at INTEGER');
+  if (!userCols.includes('deleted_at')) await db.execute('ALTER TABLE users ADD COLUMN deleted_at INTEGER');
+  // Bumping this signs the account out everywhere: session tokens carry the version they were issued under.
+  if (!userCols.includes('session_version')) await db.execute('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
   // 'date' bets became 'instant' bets with day precision and no restrictions
   await db.execute(`UPDATE bets SET kind = 'instant', params = '{"precision":"day","allowPast":true,"minLeadMinutes":0}' WHERE kind = 'date'`);
   await db.execute(`UPDATE bets SET settled_by = 'outcome' WHERE status = 'settled' AND settled_by IS NULL`);

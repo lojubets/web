@@ -15,3 +15,6 @@ export async function api<T = unknown>(path: string, method = 'GET', body?: unkn
   if (!res.ok) throw new ApiError(data?.error ?? 'Something went wrong', res.status);
   return data as T;
 }
+
+/** A same-site path to go to after signing in. Anything else (other origins, `javascript:` URLs) becomes '/'. */
+export const safeNext = (next: string | null): string => (next && /^\/(?![/\\])/.test(next) ? next : '/');
