@@ -27,6 +27,8 @@ interface Provider {
   subjectOf?: (claims: JWTPayload) => string;
 }
 
+const PROVIDER_NAMES: Record<ProviderId, string> = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' };
+
 const MICROSOFT_CONSUMERS_TENANT = '9188040d-6c67-4c5c-b112-d4b9e8fb6d5f';
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -123,6 +125,7 @@ const cookieName = (n: string) => (env.isProd ? `__Host-${n}` : n);
 const SESSION_COOKIE = cookieName('session');
 const OAUTH_COOKIE = cookieName('oauth');
 const MERGE_COOKIE = cookieName('merge');
+const CONNECT_COOKIE = cookieName('connect');
 
 const cookieBase = { httpOnly: true, secure: env.isProd, path: '/' } as const;
 
@@ -190,6 +193,29 @@ export async function lastSignInAt(req: Request): Promise<number | null> {
   }
 }
 
+const REAUTH_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Proof that the person at the keyboard owns the account before something security-relevant: their password, or (for
+ * accounts that only sign in through a provider) a sign-in in the last few minutes. `action` completes the sentence
+ * "…then <action> within a few minutes".
+ */
+export async function reauthenticate(
+  req: Request,
+  userId: string,
+  action: string,
+): Promise<{ ok: true } | { ok: false; status: number; error: string; code?: string }> {
+  const logins = (await db.execute({ sql: `SELECT subject FROM identities WHERE user_id = ? AND provider = 'password'`, args: [userId] })).rows;
+  if (logins.length) {
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    for (const l of logins) if ((await verifyPassword(String(l.subject), password)) === userId) return { ok: true };
+    return { ok: false, status: 401, error: 'Wrong password' };
+  }
+  const issued = await lastSignInAt(req);
+  if (issued && Date.now() - issued <= REAUTH_WINDOW_MS) return { ok: true };
+  return { ok: false, status: 403, error: `For your security, sign out and sign in again, then ${action} within a few minutes.`, code: 'reauth_required' };
+}
+
 export const clearSessionCookie = (res: Response) => res.clearCookie(SESSION_COOKIE, { ...cookieBase, sameSite: 'lax' });
 
 export async function requireAuth(req: Request, res: Response, next: NextFunction) {
@@ -224,6 +250,25 @@ export async function readMergeTicket(req: Request): Promise<{ a: string; b: str
 
 export const clearMergeTicket = (res: Response) => res.clearCookie(MERGE_COOKIE, { ...cookieBase, sameSite: 'lax' });
 
+// ---------- connecting another sign-in ----------
+// Adding a login to the signed-in account needs the same proof as other security changes (see `reauthenticate`), which
+// yields this short-lived ticket. Starting a provider flow in connect mode spends it.
+
+export async function issueConnectTicket(res: Response, userId: string) {
+  const ticket = await sign('connect', { u: userId }, '10m');
+  res.cookie(CONNECT_COOKIE, ticket, { ...cookieBase, sameSite: 'lax', maxAge: 600_000 });
+}
+
+/** The account the ticket was issued to, or null. */
+async function readConnectTicket(req: Request): Promise<string | null> {
+  try {
+    const payload = await verify(req.cookies?.[CONNECT_COOKIE] ?? '', 'connect');
+    return typeof payload.u === 'string' ? payload.u : null;
+  } catch {
+    return null;
+  }
+}
+
 // ---------- users ----------
 
 /** Keeps the email a provider last shared for a login, which is what tells several logins of one provider apart. */
@@ -238,7 +283,7 @@ async function findOrCreateUser(opts: {
   emailVerified: boolean;
   name?: string | null;
   linkByEmail: boolean;
-}): Promise<{ userId: string; created: boolean }> {
+}): Promise<{ userId: string; created: boolean } | { clash: true }> {
   const existing = await db.execute({
     sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?',
     args: [opts.provider, opts.subject],
@@ -258,6 +303,12 @@ async function findOrCreateUser(opts: {
     if (byEmail.rows.length) userId = byEmail.rows[0].user_id as string;
   }
   if (!userId) {
+    // This provider's email can't be trusted to link to an account, yet another account has verified it. A second
+    // account on that address could never verify it (and so never be used), so refuse and point to "connect".
+    if (opts.email) {
+      const held = await db.execute({ sql: 'SELECT 1 FROM user_emails WHERE email = lower(?) AND verified = 1', args: [opts.email] });
+      if (held.rows.length) return { clash: true };
+    }
     userId = randomUUID();
     created = true;
     // No name from the provider means no display name: the user is shown by their email until they set one.
@@ -332,7 +383,7 @@ authRouter.post('/dev', async (req, res) => {
   const body = z.object({ name: z.string().default(''), email: z.email() }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'name and email required' });
   const { name, email } = body.data;
-  const { userId } = await findOrCreateUser({
+  const found = await findOrCreateUser({
     provider: 'dev',
     subject: email.toLowerCase(),
     email,
@@ -340,7 +391,8 @@ authRouter.post('/dev', async (req, res) => {
     name,
     linkByEmail: true,
   });
-  await startSession(res, userId);
+  if ('clash' in found) return res.status(409).json({ error: 'That email already belongs to another account' });
+  await startSession(res, found.userId);
   res.json({ ok: true });
 });
 
@@ -351,7 +403,9 @@ authRouter.post('/register', rateLimit('register', { perIp: 10, windowMs: 3_600_
   if (!body.success) return res.status(400).json({ error: 'Enter a valid email and a password of at least 8 characters' });
   const email = body.data.email.trim().toLowerCase();
   const taken = await db.execute({ sql: `SELECT 1 FROM identities WHERE provider = 'password' AND subject = ?`, args: [email] });
-  if (taken.rows.length) return res.status(409).json({ error: 'That email is already registered. Try signing in.' });
+  // An address another account has verified could never be verified here either, so the account would be unusable.
+  const held = await db.execute({ sql: 'SELECT 1 FROM user_emails WHERE email = ? AND verified = 1', args: [email] });
+  if (taken.rows.length || held.rows.length) return res.status(409).json({ error: 'That email is already registered. Try signing in the way you did before.' });
   // Emails are not verified for password accounts (no mail service required), so never link or match on them.
   const userId = randomUUID();
   await db.batch(
@@ -422,7 +476,17 @@ authRouter.get('/:provider', async (req, res) => {
     merge = (await readSessionUser(req)) ?? undefined;
     if (!merge) return res.redirect(`${env.appUrl}/login`);
   }
-  const flow = await sign('oauth', { state, nonce, next, ...(merge ? { merge } : {}) }, '10m');
+  // Connect mode: the user is signed in and adds this provider account as another way into the same account. It needs the
+  // ticket from `reauthenticate`, which is spent here; the account's id travels in the flow cookie for the same reason.
+  let connect: string | undefined;
+  if (req.query.connect) {
+    const ticket = await readConnectTicket(req);
+    const me = await readSessionUser(req);
+    res.clearCookie(CONNECT_COOKIE, { ...cookieBase, sameSite: 'lax' });
+    if (!me || ticket !== me) return res.redirect(`${env.appUrl}/profile?error=${encodeURIComponent('That took too long. Start connecting the sign-in again.')}`);
+    connect = me;
+  }
+  const flow = await sign('oauth', { state, nonce, next, ...(merge ? { merge } : {}), ...(connect ? { connect } : {}) }, '10m');
   // Apple posts back cross-site, so this cookie must be SameSite=None.
   res.cookie(OAUTH_COOKIE, flow, {
     ...cookieBase,
@@ -454,7 +518,7 @@ async function handleCallback(req: Request, res: Response) {
       console.warn('OAuth provider returned an error:', params.error);
       return fail('Sign-in was cancelled or failed');
     }
-    const flow = (await verify(req.cookies?.[OAUTH_COOKIE] ?? '', 'oauth')) as unknown as { state: string; nonce: string; next: string; merge?: string };
+    const flow = (await verify(req.cookies?.[OAUTH_COOKIE] ?? '', 'oauth')) as unknown as { state: string; nonce: string; next: string; merge?: string; connect?: string };
     res.clearCookie(OAUTH_COOKIE, { ...cookieBase, sameSite: providerId === 'apple' && env.isProd ? 'none' : 'lax' });
     if (!params.code || params.state !== flow.state) return fail('Sign-in expired, please try again');
 
@@ -492,6 +556,27 @@ async function handleCallback(req: Request, res: Response) {
       return back();
     }
 
+    if (flow.connect) {
+      // The proof of ownership is the account's own session (checked when the flow started) plus a successful login at the
+      // provider: the provider's email is not trusted or used. An identity that already belongs to someone is never taken over.
+      const back = (error?: string) => res.redirect(`${env.appUrl}/profile?${error ? `error=${encodeURIComponent(error)}` : 'connected=1'}`);
+      const owner = await db.execute({ sql: 'SELECT user_id FROM identities WHERE provider = ? AND subject = ?', args: [providerId, subject] });
+      if (owner.rows.length) {
+        if (owner.rows[0].user_id === flow.connect) {
+          await rememberAccount(providerId, subject, payload.email as string | undefined);
+          return back('That sign-in is already connected to your account.');
+        }
+        return back('That sign-in already belongs to another LoJuBets account. Sign in to that account and merge the two instead.');
+      }
+      const me = await db.execute({ sql: 'SELECT 1 FROM users WHERE id = ?', args: [flow.connect] });
+      if (!me.rows.length) return back('Your account is gone.');
+      await db.execute({
+        sql: 'INSERT INTO identities (provider, subject, user_id, account) VALUES (?, ?, ?, ?)',
+        args: [providerId, subject, flow.connect, (payload.email as string | undefined) ?? null],
+      });
+      return back();
+    }
+
     // Apple only sends the user's name on the very first authorisation, as a form field.
     let appleName: string | undefined;
     if (providerId === 'apple' && params.user) {
@@ -504,7 +589,7 @@ async function handleCallback(req: Request, res: Response) {
     // Every account has an email address: it is how the other bettors' requests and our notices reach people.
     if (!email) return fail("That sign-in didn't share an email address with us, and we need one to create your account.");
     const trusted = p.trustsEmail(payload);
-    const { userId, created } = await findOrCreateUser({
+    const found = await findOrCreateUser({
       provider: providerId,
       subject,
       email,
@@ -512,6 +597,8 @@ async function handleCallback(req: Request, res: Response) {
       name: appleName || (payload.name as string | undefined),
       linkByEmail: trusted,
     });
+    if ('clash' in found) return fail(`An account with that email address already exists. Sign in the way you did before, then connect ${PROVIDER_NAMES[providerId]} from your profile page.`);
+    const { userId, created } = found;
     await startSession(res, userId);
     // Providers whose email we can't trust (Microsoft) get a confirmation link on first sign-in.
     if (created && email && !trusted) await sendVerification(userId).catch(() => undefined);

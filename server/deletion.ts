@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
-import { clearSessionCookie, lastSignInAt, verifyPassword } from './auth.js';
+import { clearSessionCookie, reauthenticate } from './auth.js';
 import { db } from './db.js';
 import { sendMail } from './email.js';
 import { env } from './env.js';
@@ -17,7 +17,6 @@ import { hit, rateLimit } from './rateLimit.js';
 
 export const LAPSE_DAYS = 30;
 const DAY_MS = 86_400_000;
-const REAUTH_WINDOW_MS = 10 * 60_000;
 const ONGOING = `('awaiting_guess', 'active', 'awaiting_confirmation')`;
 
 type Row = Record<string, any>;
@@ -229,23 +228,10 @@ deletionRouter.get('/me/deletion', async (_req, res) => {
   res.json({ requestedAt: u?.deletion_requested_at ?? null, lapseDays: LAPSE_DAYS, ongoing });
 });
 
-/** Proof that the person at the keyboard owns the account: their password, or (for sign-in providers) a sign-in in the last few minutes. */
-async function reauthenticated(req: Request, res: Response): Promise<{ ok: true } | { ok: false; status: number; error: string; code?: string }> {
-  const logins = (await db.execute({ sql: `SELECT subject FROM identities WHERE user_id = ? AND provider = 'password'`, args: [uid(res)] })).rows as Row[];
-  if (logins.length) {
-    const password = typeof req.body?.password === 'string' ? req.body.password : '';
-    for (const l of logins) if ((await verifyPassword(l.subject, password)) === uid(res)) return { ok: true };
-    return { ok: false, status: 401, error: 'Wrong password' };
-  }
-  const issued = await lastSignInAt(req);
-  if (issued && Date.now() - issued <= REAUTH_WINDOW_MS) return { ok: true };
-  return { ok: false, status: 403, error: 'For your security, sign out and sign in again, then delete your account within a few minutes.', code: 'reauth_required' };
-}
-
 // The password check below is a password oracle for whoever holds the session, so it is throttled like the login.
 deletionRouter.post('/me/deletion', rateLimit('delete', { perIp: 60, perUser: 10 }), async (req, res) => {
   if (z.literal('DELETE').safeParse(req.body?.confirm).success === false) return res.status(400).json({ error: 'Type DELETE to confirm' });
-  const auth = await reauthenticated(req, res);
+  const auth = await reauthenticate(req, uid(res), 'delete your account');
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error, code: auth.code });
   const deleted = await requestDeletion(uid(res));
   if (deleted) clearSessionCookie(res);
