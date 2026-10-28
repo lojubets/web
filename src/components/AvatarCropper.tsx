@@ -18,6 +18,7 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
       root.style.touchAction = before;
     };
   }, []);
+  const view = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -50,6 +51,44 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
     setZoom(next);
     setPos(fit({ x: c - (c - pos.x) * ratio, y: c - (c - pos.y) * ratio }, base * next));
   };
+
+  // Trackpads don't send pointer events for a pinch: Chrome sends ctrl+wheel, Safari its own gesture events.
+  // Both need non-passive native listeners to keep the page itself from zooming.
+  const zoomBy = useRef(changeZoom);
+  zoomBy.current = changeZoom;
+  const zoomNow = useRef(zoom);
+  zoomNow.current = zoom;
+  useEffect(() => {
+    const inside = (t: EventTarget | null) => t instanceof Node && !!view.current?.contains(t);
+    let start = 1;
+    const wheel = (e: WheelEvent) => {
+      if (!inside(e.target)) {
+        if (e.ctrlKey) e.preventDefault();
+        return;
+      }
+      e.preventDefault();
+      zoomBy.current(zoomNow.current * (e.ctrlKey ? Math.exp(-e.deltaY * 0.01) : e.deltaY < 0 ? 1.08 : 1 / 1.08));
+    };
+    const gestureStart = (e: Event) => {
+      e.preventDefault();
+      start = zoomNow.current;
+    };
+    const gestureChange = (e: Event) => {
+      e.preventDefault();
+      if (inside(e.target)) zoomBy.current(start * (e as unknown as { scale: number }).scale);
+    };
+    const gestureEnd = (e: Event) => e.preventDefault();
+    document.addEventListener('wheel', wheel, { passive: false });
+    document.addEventListener('gesturestart', gestureStart);
+    document.addEventListener('gesturechange', gestureChange);
+    document.addEventListener('gestureend', gestureEnd);
+    return () => {
+      document.removeEventListener('wheel', wheel);
+      document.removeEventListener('gesturestart', gestureStart);
+      document.removeEventListener('gesturechange', gestureChange);
+      document.removeEventListener('gestureend', gestureEnd);
+    };
+  }, []);
 
   /** Re-bases the gesture on the pointers that are down now, so lifting or adding a finger doesn't make the picture jump. */
   const beginGesture = (view: HTMLElement) => {
@@ -97,6 +136,7 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
       <h2>Adjust your picture</h2>
       <span className="muted">Drag to move, and pinch or use the slider to zoom so your face fits your face in the circle.</span>
       <div
+        ref={view}
         className="cropper-view"
         style={{ width: VIEW, height: VIEW }}
         tabIndex={0}
@@ -128,7 +168,6 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
         }}
         onPointerUp={endPointer}
         onPointerCancel={endPointer}
-        onWheel={(e) => changeZoom(zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08))}
       >
         <img
           ref={img}
