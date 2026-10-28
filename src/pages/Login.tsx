@@ -52,6 +52,7 @@ export default function Login() {
           />
           <button className="btn" disabled={pw.busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
           {pw.error && <p className="error">{pw.error}</p>}
+          {mode === 'login' && <Link className="link" to="/forgot-password">Forgot your password?</Link>}
           <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
             {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
           </button>
