@@ -260,23 +260,25 @@ app.delete('/api/me/emails/:email', async (req, res) => {
   res.json({ ok: true });
 });
 
-// Change the password of one of the account's password logins. Needs the current password (a stolen session alone
-// can't take the account over), signs the account out everywhere else, and voids any pending reset links.
+// Change the account's password. Each password login (email) has its own stored copy of the hash, and an account that
+// came out of a merge has several, so every copy is replaced and they keep working as one password. Needs the current
+// password (a stolen session alone can't take the account over), signs the account out everywhere else, and voids any
+// pending reset links.
 app.post('/api/me/password', rateLimit('change-password', { perIp: 60, perUser: 10 }), async (req, res) => {
   const me = (await getUser(uid(res)))!;
-  const body = z
-    .object({ email: z.string().optional(), currentPassword: z.string().max(200), newPassword: z.string().min(8).max(200) })
-    .safeParse(req.body);
+  const body = z.object({ currentPassword: z.string().max(200), newPassword: z.string().min(8).max(200) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Choose a new password of at least 8 characters' });
-  const passwordLogins = me.logins.filter((l) => l.provider === 'password');
-  const login = body.data.email ? passwordLogins.find((l) => l.subject === body.data.email!.trim().toLowerCase()) : passwordLogins.length === 1 ? passwordLogins[0] : undefined;
-  if (!login) return res.status(400).json({ error: passwordLogins.length ? 'Choose which login to change the password of' : 'Your account has no password login' });
-  if ((await verifyPassword(login.subject, body.data.currentPassword)) !== me.id) return res.status(403).json({ error: 'Your current password is wrong' });
+  const subjects = me.logins.filter((l) => l.provider === 'password').map((l) => l.subject);
+  if (!subjects.length) return res.status(400).json({ error: 'Your account has no password login' });
+  let knowsCurrent = false;
+  for (const subject of subjects) if ((await verifyPassword(subject, body.data.currentPassword)) === me.id) knowsCurrent = true;
+  if (!knowsCurrent) return res.status(403).json({ error: 'Your current password is wrong' });
+  const hash = await hashPassword(body.data.newPassword);
   await db.batch(
-    [
-      { sql: 'UPDATE password_credentials SET password_hash = ? WHERE subject = ?', args: [await hashPassword(body.data.newPassword), login.subject] },
-      { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [login.subject] },
-    ],
+    subjects.flatMap((subject) => [
+      { sql: 'UPDATE password_credentials SET password_hash = ? WHERE subject = ?', args: [hash, subject] },
+      { sql: 'DELETE FROM password_resets WHERE subject = ?', args: [subject] },
+    ]),
     'write',
   );
   await revokeSessions(res, me.id);

@@ -922,6 +922,19 @@ describe('changing the password', () => {
     await request(app).post('/api/auth/login').send({ email, password: NEW }).expect(200);
   });
 
+  it('on a merged account, replaces the password of every email, not just one', async () => {
+    const a = await verifiedUser('merged.one@example.com');
+    await verifiedUser('merged.two@example.com');
+    await a.post('/api/merge/password').send({ email: 'merged.two@example.com', password: 'correct horse' }).expect(200);
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none', newPassword: 'merged passphrase' }).expect(200);
+
+    await change(a, { currentPassword: 'merged passphrase', newPassword: NEW }).expect(200);
+    for (const email of ['merged.one@example.com', 'merged.two@example.com']) {
+      await request(app).post('/api/auth/login').send({ email, password: NEW }).expect(200);
+      await request(app).post('/api/auth/login').send({ email, password: 'merged passphrase' }).expect(401);
+    }
+  });
+
   it('is refused without a session, and for accounts with no password login', async () => {
     await change(request.agent(app), { currentPassword: 'x', newPassword: NEW }).expect(401);
     const dev = await login('Nopass');
