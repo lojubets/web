@@ -134,6 +134,8 @@
   position: relative;
   z-index: 1;
   height: 1.5rem;
+  /* Overlap the masthead by a pixel so fractional layout can't leave a seam between the two fills */
+  margin-top: -1px;
   margin-bottom: 0.5rem;
 }
 .rule svg {
