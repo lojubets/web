@@ -209,7 +209,7 @@ export default function Profile() {
           <h2>Email addresses</h2>
           {me.emails.map((e) => (
             <div className="card stack" key={e.email}>
-              <div className="item">
+              <div className="item item-split">
                 <div className="item-main">
                   <strong className="item-title">{e.email}</strong>
                   <div className="item-tags">
