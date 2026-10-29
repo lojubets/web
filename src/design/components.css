@@ -78,6 +78,29 @@
   display: flex;
   gap: var(--space-2);
 }
+/* On narrow screens the title takes the full width and tags and actions share the row beneath it. */
+@media (max-width: 30rem) {
+  .item-split {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'title title' 'tags actions';
+    align-items: end;
+    row-gap: var(--space-2);
+  }
+  .item-split .item-main {
+    display: contents;
+  }
+  .item-split .item-title {
+    grid-area: title;
+  }
+  .item-split .item-tags {
+    grid-area: tags;
+    align-self: center;
+  }
+  .item-split .item-actions {
+    grid-area: actions;
+  }
+}
 .btn-icon {
   flex: none;
   width: var(--tap);
