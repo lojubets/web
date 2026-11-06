@@ -65,6 +65,15 @@ There are two ways to run the app on your machine. Each reads its own dotenv fil
 
 Both commands first stop any dev servers left over from an earlier run of this project (matched by command *and* folder, so other projects are untouched), so you can just run them again after a crash or a closed terminal. If something unrelated is holding port 3001 or 5173, they say so and don't start. Restart after editing a dotenv file. Variables already set in your shell win over the file. Both files are git-ignored.
 
+### UI screenshots
+
+```bash
+npx playwright install chromium   # once
+npm run screenshots
+```
+
+Starts the API and web app on spare ports (3101 and 5273, override with `SCREENSHOTS_API_PORT` / `SCREENSHOTS_WEB_PORT`) with a throwaway database and the dev login, then drives headless Chromium through three users (Alice, Bob, Cara) who become friends and set up bets in every state. Mobile and desktop screenshots are written to `screenshots/` (git-ignored); open `screenshots/index.html` straight from disk to browse them. Add scenarios in `scripts/screenshots.mjs`.
+
 ## Production
 
 Production does **not** use a dotenv file. Vercel stores the variables you configure and hands them to the function as ordinary environment variables (`process.env`), which is where the app reads everything. Set them in the Vercel dashboard (Project → Settings → Environment Variables) or with `vercel env add <NAME> production`, then redeploy.

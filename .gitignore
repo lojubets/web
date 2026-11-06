@@ -1,5 +1,6 @@
-node_modules
-dist
+node_modules/
+screenshots/
+dist/
 .env
 .env.*
 !.env.*.example
