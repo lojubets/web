@@ -378,7 +378,7 @@ describe('group bets', () => {
     expect(proposed.settleDeadline - t0).toBeGreaterThanOrEqual(7 * DAY);
     // The three who would pay are told, with the deadline
     expect(mails.map((m) => m.to).sort()).toEqual(['vera@example.com', 'xavi@example.com', 'zed@example.com']);
-    expect(mails[0].text).toMatch(/counts as accepted/);
+    expect(mails[0].text).toMatch(/counts as confirmed/);
 
     await people.Vera.a.post(`/api/bets/${id}/confirm`).expect(200);
     vi.useFakeTimers({ toFake: ['Date'] });

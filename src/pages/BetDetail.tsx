@@ -93,7 +93,7 @@ export default function BetDetail() {
       {b.participants.filter((p) => p.status === 'joined' && !p.isMe && p.id !== b.outcomeProposedBy).map((p) => (
         <li key={p.id} className={p.accepted ? 'ok' : p.mustAccept ? 'pending' : 'muted'}>
           <Icon name={p.accepted ? 'check' : p.mustAccept ? 'clock' : 'trophy'} size={16} />
-          {p.name}: {p.accepted ? 'accepted' : p.mustAccept ? 'not answered yet' : 'wins outright, so not asked'}
+          {p.name}: {p.accepted ? 'confirmed' : p.mustAccept ? 'not answered yet' : 'wins outright, so not asked'}
         </li>
       ))}
     </ul>
@@ -101,7 +101,7 @@ export default function BetDetail() {
 
   const deadlineNote = b.settleDeadline && waitingOn.length > 0 && (
     <p className="muted small">
-      If {names(waitingOn)} {waitingOn.length === 1 && !waitingOn[0].isMe ? "hasn't" : "haven't"} answered by {when(b.settleDeadline)}, that counts as accepting.
+      If {names(waitingOn)} {waitingOn.length === 1 && !waitingOn[0].isMe ? "hasn't" : "haven't"} answered by {when(b.settleDeadline)}, that counts as confirming.
     </p>
   );
 
@@ -263,13 +263,13 @@ export default function BetDetail() {
           {deadlineNote}
           {b.outcomeProposedByMe ? (
             <>
-              <p className="muted">Waiting for <Names of={waitingOn} /> to {b.proposalKind === 'outcome' ? 'accept' : 'agree'}.</p>
+              <p className="muted">Waiting for <Names of={waitingOn} /> to {b.proposalKind === 'outcome' ? 'confirm the result' : 'agree'}.</p>
               {withdraw}
             </>
           ) : b.iMustAccept && !b.iAccepted ? (
             <>
               <button className="btn" disabled={act.busy} onClick={() => post('/confirm', { proposal: b.proposalId })}>
-                {b.proposalKind === 'tie' ? 'Yes, call it off' : b.proposalKind === 'not_happened' ? "Yes, it hasn't happened" : 'Accept the result'}
+                {b.proposalKind === 'tie' ? 'Yes, call it off' : b.proposalKind === 'not_happened' ? "Yes, it hasn't happened" : 'Confirm result'}
               </button>
               <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>
                 {b.proposalKind === 'tie' ? 'No, keep it going' : b.proposalKind === 'not_happened' ? 'No, it has happened' : "That's not right"}
@@ -279,7 +279,7 @@ export default function BetDetail() {
           ) : (
             <>
               <p className="muted">
-                {b.iAccepted ? 'You accepted. ' : iWon ? 'You win under this result, so your acceptance isn\'t needed. ' : ''}
+                {b.iAccepted ? 'You confirmed. ' : iWon ? 'You win under this result, so your confirmation isn\'t needed. ' : ''}
                 Waiting for <Names of={waitingOn} />.{b.iAccepted && ' Changed your mind? You can still reject it.'}
               </p>
               <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>

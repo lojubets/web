@@ -91,10 +91,10 @@ export default function NewBet() {
             <select value={settleDays ?? ''} onChange={(e) => setSettleDays(e.target.value === '' ? null : Number(e.target.value))}>
               <option value="">Wait for them, however long it takes</option>
               {Array.from({ length: MAX_SETTLE_DAYS }, (_, i) => i + 1).map((d) => (
-                <option key={d} value={d}>Count their silence as acceptance after {d} {d === 1 ? 'day' : 'days'}</option>
+                <option key={d} value={d}>Count their silence as confirmation after {d} {d === 1 ? 'day' : 'days'}</option>
               ))}
             </select>
-            <small>A result settles once everyone who would pay under it has accepted. With a deadline, players are emailed when a result is proposed and again before it passes.</small>
+            <small>A result settles once everyone except the proposer and a sole winner has confirmed it. With a deadline, players are emailed when a result is proposed and again before it passes.</small>
           </label>
         )}
         {error && <p className="error">{error}</p>}

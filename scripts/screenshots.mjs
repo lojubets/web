@@ -201,7 +201,7 @@ async function scenarios() {
     as: 'alice',
     url: '/bets/new',
     story: `${FORM} She ticks Cara as well as Bob, which makes it a group bet, and picks a 7-day deadline for players who never answer a proposed result.`,
-    expect: 'Both Bob Berg and Cara Cortez ticked, the hint "A 3-way bet. Everyone who doesn\'t win owes each winner 1 GT; a sole winner collects 2 GTs. Joining makes the players friends with each other.", the guess field labelled "hidden until the bet starts", a new "If someone never answers a proposed result" select showing "Count their silence as acceptance after 7 days" with an explanation, and the button "Propose 3-way bet".',
+    expect: 'Both Bob Berg and Cara Cortez ticked, the hint "A 3-way bet. Everyone who doesn\'t win owes each winner 1 GT; a sole winner collects 2 GTs. Joining makes the players friends with each other.", the guess field labelled "hidden until the bet starts", a new "If someone never answers a proposed result" select showing "Count their silence as confirmation after 7 days" with an explanation, and the button "Propose 3-way bet".',
     act: async (page) => {
       await page.getByRole('checkbox', { name: 'Cara Cortez' }).check();
       await page.getByLabel(/If someone never answers/).selectOption('7');
@@ -250,18 +250,18 @@ async function scenarios() {
   const HISTORY =
     'Alice and Bob: (1) Alice bet Bob on the length of the hockey final, guessing 2:15; Bob guessed 3 hours; Alice proposed the result 2:30 and Bob confirmed it, so Alice won and Bob owes her 1 GT. ' +
     '(2) Alice bet on whether Kane wins the Ballon d’Or (she said yes, Bob said no); Bob, being in the red, went all-in on it. ' +
-    '(3) Alice bet on what happens to the project manager (she said "Gets fired", Bob "Quits") and proposed the outcome "Gets fired", which Bob has not accepted yet. ' +
+    '(3) Alice bet on what happens to the project manager (she said "Gets fired", Bob "Quits") and proposed the outcome "Gets fired", which Bob has not confirmed yet. ' +
     '(4) Alice started a bet about the sauna cooler, guessing 48; Bob has not guessed. ' +
-    'Alice and Cara: (5) both guessed on the coach’s first words, and Alice proposed the result "We go again, lads" and that she herself was right, awaiting Cara’s acceptance. ' +
+    'Alice and Cara: (5) both guessed on the coach’s first words, and Alice proposed the result "We go again, lads" and that she herself was right, awaiting Cara’s confirmation. ' +
     '(6) both guessed on the new office opening date (Alice 20 days ahead, Cara 60 days ahead). ' +
     '(7) Cara started a bet about the midsummer temperature without a guess of her own; Alice has not guessed. ' +
     '(8) both guessed 3 goals in the opening match and Cara proposed calling it a tie, awaiting Alice. ' +
     '(9) Alice started and then cancelled a snow-in-June bet, which is not shown anywhere. Dan is friends with nobody yet and has no bets.';
 
   console.log('Lists');
-  await shot({ group: 'Bets', title: 'Bets list', as: 'alice', url: '/', story: HISTORY, expect: 'Alice’s Bets tab. "Your move": the opening-match tie ("Agree to call it off?") and the midsummer bet ("Your guess is needed"). "In play": the office opening, the coach bet ("Waiting for Cara Cortez to accept"), the sauna cooler ("Waiting for Bob Berg to guess"), the project manager ("Waiting for Bob Berg to accept") and the all-in Kane bet. "Settled": the hockey bet. The cancelled bet is absent.' });
-  await shot({ group: 'Bets', title: 'Bets list', as: 'bob', url: '/', story: HISTORY, expect: 'Bob’s Bets tab. "Your move": the sauna cooler ("Your guess is needed") and the project manager ("Alice Aaltonen proposed a result: accept?"). "In play": the Kane bet with an "All-in 1 GT" tag. "Settled": the hockey bet, "Alice Aaltonen won". The Bets tab badge shows 2. Bob has no bets with Cara.' });
-  await shot({ group: 'Bets', title: 'Bets list', as: 'cara', url: '/', story: HISTORY, expect: 'Cara’s Bets tab. "Your move": the midsummer bet ("Your guess is needed") and the coach bet ("Alice Aaltonen proposed a result: accept?"). "In play": the opening-match tie ("Waiting for Alice Aaltonen to agree to a tie") and the office opening. The Bets tab badge shows 2. She has no bets with Bob.' });
+  await shot({ group: 'Bets', title: 'Bets list', as: 'alice', url: '/', story: HISTORY, expect: 'Alice’s Bets tab. "Your move": the opening-match tie ("Agree to call it off?") and the midsummer bet ("Your guess is needed"). "In play": the office opening, the coach bet ("Waiting for Cara Cortez to confirm"), the sauna cooler ("Waiting for Bob Berg to guess"), the project manager ("Waiting for Bob Berg to confirm") and the all-in Kane bet. "Settled": the hockey bet. The cancelled bet is absent.' });
+  await shot({ group: 'Bets', title: 'Bets list', as: 'bob', url: '/', story: HISTORY, expect: 'Bob’s Bets tab. "Your move": the sauna cooler ("Your guess is needed") and the project manager ("Alice Aaltonen proposed a result: confirm?"). "In play": the Kane bet with an "All-in 1 GT" tag. "Settled": the hockey bet, "Alice Aaltonen won". The Bets tab badge shows 2. Bob has no bets with Cara.' });
+  await shot({ group: 'Bets', title: 'Bets list', as: 'cara', url: '/', story: HISTORY, expect: 'Cara’s Bets tab. "Your move": the midsummer bet ("Your guess is needed") and the coach bet ("Alice Aaltonen proposed a result: confirm?"). "In play": the opening-match tie ("Waiting for Alice Aaltonen to agree to a tie") and the office opening. The Bets tab badge shows 2. She has no bets with Bob.' });
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'alice', url: '/friends', story: HISTORY, expect: 'Alice’s Friends tab: "Bob Berg owes you 1 GT" with 3 open bets, and "You and Cara Cortez are even" with 4 open bets. The Bets tab badge shows Alice’s pending actions.' });
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'bob', url: '/friends', story: HISTORY, expect: 'Bob’s Friends tab with only Alice: "You owe Alice Aaltonen 1 GT", 3 open bets.' });
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'cara', url: '/friends', story: HISTORY, expect: 'Cara’s Friends tab with only Alice: "You and Alice Aaltonen are even", 4 open bets.' });
@@ -286,7 +286,7 @@ async function scenarios() {
       bet: choice,
       title: 'Outcome proposed, waiting for the other player to confirm',
       story: 'Alice and Bob bet on what happens to the project manager (Quits / Gets fired / Gets reassigned). Alice guessed "Gets fired", Bob guessed "Quits". Alice has proposed the outcome "Gets fired"; Bob has not responded.',
-      expect: { alice: 'Both picks (hers marked "Wins"), "Proposed outcome: Gets fired", "You say the result was Gets fired, which means you win.", "Waiting for Bob Berg to accept." and a "Withdraw my proposal" button.', bob: 'Both picks, the proposed outcome, "Alice Aaltonen says the result was Gets fired, which means Alice Aaltonen wins." with "Accept the result", "That’s not right" and "No, I say…".' },
+      expect: { alice: 'Both picks (hers marked "Wins"), "Proposed outcome: Gets fired", "You say the result was Gets fired, which means you win.", "Waiting for Bob Berg to confirm the result." and a "Withdraw my proposal" button.', bob: 'Both picks, the proposed outcome, "Alice Aaltonen says the result was Gets fired, which means Alice Aaltonen wins." with "Confirm result", "That’s not right" and "No, I say…".' },
     },
     {
       bet: waiting,
@@ -298,7 +298,7 @@ async function scenarios() {
       bet: freeform,
       title: 'Freeform outcome proposed with a verdict',
       story: 'Alice and Cara bet on what the coach says first after the final whistle. Alice guessed "We go again", Cara guessed "Great fighting spirit". Alice proposed that the coach said "We go again, lads" and ticked herself as the one who was right. Cara has not responded.',
-      expect: { alice: 'Both guesses (hers marked "Wins"), "Proposed outcome: \"We go again, lads\"", "You say the result was …, which means you win.", "Waiting for Cara Cortez to accept." and "Withdraw my proposal".', cara: 'Both guesses (Alice’s marked "Wins"), the proposed outcome, "Alice Aaltonen says the result was …, which means Alice Aaltonen wins." with "Accept the result", "That’s not right" and "No, I say…".' },
+      expect: { alice: 'Both guesses (hers marked "Wins"), "Proposed outcome: \"We go again, lads\"", "You say the result was …, which means you win.", "Waiting for Cara Cortez to confirm the result." and "Withdraw my proposal".', cara: 'Both guesses (Alice’s marked "Wins"), the proposed outcome, "Alice Aaltonen says the result was …, which means Alice Aaltonen wins." with "Confirm result", "That’s not right" and "No, I say…".' },
     },
     {
       bet: future,
@@ -340,7 +340,7 @@ async function scenarios() {
     {
       bet: freeform,
       title: 'Settled: freeform, Alice was right',
-      story: 'Continuing the coach’s-words bet: Cara accepted Alice’s verdict that Alice’s own answer was right.',
+      story: 'Continuing the coach’s-words bet: Cara confirmed Alice’s verdict that Alice’s own answer was right.',
       expect: { alice: 'Both guesses with hers marked "Won", Cara’s row marked "owes you 1 GT", the outcome and "You won 1 GT! Cara Cortez owes you."', cara: 'Both guesses with Alice’s marked "Won" and "you owe 1 GT", the outcome and "Alice Aaltonen won. You owe 1 GT."' },
     },
     {
@@ -355,7 +355,7 @@ async function scenarios() {
       await shot({ group: 'Bet details', title: d.title, as: p, url: `/bets/${d.bet.id}`, story: d.story, expect: d.expect[p] });
     }
   }
-  const AFTER = `${HISTORY} Afterwards Bob accepted the result of bet 3, Cara accepted the result of bet 5 and Alice agreed to the tie in bet 8, so those three are now settled.`;
+  const AFTER = `${HISTORY} Afterwards Bob confirmed the result of bet 3, Cara confirmed the result of bet 5 and Alice agreed to the tie in bet 8, so those three are now settled.`;
   await shot({ group: 'Bets', title: 'Bets list, after settling', as: 'alice', url: '/', story: AFTER, expect: 'Alice’s Bets tab: "Your move" now only has the midsummer bet; "In play" has the office opening, sauna cooler and Kane bet; "Settled" gains the opening match ("Called off by agreement"), the coach bet ("You won") and the project manager ("You won"), above the hockey bet.' });
   await shot({ group: 'Bets', title: 'Bets list, after settling', as: 'bob', url: '/', story: AFTER, expect: 'Bob’s Bets tab: "Your move" holds only the sauna cooler; "In play" the Kane bet; "Settled" now has the project manager ("Alice Aaltonen won") above the hockey bet. The Bets tab badge shows 1.' });
 
@@ -384,7 +384,7 @@ async function scenarios() {
   await guess('dan', groupSettled, '9');
   await call('alice', 'POST', `/bets/${groupSettled.id}/propose`, { outcome: '5' }); // Bob and Cara win jointly: everyone but Alice is asked
   for (const p of ['bob', 'cara', 'dan']) await call(p, 'POST', `/bets/${groupSettled.id}/confirm`);
-  const SETTLED = 'All four guessed goals in the opening match: Alice 1, Bob 4, Cara 6, Dan 9. Alice proposed the result 5, which makes Bob and Cara joint winners; Bob, Cara and Dan accepted, so it settled. Alice and Dan each owe Bob and Cara 1 GT.';
+  const SETTLED = 'All four guessed goals in the opening match: Alice 1, Bob 4, Cara 6, Dan 9. Alice proposed the result 5, which makes Bob and Cara joint winners; Bob, Cara and Dan confirmed, so it settled. Alice and Dan each owe Bob and Cara 1 GT.';
 
   const groupPending = await groupBet('alice', ['bob', 'cara', 'dan'], 'How many lonkeros do we get through at midsummer?', 'number', num, '12', 3);
   await guess('bob', groupPending, '20');
@@ -392,7 +392,7 @@ async function scenarios() {
   await guess('dan', groupPending, '30');
   await call('bob', 'POST', `/bets/${groupPending.id}/propose`, { outcome: '21' }); // Bob wins alone: Alice, Cara and Dan are asked
   await call('cara', 'POST', `/bets/${groupPending.id}/confirm`);
-  const PENDING = 'All four guessed lonkeros at midsummer: Alice 12, Bob 20, Cara 24, Dan 30, in a bet with a 3-day deadline. Bob proposed the result 21, under which he wins alone, so Alice, Cara and Dan are asked to accept. Cara has accepted; Alice and Dan have not answered.';
+  const PENDING = 'All four guessed lonkeros at midsummer: Alice 12, Bob 20, Cara 24, Dan 30, in a bet with a 3-day deadline. Bob proposed the result 21, under which he wins alone, so Alice, Cara and Dan are asked to confirm. Cara has confirmed; Alice and Dan have not answered.';
 
   const groupDetails = [
     {
@@ -416,12 +416,12 @@ async function scenarios() {
     },
     {
       bet: groupPending,
-      title: 'Result proposed: everyone but the proposer and the sole winner is asked',
+      title: 'Result proposed: everyone but the proposer and the sole winner confirms',
       story: PENDING,
       expect: {
-        bob: 'Four rows with guesses, his own highlighted and marked "Wins", "Proposed outcome 21", "You say the result was 21, which means you win.", a list: Alice "not answered yet", Cara "accepted", Dan "not answered yet", the note that silence by the deadline counts as accepting, "Waiting for Alice Aaltonen and Dan Dubois to accept." and "Withdraw my proposal".',
-        alice: 'The same rows and list, "Bob Berg says the result was 21, which means Bob Berg wins.", the deadline note, and the buttons "Accept the result", "That’s not right" and "No, I say…".',
-        cara: 'The same rows, the list without herself (Alice and Dan "not answered yet"), the deadline note, "You accepted. Waiting for Alice Aaltonen and Dan Dubois. Changed your mind? You can still reject it." and a "That’s not right" button.',
+        bob: 'Four rows with guesses, his own highlighted and marked "Wins", "Proposed outcome 21", "You say the result was 21, which means you win.", a list: Alice "not answered yet", Cara "confirmed", Dan "not answered yet", the note that silence by the deadline counts as confirming, "Waiting for Alice Aaltonen and Dan Dubois to confirm the result." and "Withdraw my proposal".',
+        alice: 'The same rows and list, "Bob Berg says the result was 21, which means Bob Berg wins.", the deadline note, and the buttons "Confirm result", "That’s not right" and "No, I say…".',
+        cara: 'The same rows, the list without herself (Alice and Dan "not answered yet"), the deadline note, "You confirmed. Waiting for Alice Aaltonen and Dan Dubois. Changed your mind? You can still reject it." and a "That’s not right" button.',
       },
     },
     {
@@ -440,7 +440,7 @@ async function scenarios() {
     }
   }
   const GROUPS = `${INVITING} ${ACTIVE} ${SETTLED} ${PENDING}`;
-  await shot({ group: 'Group bets', title: 'Bets list with group bets', as: 'dan', url: '/', story: GROUPS, expect: 'Dan’s Bets tab, each card with a stack of three small avatars and "with Alice Aaltonen, Bob Berg and Cara Cortez". "Your move": the midsummer lonkeros bet ("Bob Berg proposed a result: accept?", with "Your move" and "Settles in … d" tags) and the medals bet ("Your guess is needed"). "Settled": the opening match ("Bob Berg and Cara Cortez won · 5"). The sauna bet he declined is absent.' });
+  await shot({ group: 'Group bets', title: 'Bets list with group bets', as: 'dan', url: '/', story: GROUPS, expect: 'Dan’s Bets tab, each card with a stack of three small avatars and "with Alice Aaltonen, Bob Berg and Cara Cortez". "Your move": the midsummer lonkeros bet ("Bob Berg proposed a result: confirm?", with "Your move" and "Settles in … d" tags) and the medals bet ("Your guess is needed"). "Settled": the opening match ("Bob Berg and Cara Cortez won · 5"). The sauna bet he declined is absent.' });
   await shot({ group: 'Group bets', title: 'Friends made through a group bet', as: 'dan', url: '/friends', story: GROUPS, expect: 'Dan’s Friends tab listing Alice Aaltonen ("You and Alice Aaltonen are even"), Bob Berg and Cara Cortez ("You owe … 1 GT" each), each with "2 open" bets. Bob and Cara became his friends when the opening-match bet started.' });
 }
 

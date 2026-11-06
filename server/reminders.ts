@@ -67,7 +67,7 @@ export async function notifyProposal(id: string) {
   const who = await people(lb);
   const asked = requiredAcceptors(lb).filter((p) => !p.accepted).map((p) => p.user_id);
   await notify(lb, asked, `Result proposed: ${lb.bet.question}`, () =>
-    `${describeProposal(lb, who)}\n\nOpen the bet to accept or reject it. If you haven't answered by ${new Date(deadline).toUTCString()}, it counts as accepted.`,
+    `${describeProposal(lb, who)}\n\nOpen the bet to confirm or reject it. If you haven't answered by ${new Date(deadline).toUTCString()}, it counts as confirmed.`,
   );
 }
 
@@ -131,7 +131,7 @@ export async function runCron(now = Date.now()) {
     } else if (deadline - now <= SOON_MS && lb.bet.settle_days! > 2 && waitingOn.length && (await claim(lb.bet.id, `deadline_soon:${lb.bet.proposed_at}`))) {
       const who = await people(lb);
       await notify(lb, waitingOn, `Reminder: ${lb.bet.question}`, () =>
-        `${describeProposal(lb, who)}\n\nYou haven't answered yet. If you don't accept or reject it by ${new Date(deadline).toUTCString()}, it counts as accepted.`,
+        `${describeProposal(lb, who)}\n\nYou haven't answered yet. If you don't confirm or reject it by ${new Date(deadline).toUTCString()}, it counts as confirmed.`,
       );
       deadlineReminders++;
     }

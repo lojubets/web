@@ -32,8 +32,8 @@ export function statusLabel(b: Bet): string {
       const by = b.participants.find((p) => p.id === b.outcomeProposedBy)?.name ?? 'Someone';
       if (b.proposalKind === 'tie') return b.iMustAccept && !b.iAccepted ? 'Agree to call it off?' : `Waiting for ${waitingOn(b)} to agree to a tie`;
       if (b.proposalKind === 'not_happened') return b.iMustAccept && !b.iAccepted ? "Confirm it hasn't happened" : `Waiting for ${waitingOn(b)} to agree it hasn't happened`;
-      if (b.iMustAccept && !b.iAccepted) return `${by} proposed a result: accept?`;
-      return `Waiting for ${waitingOn(b)} to accept`;
+      if (b.iMustAccept && !b.iAccepted) return `${by} proposed a result: confirm?`;
+      return `Waiting for ${waitingOn(b)} to confirm`;
     }
     case 'settled': {
       if (mine?.status !== 'joined') return 'Started without you';
