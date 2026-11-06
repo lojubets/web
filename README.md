@@ -85,7 +85,7 @@ npx playwright install chromium   # once
 npm run screenshots
 ```
 
-Starts the API and web app on spare ports (3101 and 5273, override with `SCREENSHOTS_API_PORT` / `SCREENSHOTS_WEB_PORT`) with a throwaway database and the dev login, then drives headless Chromium through four users (Alice, Bob, Cara, Dan) who become friends and set up bets in every state, group bets included. Mobile and desktop screenshots are written to `screenshots/` (git-ignored); open `screenshots/index.html` straight from disk to browse them. Add scenarios in `scripts/screenshots.mjs`.
+Starts the API and web app on spare ports (3101 and 5273, override with `SCREENSHOTS_API_PORT` / `SCREENSHOTS_WEB_PORT`) with a throwaway database and the dev login, then drives headless Chromium through four users (Alice, Bob, Cara, Dan) who become friends and set up bets in every state, group bets included. Mobile and desktop screenshots are written to `screenshots/` (git-ignored); open `screenshots/index.html` straight from disk to browse them. Each screenshot comes with a description of the scenario (who did what) and what the screen should show. Add scenarios in `scripts/screenshots.mjs`; `AGENTS.md` asks coding agents to keep it up to date with UI changes.
 
 ## Production
 
