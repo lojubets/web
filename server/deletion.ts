@@ -66,7 +66,8 @@ export async function tryDeleteUser(userId: string, now = Date.now()): Promise<b
     const ph = settled ? randomUUID() : null;
 
     const S = (sql: string, args: (string | number | null)[] = []) => ({ sql, args });
-    const mine = `(SELECT bet_id FROM bet_participants WHERE user_id = ?)`;
+    // Bets they are (or were asked) in: all ended by now. Not ones they declined or were left out of, which may be live.
+    const mine = `(SELECT bet_id FROM bet_participants WHERE user_id = ? AND status IN ('invited', 'joined'))`;
     const cancelled = `(SELECT b.id FROM bets b JOIN bet_participants p ON p.bet_id = b.id WHERE p.user_id = ? AND b.status = 'cancelled')`;
     await tx.batch(
       [
@@ -298,18 +299,23 @@ deletionRouter.get('/me/cancel-requests', async (_req, res) => {
   res.json(await Promise.all(rows.map(async (r) => ({ betId: r.bet_id, question: r.question, status: r.status, from: { id: r.requested_by, name: (await contactOf(r.requested_by)).name }, createdAt: r.created_at, lapsesAt: lapsesAt(r.created_at) }))));
 });
 
+// Answer a cancel request. A group bet can carry one from each player who is leaving, so the request names whose
+// (`from`); without it, the only pending one is meant.
 deletionRouter.post('/bets/:id/cancel-request/:action', async (req, res) => {
   const me = uid(res);
   const action = req.params.action;
   if (action !== 'accept' && action !== 'refuse') return res.status(404).json({ error: 'Not found' });
-  const r = first(
+  const from = typeof req.body?.from === 'string' ? req.body.from : null;
+  const rows = (
     await db.execute({
       sql: `SELECT r.requested_by FROM bet_cancel_requests r JOIN bets b ON b.id = r.bet_id
             JOIN bet_participants p ON p.bet_id = b.id AND p.user_id = ? AND p.status = 'joined'
-            WHERE r.bet_id = ? AND r.response = 'pending' AND r.requested_by != ? AND b.status IN ${ONGOING}`,
-      args: [me, req.params.id, me],
-    }),
-  );
+            WHERE r.bet_id = ? AND r.response = 'pending' AND r.requested_by != ? AND b.status IN ${ONGOING} ${from ? 'AND r.requested_by = ?' : ''}`,
+      args: [me, req.params.id, me, ...(from ? [from] : [])],
+    })
+  ).rows as Row[];
+  if (rows.length > 1) return res.status(409).json({ error: 'Several players ask to cancel this bet: say whose request you are answering' });
+  const r = rows[0];
   if (!r) return res.status(404).json({ error: 'There is no request to answer on this bet' });
   const now = Date.now();
   // Any one of the other players answers for all of them

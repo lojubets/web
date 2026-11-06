@@ -283,13 +283,15 @@ describe('group bets', () => {
     // Guesses 1, 4, 6, 9: an outcome of 5 makes Wim (4) and Xavi (6) joint winners
     const id = await groupBet(['Wim', 'Xavi', 'Zed'], { Vera: '1', Wim: '4', Xavi: '6', Zed: '9' });
     const proposed = (await people.Vera.a.post(`/api/bets/${id}/propose`).send({ outcome: '5' }).expect(200)).body;
-    expect(proposed).toMatchObject({ status: 'awaiting_confirmation', winnerIds: [idOf('Wim'), idOf('Xavi')], iMustAccept: false, settleDeadline: null });
-    // Vera proposed and pays; Zed pays, so he must accept; the winners aren't asked
-    expect(proposed.participants.map((p: any) => [p.name, p.winner, p.mustAccept])).toEqual([['Vera', false, false], ['Wim', true, false], ['Xavi', true, false], ['Zed', false, true]]);
-    expect((await view('Wim', id))).toMatchObject({ iMustAccept: false, needsMyAction: false });
+    expect(proposed).toMatchObject({ status: 'awaiting_confirmation', winnerIds: [idOf('Wim'), idOf('Xavi')], iMustAccept: false, settleDeadline: null, proposalId: expect.any(Number) });
+    // Vera proposed; everyone else must accept: Zed pays, and a joint winner may really have won alone
+    expect(proposed.participants.map((p: any) => [p.name, p.winner, p.mustAccept])).toEqual([['Vera', false, false], ['Wim', true, true], ['Xavi', true, true], ['Zed', false, true]]);
+    expect((await view('Wim', id))).toMatchObject({ iMustAccept: true, needsMyAction: true });
     expect((await view('Zed', id))).toMatchObject({ iMustAccept: true, needsMyAction: true });
 
-    await people.Wim.a.post(`/api/bets/${id}/confirm`).expect(200); // a winner may accept, but it changes nothing
+    await people.Wim.a.post(`/api/bets/${id}/confirm`).send({ proposal: proposed.proposalId }).expect(200);
+    await people.Xavi.a.post(`/api/bets/${id}/confirm`).send({ proposal: 12345 }).expect(409); // not the proposal she is looking at
+    await people.Xavi.a.post(`/api/bets/${id}/confirm`).send({ proposal: proposed.proposalId }).expect(200);
     expect((await view('Zed', id)).status).toBe('awaiting_confirmation');
     const done = (await people.Zed.a.post(`/api/bets/${id}/confirm`).expect(200)).body;
     expect(done).toMatchObject({ status: 'settled', settledBy: 'outcome', settledByDeadline: false, myNet: -2 });
@@ -322,13 +324,48 @@ describe('group bets', () => {
     expect(await balanceOf('Wim', 'Xavi')).toBe(0);
   });
 
-  it('freeform: the proposer ticks the winners, who then are not asked', async () => {
+  it('freeform: the proposer ticks the winners; a sole winner is not asked, joint winners are', async () => {
     const id = await groupBet(['Wim', 'Xavi'], { Vera: 'a', Wim: 'b', Xavi: 'c' }, { kind: 'text' });
     await people.Wim.a.post(`/api/bets/${id}/propose`).send({ outcome: 'b and c', winners: ['nobody'] }).expect(400);
     const p = (await people.Wim.a.post(`/api/bets/${id}/propose`).send({ outcome: 'b and c', winners: [idOf('Wim'), idOf('Xavi')] }).expect(200)).body;
-    expect(p.participants.map((x: any) => [x.winner, x.mustAccept])).toEqual([[false, true], [true, false], [true, false]]);
-    const done = (await people.Vera.a.post(`/api/bets/${id}/confirm`).expect(200)).body;
-    expect(done).toMatchObject({ status: 'settled', myNet: -2 });
+    expect(p.participants.map((x: any) => [x.winner, x.mustAccept])).toEqual([[false, true], [true, false], [true, true]]);
+    await people.Vera.a.post(`/api/bets/${id}/confirm`).expect(200);
+    const done = (await people.Xavi.a.post(`/api/bets/${id}/confirm`).expect(200)).body;
+    expect(done).toMatchObject({ status: 'settled', myNet: 1 });
+
+    const sole = await groupBet(['Wim', 'Xavi'], { Vera: 'a', Wim: 'b', Xavi: 'c' }, { kind: 'text' });
+    const q = (await people.Vera.a.post(`/api/bets/${sole}/propose`).send({ outcome: 'c', winners: [idOf('Xavi')] }).expect(200)).body;
+    expect(q.participants.map((x: any) => [x.winner, x.mustAccept])).toEqual([[false, false], [false, true], [true, false]]);
+  });
+
+  it('a sole winner cannot be made to share the win without being asked', async () => {
+    // Guesses 1, 3, 5 and a real result of 1: Vera won alone. Xavi, who pays 2 either way, proposes 2 to make it a shared win.
+    const id = await groupBet(['Wim', 'Xavi'], { Vera: '1', Wim: '3', Xavi: '5' });
+    const p = (await people.Xavi.a.post(`/api/bets/${id}/propose`).send({ outcome: '2' }).expect(200)).body;
+    expect(p).toMatchObject({ status: 'awaiting_confirmation', winnerIds: [idOf('Vera'), idOf('Wim')] });
+    expect(p.participants.map((x: any) => [x.name, x.mustAccept])).toEqual([['Vera', true], ['Wim', true], ['Xavi', false]]);
+    await people.Wim.a.post(`/api/bets/${id}/confirm`).expect(200);
+    expect((await view('Vera', id)).status).toBe('awaiting_confirmation'); // still Vera's call
+    await people.Vera.a.post(`/api/bets/${id}/reject`).expect(200);
+    // Conceding to a sole winner, on the other hand, needs only the other payer
+    const r = (await people.Xavi.a.post(`/api/bets/${id}/propose`).send({ outcome: '1' }).expect(200)).body;
+    expect(r.participants.map((x: any) => [x.name, x.mustAccept])).toEqual([['Vera', false], ['Wim', true], ['Xavi', false]]);
+    expect((await people.Wim.a.post(`/api/bets/${id}/confirm`).expect(200)).body).toMatchObject({ status: 'settled', winnerIds: [idOf('Vera')] });
+  });
+
+  it('a guess that arrives after the creator started without that player is refused, and a declined invitee learns nothing', async () => {
+    const id = await groupBet(['Wim', 'Xavi'], { Vera: '1', Wim: '2' });
+    await people.Vera.a.post(`/api/bets/${id}/start`).expect(200);
+    await people.Xavi.a.post(`/api/bets/${id}/guess`).send({ guess: '3' }).expect(409);
+    expect(participant(await view('Xavi', id), 'Xavi').status).toBe('revoked');
+
+    // A bet cancelled before it started keeps its guesses to itself
+    const off = await groupBet(['Wim'], { Vera: '4242.5' });
+    await people.Wim.a.post(`/api/bets/${off}/cancel`).expect(200); // the only invitee declines: the bet is off
+    const seen = (await people.Wim.a.get(`/api/bets/${off}`).expect(200)).body;
+    expect(seen.status).toBe('cancelled');
+    expect(seen.participants.map((p: any) => p.guess)).toEqual([null, null]);
+    expect(JSON.stringify(seen)).not.toContain('4242.5');
   });
 
   it('with a deadline, silence counts as acceptance, with a reminder on the way', async () => {
@@ -926,6 +963,32 @@ describe('merging accounts', () => {
     expect(received).toHaveLength(1);
     // ...and the secondary address counts as the account's own (no inviting yourself)
     await a.post('/api/invitations').send({ email: 'noab@example.com' }).expect(400);
+  });
+
+  it('keeps the merged account in a group bet one account declined and the other joined, and renames a pending verdict', async () => {
+    const a = await login('Oda');
+    const b = await login('Odab');
+    const host = await login('Hugo');
+    const dee = await login('Dee');
+    for (const [who, email] of [[a, 'oda@example.com'], [b, 'odab@example.com'], [dee, 'dee@example.com']] as const) await befriend(host, who, email);
+    const [aId, bId, hostId] = [await id(a), await id(b), await id(host)];
+    const bet = (await host.post('/api/bets').send({ opponentIds: [aId, bId, await id(dee)], question: 'Freeform', kind: 'text', guess: 'h' }).expect(201)).body.id;
+    await a.post(`/api/bets/${bet}/cancel`).expect(200); // A declines...
+    await b.post(`/api/bets/${bet}/guess`).send({ guess: 'b!' }).expect(200); // ...B joins, and so does Dee
+    await dee.post(`/api/bets/${bet}/guess`).send({ guess: 'd' }).expect(200);
+    await b.post(`/api/bets/${bet}/propose`).send({ outcome: 'b!', winners: [bId] }).expect(200);
+
+    await a.post('/api/merge/dev').send({ email: 'odab@example.com' }).expect(200);
+    expect((await a.get('/api/merge/preview')).body.blockers).toEqual([]); // not a bet "between" them: A only declined
+    await a.post('/api/merge/confirm').send({ email: 'a', name: 'a', photo: 'none' }).expect(200);
+
+    const view = (await a.get(`/api/bets/${bet}`).expect(200)).body;
+    expect(view).toMatchObject({ status: 'awaiting_confirmation', myGuess: 'b!', outcomeProposedByMe: true, winnerIds: [aId] });
+    expect(view.participants.map((p: any) => [p.name, p.status])).toEqual([['Hugo', 'joined'], ['Oda', 'joined'], ['Dee', 'joined']]);
+    await host.post(`/api/bets/${bet}/confirm`).expect(200);
+    const done = (await dee.post(`/api/bets/${bet}/confirm`).expect(200)).body;
+    expect(done).toMatchObject({ status: 'settled', winnerIds: [aId], myNet: -1 });
+    expect((await a.get('/api/friends')).body.find((f: any) => f.id === hostId).balance).toBe(1);
   });
 
   it('requires both emails to be verified, and says so', async () => {

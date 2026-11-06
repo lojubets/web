@@ -191,8 +191,15 @@ async function migrateTwoPlayerBets(cols: unknown[]) {
     ],
     'write',
   );
-  // A pending proposal whose proposer loses by it needs nobody's acceptance under the new rule: it is settled now,
-  // rather than waiting for a confirmation nobody is asked for. (Imported here, not at the top: bets.ts needs db.)
+}
+
+/**
+ * A pending proposal that needs nobody's acceptance (one from before the rules changed, whose proposer loses by it)
+ * is settled rather than left waiting for a confirmation nobody is asked for. Runs on every start, since it is cheap
+ * and idempotent, so a start that stopped halfway through the rebuild above can't leave one behind.
+ * (Imported here, not at the top: bets.ts needs db.)
+ */
+async function settlePendingProposals() {
   const { settleIfAccepted } = await import('./bets.js');
   for (const r of (await db.execute(`SELECT id FROM bets WHERE status = 'awaiting_confirmation'`)).rows) await settleIfAccepted(String(r.id));
 }
@@ -200,6 +207,7 @@ async function migrateTwoPlayerBets(cols: unknown[]) {
 /** Columns added after the first release. SQLite has no ADD COLUMN IF NOT EXISTS, so check first. */
 async function migrate() {
   await migrateTwoPlayerBets((await db.execute('PRAGMA table_info(bets)')).rows.map((r) => r.name));
+  await settlePendingProposals();
   const userCols = (await db.execute('PRAGMA table_info(users)')).rows.map((r) => r.name);
   // Account deletion: a pending request, and the marker on the placeholder that stands in for a deleted user
   if (!userCols.includes('deletion_requested_at')) await db.execute('ALTER TABLE users ADD COLUMN deletion_requested_at INTEGER');

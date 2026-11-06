@@ -44,7 +44,8 @@ export default function BetDetail() {
   const inBet = (p: Participant) => p.status === 'joined' || (p.status === 'invited' && !started);
   const players = b.participants.filter((p) => p.status === 'joined');
   const shown = b.participants.filter((p) => inBet(p) || (!started && p.status === 'declined'));
-  const them = players.filter((p) => !p.isMe);
+  // The other people in the bet: players, and before the start those still deciding
+  const them = b.participants.filter((p) => inBet(p) && !p.isMe);
   const inBetCount = b.participants.filter(inBet).length;
   const two = inBetCount === 2 && inGame;
   const friendOf = (p: Participant) => friends.data!.find((f) => f.id === p.id);
@@ -92,7 +93,7 @@ export default function BetDetail() {
       {b.participants.filter((p) => p.status === 'joined' && !p.isMe && p.id !== b.outcomeProposedBy).map((p) => (
         <li key={p.id} className={p.accepted ? 'ok' : p.mustAccept ? 'pending' : 'muted'}>
           <Icon name={p.accepted ? 'check' : p.mustAccept ? 'clock' : 'trophy'} size={16} />
-          {p.name}: {p.accepted ? 'accepted' : p.mustAccept ? 'not answered yet' : 'wins, so not asked'}
+          {p.name}: {p.accepted ? 'accepted' : p.mustAccept ? 'not answered yet' : 'wins outright, so not asked'}
         </li>
       ))}
     </ul>
@@ -204,7 +205,7 @@ export default function BetDetail() {
       {b.status === 'awaiting_guess' && me.status === 'invited' && (
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
           <p>
-            {creator.name} invites you to {inBetCount > 2 ? `a ${inBetCount}-way bet with ` : 'bet '}<Names of={b.participants.filter((p) => inBet(p) && !p.isMe && !p.isCreator)} />
+            {creator.name} invites you to {inBetCount > 2 ? `a ${inBetCount}-way bet with ` : 'bet '}<Names of={them.filter((p) => !p.isCreator)} />
             {inBetCount > 2 ? '. Everyone who doesn\'t win owes each winner 1 GT. Joining makes you friends with the other players.' : '.'}
           </p>
           {them.some((p) => p.guessIn) && <p className="muted small">{listNames(them.filter((p) => p.guessIn).map((p) => p.name))} {them.filter((p) => p.guessIn).length === 1 ? 'has' : 'have'} locked in a guess.</p>}
@@ -267,7 +268,7 @@ export default function BetDetail() {
             </>
           ) : b.iMustAccept && !b.iAccepted ? (
             <>
-              <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>
+              <button className="btn" disabled={act.busy} onClick={() => post('/confirm', { proposal: b.proposalId })}>
                 {b.proposalKind === 'tie' ? 'Yes, call it off' : b.proposalKind === 'not_happened' ? "Yes, it hasn't happened" : 'Accept the result'}
               </button>
               <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>
@@ -279,9 +280,9 @@ export default function BetDetail() {
             <>
               <p className="muted">
                 {b.iAccepted ? 'You accepted. ' : iWon ? 'You win under this result, so your acceptance isn\'t needed. ' : ''}
-                Waiting for <Names of={waitingOn} />.
+                Waiting for <Names of={waitingOn} />.{b.iAccepted && ' Changed your mind? You can still reject it.'}
               </p>
-              {!b.iAccepted && <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>}
+              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>
             </>
           )}
         </div>

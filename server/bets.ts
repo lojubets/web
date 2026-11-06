@@ -4,10 +4,9 @@ import { db } from './db.js';
 
 /**
  * The bet engine: a bet has two or more players, and "winners collect" when it settles: every player who didn't
- * win owes each winner the stake. A proposed result settles once everyone who would pay under it has accepted
- * (the proposer counts as having accepted); a proposed tie, or a result nobody wins, needs everyone. Proposed
- * winners aren't asked, since a false result always costs someone who is asked. A bet can carry a deadline after
- * which silence counts as acceptance, so one absent player can't hold it up forever.
+ * win owes each winner the stake. A proposed result settles once everyone except the proposer and a sole winner has
+ * accepted it (see `requiredAcceptors` for why that is enough). A bet can carry a deadline after which silence
+ * counts as acceptance, so one absent player can't hold it up forever.
  */
 
 export type ProposalKind = 'outcome' | 'not_happened' | 'tie';
@@ -80,12 +79,15 @@ async function attach(bets: BetRow[]): Promise<LoadedBet[]> {
   return bets.map((bet) => ({ bet, participants: participants.get(bet.id) ?? [], settlements: settlements.get(bet.id) ?? [] }));
 }
 
-/** The bets a user is in or invited to, newest first. Cancelled bets, and ones they declined or were left out of, are gone. */
-export async function loadBetsFor(userId: string): Promise<LoadedBet[]> {
+/**
+ * The bets a user is in or invited to, newest first. Cancelled bets, and ones they declined or were left out of, are
+ * left out, unless `all` is asked for (the data export: everything still on record about them).
+ */
+export async function loadBetsFor(userId: string, opts: { all?: boolean } = {}): Promise<LoadedBet[]> {
   const rows = (
     await db.execute({
       sql: `SELECT b.* FROM bets b JOIN bet_participants p ON p.bet_id = b.id
-            WHERE p.user_id = ? AND p.status IN ('invited', 'joined') AND b.status != 'cancelled' ORDER BY b.created_at DESC`,
+            WHERE p.user_id = ? ${opts.all ? '' : `AND p.status IN ('invited', 'joined') AND b.status != 'cancelled'`} ORDER BY b.created_at DESC`,
       args: [userId],
     })
   ).rows as unknown as BetRow[];
@@ -148,24 +150,29 @@ export function proposedWinners(lb: LoadedBet): string[] | null {
 const parseWinners = (json: string | null): string[] => {
   try {
     const v = JSON.parse(json ?? '[]');
-    return Array.isArray(v) ? v.map(String) : [];
+    return Array.isArray(v) ? [...new Set(v.map(String))] : [];
   } catch {
     return [];
   }
 };
 
+/** The bet has started: guesses are out in the open. (Not a bet cancelled before it ever started.) */
+export const hasStarted = (b: BetRow) => b.status === 'active' || b.status === 'awaiting_confirmation' || b.status === 'settled';
+
 /** Who wins the settled bet (empty: a draw, or called off). */
 export const settledWinners = (lb: LoadedBet): string[] => [...new Set(lb.settlements.map((s) => s.payee_id))];
 
 /**
- * Whose acceptance the pending proposal still needs: every player who would pay under it, except the proposer.
- * A result nobody wins (a tie, a draw, nobody right) needs everyone, since everyone could be losing a win.
+ * Whose acceptance the pending proposal still needs: everyone except the proposer, and except a sole winner. A sole
+ * winner collects the most a player can, so they can't be losing by it; everyone else could be (paying, paying more,
+ * or sharing a win they had alone), so a false result always costs someone who is asked. With two players this is
+ * "the other player confirms".
  */
 export function requiredAcceptors(lb: LoadedBet): ParticipantRow[] {
   const w = proposedWinners(lb);
   if (w === null) return [];
-  const won = new Set(w);
-  return playersOf(lb).filter((p) => !won.has(p.user_id) && p.user_id !== lb.bet.outcome_proposed_by);
+  const soleWinner = w.length === 1 ? w[0] : null;
+  return playersOf(lb).filter((p) => p.user_id !== soleWinner && p.user_id !== lb.bet.outcome_proposed_by);
 }
 
 export const settleDeadline = (b: BetRow): number | null => (b.status === 'awaiting_confirmation' && b.settle_days && b.proposed_at ? b.proposed_at + b.settle_days * DAY_MS : null);
@@ -221,24 +228,38 @@ export async function settleInvitations(id: string, now = Date.now()): Promise<'
   return 'started';
 }
 
-/** Records the pending proposal as settled: winners collect from everyone else (nothing moves for a tie or a draw). */
-export async function settleBet(lb: LoadedBet, opts: { now?: number; byDeadline?: boolean } = {}) {
+/**
+ * Records the pending proposal as settled: winners collect from everyone else (nothing moves for a tie or a draw).
+ * One transaction, and only if the bet still carries exactly the proposal that was loaded (same `proposed_at`): a
+ * counter-proposal, rejection or cancellation in between leaves the balances alone. Returns whether it settled.
+ */
+export async function settleBet(lb: LoadedBet, opts: { now?: number; byDeadline?: boolean } = {}): Promise<boolean> {
   const now = opts.now ?? Date.now();
   const kind = proposalOf(lb.bet);
   if (!kind) throw new Error('Nothing to settle');
   const won = proposedWinners(lb)!;
   const moves = transfers(playersOf(lb).map((p) => p.user_id), won, lb.bet.stake);
-  await db.batch(
-    [
-      {
-        sql: `UPDATE bets SET status = 'settled', settled_at = ?, settled_by = ?, settled_by_deadline = ?, proposal = NULL WHERE id = ? AND status = 'awaiting_confirmation'`,
-        args: [now, kind === 'tie' ? 'tie' : kind === 'not_happened' ? 'tipping_point' : 'outcome', opts.byDeadline ? 1 : 0, lb.bet.id],
-      },
-      { sql: 'DELETE FROM bet_settlements WHERE bet_id = ?', args: [lb.bet.id] },
-      ...moves.map((t) => ({ sql: 'INSERT INTO bet_settlements (bet_id, payer_id, payee_id, amount) VALUES (?, ?, ?, ?)', args: [lb.bet.id, t.payerId, t.payeeId, t.amount] })),
-    ],
-    'write',
-  );
+  const tx = await db.transaction('write');
+  try {
+    const r = await tx.execute({
+      sql: `UPDATE bets SET status = 'settled', settled_at = ?, settled_by = ?, settled_by_deadline = ?, proposal = NULL
+            WHERE id = ? AND status = 'awaiting_confirmation' AND proposal = ? AND outcome_proposed_by = ? AND proposed_at IS ?`,
+      args: [now, kind === 'tie' ? 'tie' : kind === 'not_happened' ? 'tipping_point' : 'outcome', opts.byDeadline ? 1 : 0, lb.bet.id, kind, lb.bet.outcome_proposed_by, lb.bet.proposed_at],
+    });
+    if (r.rowsAffected !== 1) {
+      await tx.rollback();
+      return false;
+    }
+    await tx.execute({ sql: 'DELETE FROM bet_settlements WHERE bet_id = ?', args: [lb.bet.id] });
+    for (const t of moves) await tx.execute({ sql: 'INSERT INTO bet_settlements (bet_id, payer_id, payee_id, amount) VALUES (?, ?, ?, ?)', args: [lb.bet.id, t.payerId, t.payeeId, t.amount] });
+    await tx.commit();
+    return true;
+  } catch (e) {
+    await tx.rollback().catch(() => undefined);
+    throw e;
+  } finally {
+    tx.close();
+  }
 }
 
 /** Settles the pending proposal if everyone whose acceptance it needs has accepted. */
@@ -246,8 +267,7 @@ export async function settleIfAccepted(id: string, now = Date.now()): Promise<bo
   const lb = await loadBet(id);
   if (!lb || lb.bet.status !== 'awaiting_confirmation') return false;
   if (requiredAcceptors(lb).some((p) => !p.accepted)) return false;
-  await settleBet(lb, { now });
-  return true;
+  return settleBet(lb, { now });
 }
 
 /** Drops the pending proposal; the bet is back in play. */
@@ -277,7 +297,7 @@ export function serializeBet(lb: LoadedBet, v: Viewer, now = Date.now()): Bet {
   const b = lb.bet;
   const me = v.id;
   const mine = participantOf(lb, me);
-  const started = b.status !== 'awaiting_guess';
+  const started = hasStarted(b);
   const players = playersOf(lb);
   const pending = proposedWinners(lb);
   const winnerIds = pending ?? (b.status === 'settled' ? settledWinners(lb) : []);
@@ -335,6 +355,7 @@ export function serializeBet(lb: LoadedBet, v: Viewer, now = Date.now()): Bet {
     outcomeProposedBy: b.outcome_proposed_by,
     outcomeProposedByMe: b.outcome_proposed_by ? b.outcome_proposed_by === me : null,
     proposalKind: proposalOf(b),
+    proposalId: proposalOf(b) ? b.proposed_at : null,
     winnerIds,
     iMustAccept,
     iAccepted,

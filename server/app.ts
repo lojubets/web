@@ -226,7 +226,8 @@ app.get('/api/me/export', async (_req, res) => {
     return names.get(id)!;
   };
   const friends = await db.execute({ sql: `SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS id, created_at FROM connections WHERE user_a = ? OR user_b = ?`, args: [me, me, me] });
-  const bets = (await loadBetsFor(me)).reverse();
+  // Everything still on record, cancelled bets and declined invitations included (guesses of others stay hidden as usual)
+  const bets = (await loadBetsFor(me, { all: true })).reverse();
   const viewer = await viewerFor(me, bets);
   const sent = await db.execute({ sql: 'SELECT email, status, created_at FROM invitations WHERE inviter_id = ? ORDER BY created_at', args: [me] });
   res.set('Content-Disposition', 'attachment; filename="lojubets-my-data.json"');
@@ -237,8 +238,9 @@ app.get('/api/me/export', async (_req, res) => {
     bets: bets.map((lb) => {
       const s = serializeBet(lb, viewer);
       const others = s.participants.filter((p) => !p.isMe && (p.status === 'joined' || p.status === 'invited'));
+      const mine = s.participants.find((p) => p.isMe)!;
       return {
-        question: s.question, with: others.map((p) => p.name).join(', '), players: others.map((p) => ({ name: p.name, guess: p.guess })), status: s.status, myGuess: s.myGuess, outcome: s.outcome,
+        question: s.question, with: others.map((p) => p.name).join(', '), players: others.map((p) => ({ name: p.name, guess: p.guess })), status: s.status, myPart: mine.status, myGuess: s.myGuess, outcome: s.outcome,
         iWon: s.status !== 'settled' || s.settledBy === 'tie' ? null : s.winnerIds.includes(me), net: s.myNet, stake: s.stake, created: new Date(s.createdAt).toISOString(), settled: s.settledAt ? new Date(s.settledAt).toISOString() : null,
       };
     }),
@@ -661,7 +663,14 @@ app.post('/api/bets/:id/guess', async (req, res) => {
   if (!can) return res.status(409).json({ error: "You can't guess on this bet right now" });
   const guess = normalizeAnswer(lb.bet.kind, loadParams(lb.bet.kind, lb.bet.params), String(req.body?.guess ?? ''), { now: Date.now(), role: 'guess' });
   if (!guess.ok) return res.status(400).json({ error: guess.error });
-  await db.execute({ sql: `UPDATE bet_participants SET status = 'joined', guess = ?, responded_at = ? WHERE bet_id = ? AND user_id = ?`, args: [guess.value, Date.now(), lb.bet.id, me] });
+  // Checked again in the write itself: the creator may have started the bet (revoking this invitation) meanwhile
+  const r = await db.execute({
+    sql: `UPDATE bet_participants SET status = 'joined', guess = ?, responded_at = ?
+          WHERE bet_id = ? AND user_id = ? AND (status = 'invited' OR (status = 'joined' AND guess IS NULL))
+            AND EXISTS (SELECT 1 FROM bets WHERE id = bet_participants.bet_id AND status = 'awaiting_guess')`,
+    args: [guess.value, Date.now(), lb.bet.id, me],
+  });
+  if (r.rowsAffected !== 1) return res.status(409).json({ error: "You can't guess on this bet right now" });
   await settleInvitations(lb.bet.id);
   await respondWithBet(res, lb.bet.id);
 });
@@ -759,13 +768,22 @@ app.post('/api/bets/:id/withdraw', async (req, res) => {
   await respondWithBet(res, lb.bet.id);
 });
 
-// Accept the pending proposal. It settles once everyone who would pay under it has accepted.
+// Accept the pending proposal. It settles once everyone whose acceptance it needs has accepted. The request may name
+// the proposal it accepts (`proposal`, from the bet's `proposalId`); a proposal replaced meanwhile is then not accepted
+// by mistake. The write checks the same, so a counter-proposal racing with this is never accepted either.
 app.post('/api/bets/:id/confirm', async (req, res) => {
   const lb = await betFor(req, res);
   if (!lb) return;
   const me = uid(res);
   if (lb.bet.status !== 'awaiting_confirmation' || lb.bet.outcome_proposed_by === me || !isPlayer(lb, me)) return res.status(409).json({ error: 'Nothing to confirm' });
-  await db.execute({ sql: 'UPDATE bet_participants SET accepted = 1 WHERE bet_id = ? AND user_id = ?', args: [lb.bet.id, me] });
+  const expected = req.body?.proposal;
+  if (expected !== undefined && expected !== null && expected !== lb.bet.proposed_at) return res.status(409).json({ error: 'The proposal has changed meanwhile. Have a look at the new one.' });
+  const r = await db.execute({
+    sql: `UPDATE bet_participants SET accepted = 1 WHERE bet_id = ? AND user_id = ?
+          AND EXISTS (SELECT 1 FROM bets WHERE id = bet_participants.bet_id AND status = 'awaiting_confirmation' AND proposed_at IS ? AND outcome_proposed_by = ?)`,
+    args: [lb.bet.id, me, lb.bet.proposed_at, lb.bet.outcome_proposed_by],
+  });
+  if (r.rowsAffected !== 1) return res.status(409).json({ error: 'The proposal has changed meanwhile. Have a look at the new one.' });
   if (await settleIfAccepted(lb.bet.id)) await afterBetEnded(lb.bet.id);
   await respondWithBet(res, lb.bet.id);
 });

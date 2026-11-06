@@ -21,7 +21,8 @@ export default function NewBet() {
   const [params] = useSearchParams();
   const nav = useNavigate();
   const { data: friends } = useFetch<Friend[]>('/friends');
-  const [picked, setPicked] = useState<string[]>(params.get('with') ? [params.get('with')!] : []);
+  // null until the user touches the list: then a single friend is picked for you, as before
+  const [picked, setPicked] = useState<string[] | null>(params.get('with') ? [params.get('with')!] : null);
   const [kind, setKind] = useState<BetKind>('number');
   const [question, setQuestion] = useState('');
   const [guess, setGuess] = useState('');
@@ -30,8 +31,7 @@ export default function NewBet() {
   const betParams = draftToParams(kind, rules);
   const { busy, error, run } = useAction();
   const available = friends?.filter((f) => !f.deleted) ?? [];
-  // With nothing chosen yet, a single friend is picked for you, as before
-  const chosen = picked.length ? picked.filter((id) => available.some((f) => f.id === id)) : available.slice(0, 1).map((f) => f.id);
+  const chosen = picked === null ? available.slice(0, 1).map((f) => f.id) : picked.filter((id) => available.some((f) => f.id === id));
   const group = chosen.length >= 2;
   const toggle = (id: string) => setPicked(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
   const full = chosen.length + 1 >= MAX_PLAYERS;

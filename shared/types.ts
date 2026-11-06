@@ -118,7 +118,7 @@ export interface Participant extends UserSummary {
   guess: string | null;
   /** Under the pending proposal, or the settled result: they win. */
   winner: boolean;
-  /** Their acceptance of the pending proposal is needed (they would pay under it, and they didn't propose it). */
+  /** Their acceptance of the pending proposal is needed (everyone's is, except the proposer's and a sole winner's). */
   mustAccept: boolean;
   accepted: boolean;
   /** Settled bets: GTs they owe me from this bet (negative: I owe them). */
@@ -143,6 +143,8 @@ export interface Bet {
   outcomeProposedByMe: boolean | null;
   /** What the pending proposal says: a result, "the event hasn't happened yet", or calling the bet off. */
   proposalKind: 'outcome' | 'not_happened' | 'tie' | null;
+  /** Identifies the pending proposal. Send it back when accepting, so a proposal that was replaced meanwhile isn't accepted by mistake. */
+  proposalId: number | null;
   /** Who wins under the pending proposal, or the settled result. Empty for a draw or a called-off bet. */
   winnerIds: string[];
   /** My acceptance of the pending proposal is needed for it to settle. */

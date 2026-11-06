@@ -119,9 +119,9 @@ export async function runCron(now = Date.now()) {
     if (deadline === null) continue;
     const waitingOn = requiredAcceptors(lb).filter((p) => !p.accepted).map((p) => p.user_id);
     if (now >= deadline) {
-      // Claimed first, so overlapping runs can't settle (and email) twice
-      if (!(await claim(lb.bet.id, `deadline:${lb.bet.proposed_at}`))) continue;
-      await settleBet(lb, { now, byDeadline: true });
+      // Settling is a single conditional write, so overlapping runs can't settle (and email) twice; a run that fails
+      // before it leaves nothing behind, and the next one tries again
+      if (!(await settleBet(lb, { now, byDeadline: true }))) continue;
       await afterBetEnded(lb.bet.id);
       const who = await people(lb);
       await notify(lb, playersOf(lb).map((p) => p.user_id), `Settled: ${lb.bet.question}`, () =>

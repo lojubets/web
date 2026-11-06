@@ -197,11 +197,16 @@ mergeRouter.post('/confirm', async (req, res) => {
          WHERE payee_id = ? AND EXISTS (SELECT 1 FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payee_id = ? AND s.payer_id = bet_settlements.payer_id)`, [b, a, b]),
       S(`DELETE FROM bet_settlements WHERE payee_id = ? AND EXISTS (SELECT 1 FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payee_id = ? AND s.payer_id = bet_settlements.payer_id)`, [b, a]),
       S('UPDATE bet_settlements SET payee_id = ? WHERE payee_id = ?', [a, b]),
-      // B's place in a bet A is also in goes; elsewhere it becomes A's
+      // One place per bet for the merged account: where A only declined (or was left out) but B is in, B's place is
+      // the one that counts; otherwise A's is kept and B's goes. Whatever remains of B's becomes A's.
+      S(`DELETE FROM bet_participants WHERE user_id = ? AND status IN ('declined', 'revoked')
+         AND bet_id IN (SELECT bet_id FROM bet_participants WHERE user_id = ? AND status IN ('invited', 'joined'))`, [a, b]),
       S('DELETE FROM bet_participants WHERE user_id = ? AND bet_id IN (SELECT bet_id FROM bet_participants WHERE user_id = ?)', [b, a]),
       S('UPDATE bet_participants SET user_id = ? WHERE user_id = ?', [a, b]),
       S('UPDATE bets SET creator_id = ? WHERE creator_id = ?', [a, b]),
       S('UPDATE bets SET outcome_proposed_by = ? WHERE outcome_proposed_by = ?', [a, b]),
+      // A pending freeform verdict naming B now names A (ids are UUIDs, so a plain replace is exact; a doubled id is read as one)
+      S(`UPDATE bets SET proposed_winners = REPLACE(proposed_winners, ?, ?) WHERE proposed_winners LIKE ?`, [`"${b}"`, `"${a}"`, `%${b}%`]),
       // Friends: drop a connection between the two, then give B's friends to A (a mutual friend stays a single connection)
       S('DELETE FROM connections WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)', [a, b, b, a]),
       S(
