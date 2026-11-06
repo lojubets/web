@@ -37,6 +37,7 @@ function start(name, args, env) {
   child.on('exit', (code) => {
     if (!stopping) {
       console.error(`${name} exited unexpectedly (${code}):\n${log}`);
+      stopServers();
       process.exit(1);
     }
   });
