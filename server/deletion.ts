@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { z } from 'zod';
 import { clearSessionCookie, reauthenticate } from './auth.js';
+import { cancelBet, settleInvitations } from './bets.js';
 import { db } from './db.js';
 import { sendMail } from './email.js';
 import { env } from './env.js';
@@ -59,31 +60,38 @@ export async function tryDeleteUser(userId: string, now = Date.now()): Promise<b
     if (!u || u.deleted_at) return false;
     email = u.email_verified ? u.email : null;
     name = u.name;
-    const ongoing = await tx.execute({ sql: `SELECT 1 FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status IN ${ONGOING} LIMIT 1`, args: [userId, userId] });
+    const ongoing = await tx.execute({ sql: `SELECT 1 FROM bets b JOIN bet_participants p ON p.bet_id = b.id WHERE p.user_id = ? AND p.status IN ('invited', 'joined') AND b.status IN ${ONGOING} LIMIT 1`, args: [userId] });
     if (ongoing.rows.length) return false;
-    const settled = Number(first(await tx.execute({ sql: `SELECT COUNT(*) AS n FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status = 'settled'`, args: [userId, userId] }))!.n);
+    const settled = Number(first(await tx.execute({ sql: `SELECT COUNT(*) AS n FROM bets b JOIN bet_participants p ON p.bet_id = b.id WHERE p.user_id = ? AND p.status = 'joined' AND b.status = 'settled'`, args: [userId] }))!.n);
     const ph = settled ? randomUUID() : null;
 
     const S = (sql: string, args: (string | number | null)[] = []) => ({ sql, args });
-    const mine = `(SELECT id FROM bets WHERE creator_id = ? OR opponent_id = ?)`;
+    const mine = `(SELECT bet_id FROM bet_participants WHERE user_id = ?)`;
+    const cancelled = `(SELECT b.id FROM bets b JOIN bet_participants p ON p.bet_id = b.id WHERE p.user_id = ? AND b.status = 'cancelled')`;
     await tx.batch(
       [
-        S(`DELETE FROM bet_cancel_requests WHERE requested_by = ? OR bet_id IN ${mine}`, [userId, userId, userId]),
+        S(`DELETE FROM bet_cancel_requests WHERE requested_by = ? OR bet_id IN ${mine}`, [userId, userId]),
         // Cancelled bets carry no result: nothing to preserve
-        S(`DELETE FROM bet_reminders WHERE bet_id IN (SELECT id FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status = 'cancelled')`, [userId, userId]),
-        S(`DELETE FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status = 'cancelled'`, [userId, userId]),
+        S(`DELETE FROM bet_reminders WHERE bet_id IN ${cancelled}`, [userId]),
+        S(`DELETE FROM bet_settlements WHERE bet_id IN ${cancelled}`, [userId]),
+        S(`DELETE FROM bets WHERE id IN ${cancelled}`, [userId]),
+        S(`DELETE FROM bet_participants WHERE NOT EXISTS (SELECT 1 FROM bets WHERE bets.id = bet_participants.bet_id)`),
+        // Invitations they turned down, or were left out of, are nobody's business any more
+        S(`DELETE FROM bet_participants WHERE user_id = ? AND status IN ('declined', 'revoked')`, [userId]),
         ...(ph
           ? [
               S(`INSERT INTO users (id, email, email_verified, name, created_at, deleted_at) VALUES (?, NULL, 0, 'Deleted user', ?, ?)`, [ph, now, now]),
-              // The deleted user's own guess goes with them; the question, the other guess and the result stay
-              S(`UPDATE bets SET creator_id = ?, creator_guess = '' WHERE creator_id = ?`, [ph, userId]),
-              S(`UPDATE bets SET opponent_id = ?, opponent_guess = NULL WHERE opponent_id = ?`, [ph, userId]),
-              S('UPDATE bets SET winner_id = ? WHERE winner_id = ?', [ph, userId]),
+              // The deleted user's own guess goes with them; the question, the other guesses and the result stay
+              S(`UPDATE bet_participants SET user_id = ?, guess = NULL WHERE user_id = ?`, [ph, userId]),
+              S('UPDATE bet_settlements SET payer_id = ? WHERE payer_id = ?', [ph, userId]),
+              S('UPDATE bet_settlements SET payee_id = ? WHERE payee_id = ?', [ph, userId]),
+              S('UPDATE bets SET creator_id = ? WHERE creator_id = ?', [ph, userId]),
               S('UPDATE bets SET outcome_proposed_by = ? WHERE outcome_proposed_by = ?', [ph, userId]),
               // Whoever shared bets with them keeps the "friend", so the history and balance read like any other
               S(
                 `INSERT OR IGNORE INTO connections (user_a, user_b, created_at)
-                 SELECT MIN(?, o), MAX(?, o), ? FROM (SELECT creator_id AS o FROM bets WHERE opponent_id = ? UNION SELECT opponent_id FROM bets WHERE creator_id = ?)`,
+                 SELECT MIN(?, o), MAX(?, o), ? FROM (SELECT DISTINCT y.user_id AS o FROM bet_participants x JOIN bet_participants y ON y.bet_id = x.bet_id
+                                                      WHERE x.user_id = ? AND y.user_id != ? AND y.status = 'joined')`,
                 [ph, ph, now, ph, ph],
               ),
             ]
@@ -116,9 +124,21 @@ export async function tryDeleteUser(userId: string, now = Date.now()): Promise<b
 
 // ---------- asking to be deleted ----------
 
-/** The ongoing bets of a user, with who they are against. */
+/** The ongoing bets a user is in or invited to. */
 async function ongoingBets(userId: string): Promise<Row[]> {
-  return (await db.execute({ sql: `SELECT * FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status IN ${ONGOING} ORDER BY created_at`, args: [userId, userId] })).rows as Row[];
+  return (
+    await db.execute({
+      sql: `SELECT b.*, p.status AS my_status FROM bets b JOIN bet_participants p ON p.bet_id = b.id
+            WHERE p.user_id = ? AND p.status IN ('invited', 'joined') AND b.status IN ${ONGOING} ORDER BY b.created_at`,
+      args: [userId],
+    })
+  ).rows as Row[];
+}
+
+/** The other players of a bet (those in it, or asked into it). */
+async function othersIn(betId: string, userId: string): Promise<string[]> {
+  const r = await db.execute({ sql: `SELECT user_id FROM bet_participants WHERE bet_id = ? AND user_id != ? AND status IN ('invited', 'joined')`, args: [betId, userId] });
+  return r.rows.map((x) => String(x.user_id));
 }
 
 /** Starts (or continues) a deletion. Returns true if the account is already gone. */
@@ -126,11 +146,17 @@ export async function requestDeletion(userId: string, now = Date.now()): Promise
   await db.execute({ sql: 'UPDATE users SET deletion_requested_at = COALESCE(deletion_requested_at, ?) WHERE id = ? AND deleted_at IS NULL', args: [now, userId] });
   const { name } = await contactOf(userId);
   for (const b of await ongoingBets(userId)) {
-    const other = b.creator_id === userId ? b.opponent_id : b.creator_id;
-    if (b.status === 'awaiting_guess' && b.creator_id === userId) {
-      // Nobody has answered yet: the creator can always just cancel it
-      await db.execute({ sql: `UPDATE bets SET status = 'cancelled' WHERE id = ?`, args: [b.id] });
-      await notify(other, `Bet cancelled: ${b.question}`, `${name} is deleting their account, so the bet "${b.question}" was cancelled before you answered it.`);
+    const others = await othersIn(b.id, userId);
+    if (b.status === 'awaiting_guess') {
+      if (b.creator_id === userId) {
+        // The bet hasn't started: the creator can always just cancel it
+        await cancelBet(b.id);
+        for (const o of others) await notify(o, `Bet cancelled: ${b.question}`, `${name} is deleting their account, so the bet "${b.question}" was cancelled before it started.`);
+      } else {
+        // ...and anyone else can simply step out of it (which may leave too few players, and cancel it)
+        await db.execute({ sql: `UPDATE bet_participants SET status = 'declined', guess = NULL, responded_at = ? WHERE bet_id = ? AND user_id = ?`, args: [now, b.id, userId] });
+        await settleInvitations(b.id, now);
+      }
       continue;
     }
     // An existing request is left alone, so asking again can't restart the 30 days
@@ -139,11 +165,13 @@ export async function requestDeletion(userId: string, now = Date.now()): Promise
       args: [b.id, userId, now],
     });
     if (r.rowsAffected === 1) {
-      await notify(
-        other,
-        `${name} asks to cancel a bet`,
-        `${name} is deleting their account and asks to cancel your bet "${b.question}".\n\nOpen the bet and accept or refuse. If you don't respond within ${LAPSE_DAYS} days, the bet is cancelled so the account can be deleted.`,
-      );
+      for (const o of others) {
+        await notify(
+          o,
+          `${name} asks to cancel a bet`,
+          `${name} is deleting their account and asks to cancel your bet "${b.question}".\n\nOpen the bet and accept or refuse. If nobody responds within ${LAPSE_DAYS} days, the bet is cancelled so the account can be deleted.`,
+        );
+      }
     }
   }
   return tryDeleteUser(userId, now);
@@ -161,12 +189,11 @@ export async function withdrawDeletion(userId: string) {
 
 /** After a bet is settled or cancelled: a participant waiting to be deleted may be free to go. */
 export async function afterBetEnded(betId: string) {
-  const b = first(await db.execute({ sql: 'SELECT creator_id, opponent_id FROM bets WHERE id = ?', args: [betId] }));
-  if (!b) return;
-  for (const id of [b.creator_id, b.opponent_id]) {
-    const u = first(await db.execute({ sql: 'SELECT 1 AS x FROM users WHERE id = ? AND deletion_requested_at IS NOT NULL AND deleted_at IS NULL', args: [id] }));
-    if (u) await tryDeleteUser(id);
-  }
+  const waiting = await db.execute({
+    sql: 'SELECT u.id FROM bet_participants p JOIN users u ON u.id = p.user_id WHERE p.bet_id = ? AND u.deletion_requested_at IS NOT NULL AND u.deleted_at IS NULL',
+    args: [betId],
+  });
+  for (const u of waiting.rows) await tryDeleteUser(String(u.id));
 }
 
 // ---------- the cron step ----------
@@ -175,17 +202,17 @@ export async function afterBetEnded(betId: string) {
 export async function runDeletionCron(now = Date.now()) {
   let reminders = 0;
   let lapsed = 0;
-  const pending = (await db.execute(`SELECT r.*, b.question, b.creator_id, b.opponent_id FROM bet_cancel_requests r JOIN bets b ON b.id = r.bet_id WHERE r.response = 'pending'`)).rows as Row[];
+  const pending = (await db.execute(`SELECT r.*, b.question FROM bet_cancel_requests r JOIN bets b ON b.id = r.bet_id WHERE r.response = 'pending'`)).rows as Row[];
   for (const r of pending) {
     const age = now - r.created_at;
-    const other = r.creator_id === r.requested_by ? r.opponent_id : r.creator_id;
+    const others = await othersIn(r.bet_id, r.requested_by);
     const { name } = await contactOf(r.requested_by);
     if (age >= LAPSE_DAYS * DAY_MS) {
       // Claimed first, so overlapping runs can't lapse (and email) twice
       const claim = await db.execute({ sql: `UPDATE bet_cancel_requests SET response = 'lapsed', responded_at = ? WHERE bet_id = ? AND requested_by = ? AND response = 'pending'`, args: [now, r.bet_id, r.requested_by] });
       if (claim.rowsAffected !== 1) continue;
-      await db.execute({ sql: `UPDATE bets SET status = 'cancelled' WHERE id = ? AND status IN ${ONGOING}`, args: [r.bet_id] });
-      await notify(other, `Bet cancelled: ${r.question}`, `${name} asked you to cancel the bet "${r.question}" because they are deleting their account, and ${LAPSE_DAYS} days passed without a response. The bet has been cancelled.`);
+      await cancelBet(r.bet_id);
+      for (const o of others) await notify(o, `Bet cancelled: ${r.question}`, `${name} asked you to cancel the bet "${r.question}" because they are deleting their account, and ${LAPSE_DAYS} days passed without a response. The bet has been cancelled.`);
       lapsed++;
       continue;
     }
@@ -194,7 +221,7 @@ export async function runDeletionCron(now = Date.now()) {
       const claim = await db.execute({ sql: `UPDATE bet_cancel_requests SET ${col} = ? WHERE bet_id = ? AND requested_by = ? AND ${col} IS NULL`, args: [now, r.bet_id, r.requested_by] });
       if (claim.rowsAffected !== 1) continue;
       const left = LAPSE_DAYS - days;
-      await notify(other, `Reminder: ${name} asks to cancel a bet`, `${name} is deleting their account and asked you to cancel the bet "${r.question}". Please accept or refuse within ${left} days, or the bet is cancelled.`);
+      for (const o of others) await notify(o, `Reminder: ${name} asks to cancel a bet`, `${name} is deleting their account and asked you to cancel the bet "${r.question}". Please accept or refuse within ${left} days, or the bet is cancelled.`);
       reminders++;
     }
   }
@@ -215,13 +242,13 @@ deletionRouter.get('/me/deletion', async (_req, res) => {
   const u = first(await db.execute({ sql: 'SELECT deletion_requested_at FROM users WHERE id = ?', args: [me] }));
   const ongoing = [];
   for (const b of await ongoingBets(me)) {
-    const other = b.creator_id === me ? b.opponent_id : b.creator_id;
+    const others = await othersIn(b.id, me);
     const req = first(await db.execute({ sql: 'SELECT response, created_at FROM bet_cancel_requests WHERE bet_id = ? AND requested_by = ?', args: [b.id, me] }));
     ongoing.push({
       betId: b.id,
       question: b.question,
       status: b.status,
-      other: { id: other, name: (await contactOf(other)).name },
+      other: { id: others[0] ?? '', name: (await Promise.all(others.map(async (o) => (await contactOf(o)).name))).join(', ') },
       request: req ? { response: req.response, createdAt: req.created_at, lapsesAt: lapsesAt(req.created_at) } : null,
     });
   }
@@ -263,8 +290,9 @@ deletionRouter.get('/me/cancel-requests', async (_req, res) => {
   const rows = (
     await db.execute({
       sql: `SELECT r.bet_id, r.requested_by, r.created_at, b.question, b.status FROM bet_cancel_requests r JOIN bets b ON b.id = r.bet_id
-            WHERE r.response = 'pending' AND r.requested_by != ? AND (b.creator_id = ? OR b.opponent_id = ?) AND b.status IN ${ONGOING} ORDER BY r.created_at`,
-      args: [me, me, me],
+            JOIN bet_participants p ON p.bet_id = b.id AND p.user_id = ? AND p.status = 'joined'
+            WHERE r.response = 'pending' AND r.requested_by != ? AND b.status IN ${ONGOING} ORDER BY r.created_at`,
+      args: [me, me],
     })
   ).rows as Row[];
   res.json(await Promise.all(rows.map(async (r) => ({ betId: r.bet_id, question: r.question, status: r.status, from: { id: r.requested_by, name: (await contactOf(r.requested_by)).name }, createdAt: r.created_at, lapsesAt: lapsesAt(r.created_at) }))));
@@ -277,38 +305,48 @@ deletionRouter.post('/bets/:id/cancel-request/:action', async (req, res) => {
   const r = first(
     await db.execute({
       sql: `SELECT r.requested_by FROM bet_cancel_requests r JOIN bets b ON b.id = r.bet_id
-            WHERE r.bet_id = ? AND r.response = 'pending' AND r.requested_by != ? AND (b.creator_id = ? OR b.opponent_id = ?) AND b.status IN ${ONGOING}`,
-      args: [req.params.id, me, me, me],
+            JOIN bet_participants p ON p.bet_id = b.id AND p.user_id = ? AND p.status = 'joined'
+            WHERE r.bet_id = ? AND r.response = 'pending' AND r.requested_by != ? AND b.status IN ${ONGOING}`,
+      args: [me, req.params.id, me],
     }),
   );
   if (!r) return res.status(404).json({ error: 'There is no request to answer on this bet' });
   const now = Date.now();
+  // Any one of the other players answers for all of them
   await db.execute({ sql: 'UPDATE bet_cancel_requests SET response = ?, responded_at = ? WHERE bet_id = ? AND requested_by = ?', args: [action === 'accept' ? 'accepted' : 'refused', now, req.params.id, r.requested_by] });
   if (action === 'accept') {
-    await db.execute({ sql: `UPDATE bets SET status = 'cancelled' WHERE id = ? AND status IN ${ONGOING}`, args: [req.params.id] });
+    await cancelBet(String(req.params.id));
     await afterBetEnded(String(req.params.id));
   }
   res.json({ ok: true });
 });
 
-// A settled bet against someone who has since deleted their account can be dropped from the remaining player's history.
+// A settled bet whose every other player has since deleted their account can be dropped from the remaining player's history.
 deletionRouter.post('/bets/:id/remove-from-history', async (req, res) => {
   const me = uid(res);
   const b = first(
     await db.execute({
-      sql: `SELECT b.id, o.id AS other FROM bets b JOIN users o ON o.id = CASE WHEN b.creator_id = ? THEN b.opponent_id ELSE b.creator_id END
-            WHERE b.id = ? AND (b.creator_id = ? OR b.opponent_id = ?) AND b.status = 'settled' AND o.deleted_at IS NOT NULL`,
+      sql: `SELECT b.id FROM bets b JOIN bet_participants p ON p.bet_id = b.id AND p.user_id = ? AND p.status = 'joined'
+            WHERE b.id = ? AND b.status = 'settled'
+              AND EXISTS (SELECT 1 FROM bet_participants o JOIN users u ON u.id = o.user_id WHERE o.bet_id = b.id AND o.user_id != ? AND u.deleted_at IS NOT NULL)
+              AND NOT EXISTS (SELECT 1 FROM bet_participants o JOIN users u ON u.id = o.user_id WHERE o.bet_id = b.id AND o.user_id != ? AND o.status = 'joined' AND u.deleted_at IS NULL)`,
       args: [me, req.params.id, me, me],
     }),
   );
-  if (!b) return res.status(404).json({ error: 'Only bets with a deleted user can be removed from your history' });
+  if (!b) return res.status(404).json({ error: 'Only bets where everyone else has deleted their account can be removed from your history' });
+  const placeholders = (await db.execute({ sql: 'SELECT o.user_id FROM bet_participants o JOIN users u ON u.id = o.user_id WHERE o.bet_id = ? AND u.deleted_at IS NOT NULL', args: [b.id] })).rows.map((r) => String(r.user_id));
+  const stillUsed = `(SELECT 1 FROM bet_participants WHERE user_id = ?)`;
   await db.batch(
     [
       { sql: 'DELETE FROM bet_reminders WHERE bet_id = ?', args: [b.id] },
+      { sql: 'DELETE FROM bet_settlements WHERE bet_id = ?', args: [b.id] },
+      { sql: 'DELETE FROM bet_participants WHERE bet_id = ?', args: [b.id] },
       { sql: 'DELETE FROM bets WHERE id = ?', args: [b.id] },
-      // The last bet with this placeholder takes the placeholder and its "friendship" with it
-      { sql: 'DELETE FROM connections WHERE (user_a = ? OR user_b = ?) AND NOT EXISTS (SELECT 1 FROM bets WHERE creator_id = ? OR opponent_id = ?)', args: [b.other, b.other, b.other, b.other] },
-      { sql: 'DELETE FROM users WHERE id = ? AND deleted_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM bets WHERE creator_id = ? OR opponent_id = ?)', args: [b.other, b.other, b.other] },
+      // The last bet with a placeholder takes the placeholder and its "friendship" with it
+      ...placeholders.flatMap((ph) => [
+        { sql: `DELETE FROM connections WHERE (user_a = ? OR user_b = ?) AND NOT EXISTS ${stillUsed}`, args: [ph, ph, ph] },
+        { sql: `DELETE FROM users WHERE id = ? AND deleted_at IS NOT NULL AND NOT EXISTS ${stillUsed}`, args: [ph, ph] },
+      ]),
     ],
     'write',
   );

@@ -35,7 +35,7 @@ async function loadSide(id: string): Promise<MergeSide | null> {
   list.sort((x, y) => Number(y.primary) - Number(x.primary));
   const friends = first(await db.execute({ sql: 'SELECT count(*) AS n FROM connections WHERE user_a = ? OR user_b = ?', args: [id, id] }))!.n;
   const bets = first(
-    await db.execute({ sql: `SELECT count(*) AS n FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status != 'cancelled'`, args: [id, id] }),
+    await db.execute({ sql: `SELECT count(*) AS n FROM bets b JOIN bet_participants p ON p.bet_id = b.id WHERE p.user_id = ? AND p.status IN ('invited', 'joined') AND b.status != 'cancelled'`, args: [id] }),
   )!.n;
   return {
     id,
@@ -52,10 +52,14 @@ async function loadSide(id: string): Promise<MergeSide | null> {
 
 const primaryVerified = (s: MergeSide) => s.emails.some((e) => e.primary && e.verified);
 
+/** Bets both accounts are in (or were asked into). */
+const SHARED = `(SELECT x.bet_id FROM bet_participants x JOIN bet_participants y ON y.bet_id = x.bet_id
+                 WHERE x.user_id = ? AND y.user_id = ? AND x.status IN ('invited', 'joined') AND y.status IN ('invited', 'joined'))`;
+
 async function betsBetween(a: string, b: string) {
   const r = await db.execute({
-    sql: `SELECT status, count(*) AS n FROM bets WHERE status != 'cancelled' AND ((creator_id = ? AND opponent_id = ?) OR (creator_id = ? AND opponent_id = ?)) GROUP BY status`,
-    args: [a, b, b, a],
+    sql: `SELECT status, count(*) AS n FROM bets WHERE status != 'cancelled' AND id IN ${SHARED} GROUP BY status`,
+    args: [a, b],
   });
   let unfinished = 0;
   let finished = 0;
@@ -175,13 +179,28 @@ mergeRouter.post('/confirm', async (req, res) => {
   // One transaction: either everything moves, or nothing does.
   await db.batch(
     [
-      // Bets between the two accounts would become bets with yourself. Unfinished ones were ruled out above.
-      S(`DELETE FROM bet_reminders WHERE bet_id IN (SELECT id FROM bets WHERE (creator_id = ? AND opponent_id = ?) OR (creator_id = ? AND opponent_id = ?))`, [a, b, b, a]),
-      S(`DELETE FROM bets WHERE (creator_id = ? AND opponent_id = ?) OR (creator_id = ? AND opponent_id = ?)`, [a, b, b, a]),
-      // B's bets become A's
+      // A two-player bet between the two accounts would become a bet with yourself: it goes. (Unfinished ones were
+      // ruled out above.) A bet with other players in it stays, with the merged account as one player: what the two
+      // owed each other disappears, and what either owed (or was owed by) a third player adds up.
+      S(`CREATE TEMP TABLE merge_gone AS SELECT id FROM bets WHERE id IN ${SHARED} AND (SELECT count(*) FROM bet_participants WHERE bet_id = bets.id AND status = 'joined') <= 2`, [a, b]),
+      S(`DELETE FROM bet_reminders WHERE bet_id IN (SELECT id FROM merge_gone)`),
+      S(`DELETE FROM bet_settlements WHERE bet_id IN (SELECT id FROM merge_gone)`),
+      S(`DELETE FROM bet_participants WHERE bet_id IN (SELECT id FROM merge_gone)`),
+      S(`DELETE FROM bets WHERE id IN (SELECT id FROM merge_gone)`),
+      S('DROP TABLE merge_gone'),
+      S('DELETE FROM bet_settlements WHERE (payer_id = ? AND payee_id = ?) OR (payer_id = ? AND payee_id = ?)', [a, b, b, a]),
+      S(`UPDATE bet_settlements SET amount = amount + (SELECT amount FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payer_id = ? AND s.payee_id = bet_settlements.payee_id)
+         WHERE payer_id = ? AND EXISTS (SELECT 1 FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payer_id = ? AND s.payee_id = bet_settlements.payee_id)`, [b, a, b]),
+      S(`DELETE FROM bet_settlements WHERE payer_id = ? AND EXISTS (SELECT 1 FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payer_id = ? AND s.payee_id = bet_settlements.payee_id)`, [b, a]),
+      S('UPDATE bet_settlements SET payer_id = ? WHERE payer_id = ?', [a, b]),
+      S(`UPDATE bet_settlements SET amount = amount + (SELECT amount FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payee_id = ? AND s.payer_id = bet_settlements.payer_id)
+         WHERE payee_id = ? AND EXISTS (SELECT 1 FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payee_id = ? AND s.payer_id = bet_settlements.payer_id)`, [b, a, b]),
+      S(`DELETE FROM bet_settlements WHERE payee_id = ? AND EXISTS (SELECT 1 FROM bet_settlements s WHERE s.bet_id = bet_settlements.bet_id AND s.payee_id = ? AND s.payer_id = bet_settlements.payer_id)`, [b, a]),
+      S('UPDATE bet_settlements SET payee_id = ? WHERE payee_id = ?', [a, b]),
+      // B's place in a bet A is also in goes; elsewhere it becomes A's
+      S('DELETE FROM bet_participants WHERE user_id = ? AND bet_id IN (SELECT bet_id FROM bet_participants WHERE user_id = ?)', [b, a]),
+      S('UPDATE bet_participants SET user_id = ? WHERE user_id = ?', [a, b]),
       S('UPDATE bets SET creator_id = ? WHERE creator_id = ?', [a, b]),
-      S('UPDATE bets SET opponent_id = ? WHERE opponent_id = ?', [a, b]),
-      S('UPDATE bets SET winner_id = ? WHERE winner_id = ?', [a, b]),
       S('UPDATE bets SET outcome_proposed_by = ? WHERE outcome_proposed_by = ?', [a, b]),
       // Friends: drop a connection between the two, then give B's friends to A (a mutual friend stays a single connection)
       S('DELETE FROM connections WHERE (user_a = ? AND user_b = ?) OR (user_a = ? AND user_b = ?)', [a, b, b, a]),

@@ -2,7 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { describeReading, formatDurationLong, parseDuration, readDuration } from '../shared/duration.js';
 import type { InstantParams, NumberParams } from '../shared/types.js';
 import { publicUrlProblem } from './env.js';
-import { balanceFor, buildParams, decide, normalizeAnswer, tippingPoint, tippingVerdict } from './betLogic.js';
+import { balanceWith, buildParams, latestGuessers, normalizeAnswer, tippingPoint, transfers, winners } from './betLogic.js';
+
+/** Two players, as the old two-way bets had them: 'creator' guessed first, 'opponent' second. */
+const two = (creator: string, opponent: string) => [{ id: 'creator', guess: creator }, { id: 'opponent', guess: opponent }];
+/** Who wins between two players, as a word: the one that did, or 'draw' for both or neither. */
+const decide = (kind: any, creator: string, opponent: string, outcome: string) => {
+  const w = winners(kind, two(creator, opponent), outcome);
+  return w.length === 1 ? w[0] : 'draw';
+};
+const tippingVerdict = (kind: any, creator: string, opponent: string) => {
+  const w = latestGuessers(kind, two(creator, opponent));
+  return w.length === 1 ? w[0] : 'draw';
+};
 
 const NOW = Date.parse('2027-03-01T12:00:00Z');
 const num = (over: Partial<NumberParams> = {}): NumberParams => ({ integer: false, min: null, max: null, minExclusive: false, maxExclusive: false, ...over });
@@ -180,31 +192,52 @@ describe('yes/no, multiple choice and freeform answers', () => {
   });
 });
 
+describe('winners among several players', () => {
+  const four = (...guesses: string[]) => guesses.map((guess, i) => ({ id: `p${i + 1}`, guess }));
+  it('is everyone at the shortest distance', () => {
+    expect(winners('number', four('1', '4', '6', '9'), '5')).toEqual(['p2', 'p3']); // 4 and 6 tie for the win
+    expect(winners('number', four('1', '4', '6', '9'), '2')).toEqual(['p1']);
+    expect(winners('number', four('3', '3', '3', '3'), '7')).toEqual(['p1', 'p2', 'p3', 'p4']); // all tie: a draw
+  });
+  it('is everyone who was right, or nobody', () => {
+    expect(winners('yesno', four('yes', 'no', 'yes', 'no'), 'yes')).toEqual(['p1', 'p3']);
+    expect(winners('choice', four('quit', 'quit', 'get fired', 'quit'), 'get reassigned')).toEqual([]);
+  });
+  it('at the tipping point, the latest guess wins, shared when identical', () => {
+    expect(latestGuessers('instant', four('2027-03-10', '2027-03-20', '2027-03-20', '2027-03-01'))).toEqual(['p2', 'p3']);
+  });
+  it('only the top two distinct guesses set the tipping point', () => {
+    const p = inst({ precision: 'day' });
+    // The latest guess is certain to be closest once the midpoint between it and the next-latest has passed
+    expect(tippingPoint('instant', p, ['2027-03-10', '2027-03-20', '2027-03-20', '2027-03-01'])).toBe(tippingPoint('instant', p, ['2027-03-10', '2027-03-20']));
+  });
+});
+
 describe('tipping point', () => {
   const p = inst();
   it('is the midpoint (plus a minute of slack) for future-dated bets', () => {
-    const tp = tippingPoint('instant', p, '2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z')!;
+    const tp = tippingPoint('instant', p, ['2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z'])!;
     expect(new Date(tp).toISOString()).toBe('2027-03-15T00:01:00.000Z');
   });
   it('is symmetric in who guessed first', () => {
-    expect(tippingPoint('instant', p, '2027-03-20T00:00:00.000Z', '2027-03-10T00:00:00.000Z')).toBe(
-      tippingPoint('instant', p, '2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z'),
+    expect(tippingPoint('instant', p, ['2027-03-20T00:00:00.000Z', '2027-03-10T00:00:00.000Z'])).toBe(
+      tippingPoint('instant', p, ['2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z']),
     );
   });
   it('day precision waits for the midpoint to be before today', () => {
     // Mar 10 and Mar 20 -> midpoint Mar 15 00:00; resolved from the start of Mar 16
-    const tp = tippingPoint('instant', inst({ precision: 'day' }), '2027-03-10', '2027-03-20')!;
+    const tp = tippingPoint('instant', inst({ precision: 'day' }), ['2027-03-10', '2027-03-20'])!;
     expect(new Date(tp).toISOString()).toBe('2027-03-16T00:00:00.000Z');
   });
   it('does not exist when the event may already have happened, or for other kinds', () => {
-    expect(tippingPoint('instant', inst({ allowPast: true }), '2027-03-10T00:00Z', '2027-03-20T00:00Z')).toBeNull();
-    expect(tippingPoint('number', num(), '1', '2')).toBeNull();
+    expect(tippingPoint('instant', inst({ allowPast: true }), ['2027-03-10T00:00Z', '2027-03-20T00:00Z'])).toBeNull();
+    expect(tippingPoint('number', num(), ['1', '2'])).toBeNull();
   });
   it('the later guess is the winner, and it really is closer to every outcome after the tipping point', () => {
     expect(tippingVerdict('instant', '2027-03-10', '2027-03-20')).toBe('opponent');
     expect(tippingVerdict('instant', '2027-03-20', '2027-03-10')).toBe('creator');
     expect(tippingVerdict('instant', '2027-03-10', '2027-03-10')).toBe('draw');
-    const tp = tippingPoint('instant', p, '2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z')!;
+    const tp = tippingPoint('instant', p, ['2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z'])!;
     for (const days of [0, 1, 30, 3000]) {
       const outcome = new Date(tp + days * 86_400_000).toISOString();
       expect(decide('instant', '2027-03-10T00:00:00.000Z', '2027-03-20T00:00:00.000Z', outcome)).toBe('opponent');
@@ -223,9 +256,25 @@ describe('publicUrlProblem', () => {
   });
 });
 
-describe('balanceFor', () => {
-  it('sums stakes by winner and ignores draws', () => {
-    expect(balanceFor('me', [{ winnerId: 'me', stake: 1 }, { winnerId: 'x', stake: 1 }, { winnerId: null, stake: 1 }])).toBe(0);
-    expect(balanceFor('me', [{ winnerId: 'x', stake: 3 }])).toBe(-3);
+describe('winners collect', () => {
+  it('every non-winner owes each winner the stake, and a draw moves nothing', () => {
+    expect(transfers(['a', 'b'], ['a'], 1)).toEqual([{ payerId: 'b', payeeId: 'a', amount: 1 }]);
+    expect(transfers(['a', 'b'], ['b'], 3)).toEqual([{ payerId: 'a', payeeId: 'b', amount: 3 }]);
+    expect(transfers(['a', 'b'], [], 1)).toEqual([]);
+    // Four players, P1 wins: three GTs in, one from each
+    expect(transfers(['p1', 'p2', 'p3', 'p4'], ['p1'], 1).map((t) => `${t.payerId}>${t.payeeId}`)).toEqual(['p2>p1', 'p3>p1', 'p4>p1']);
+    // P1 and P2 tie for the win: each collects from P3 and P4, so +2 each and -2 each
+    expect(transfers(['p1', 'p2', 'p3', 'p4'], ['p1', 'p2'], 1).map((t) => `${t.payerId}>${t.payeeId}`)).toEqual(['p3>p1', 'p3>p2', 'p4>p1', 'p4>p2']);
+  });
+  it('balances between two people sum their settlements, ignoring everyone else', () => {
+    const settled = [
+      { payerId: 'x', payeeId: 'me', amount: 1 },
+      { payerId: 'me', payeeId: 'x', amount: 1 },
+      { payerId: 'me', payeeId: 'x', amount: 3 },
+      { payerId: 'me', payeeId: 'y', amount: 2 },
+    ];
+    expect(balanceWith('me', 'x', settled)).toBe(-3);
+    expect(balanceWith('me', 'y', settled)).toBe(-2);
+    expect(balanceWith('me', 'z', settled)).toBe(0);
   });
 });

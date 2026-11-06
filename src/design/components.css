@@ -749,6 +749,72 @@ a.card::after {
   color: var(--text-muted);
   font-size: 1.125rem;
 }
+
+/* The players of a bet, one row each, with their guess (or where they stand) */
+.players {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.player {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+.player-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+.player-main strong {
+  font: 700 1.25rem / 1.2 var(--font-display);
+  overflow-wrap: anywhere;
+}
+.player-main a {
+  color: inherit;
+}
+.player-win {
+  background: var(--surface-tint);
+}
+/* Several players on a list card: a short stack of small avatars */
+.avatar-stack {
+  display: flex;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  flex-wrap: wrap;
+  align-content: center;
+  justify-content: center;
+  margin-left: -4px;
+}
+.avatar-stack .avatar {
+  margin: -4px;
+}
+/* Picking friends for a new bet */
+.player-pick .avatar {
+  margin-left: calc(var(--space-1) * -1);
+}
+/* Who has accepted a proposed result */
+.accept-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-small);
+}
+.accept-list li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.accept-list .ok {
+  color: var(--positive-fg, inherit);
+}
 .rules {
   margin-top: calc(var(--space-2) * -1);
 }

@@ -24,6 +24,7 @@ const USERS = {
   alice: { name: 'Alice Aaltonen', email: 'alice@example.com' },
   bob: { name: 'Bob Berg', email: 'bob@example.com' },
   cara: { name: 'Cara Cortez', email: 'cara@example.com' },
+  dan: { name: 'Dan Dubois', email: 'dan@example.com' },
 };
 
 // ---------- servers ----------
@@ -128,6 +129,7 @@ const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString()
 
 async function scenarios() {
   const people = ['alice', 'bob', 'cara'];
+  const everyone = [...people, 'dan'];
 
   console.log('Signed-out screens');
   await shot({ group: 'Signed out', title: 'Sign in', note: 'With the dev login form.', as: null, url: '/login' });
@@ -136,7 +138,7 @@ async function scenarios() {
   await shot({ group: 'Signed out', title: 'Style guide', as: null, url: '/styleguide' });
 
   console.log('A new user with no friends');
-  for (const p of people) await session(p); // signs everyone up
+  for (const p of everyone) await session(p); // signs everyone up
   await shot({ group: 'First steps', title: 'Bets, nothing yet', as: 'alice', url: '/' });
   await shot({ group: 'First steps', title: 'Friends, nothing yet', as: 'alice', url: '/friends' });
   await shot({ group: 'First steps', title: 'Profile', as: 'alice', url: '/profile' });
@@ -154,8 +156,10 @@ async function scenarios() {
   const { received } = await call('bob', 'GET', '/invitations');
   await call('bob', 'POST', `/invitations/${received[0].id}/accept`);
   await call('cara', 'POST', `/invitations/token/${toCara.link.split('/').pop()}/accept`);
-  const myId = {}; // user ids, to name the opponent when creating a bet
-  for (const p of people) myId[p] = (await call(p, 'GET', '/me')).id;
+  const toDan = await call('alice', 'POST', '/invitations', { email: USERS.dan.email });
+  await call('dan', 'POST', `/invitations/token/${toDan.link.split('/').pop()}/accept`);
+  const myId = {}; // user ids, to name the opponents when creating a bet
+  for (const p of everyone) myId[p] = (await call(p, 'GET', '/me')).id;
 
   await shot({ group: 'Friends', title: 'Friends list, no bets yet', as: 'alice', url: '/friends' });
   await shot({ group: 'Friends', title: 'A friend with no bets', as: 'alice', url: `/friends/${myId.bob}` });
@@ -173,9 +177,22 @@ async function scenarios() {
       },
     });
   }
+  await shot({
+    group: 'Creating a bet',
+    title: 'New bet: a group of four, with a deadline for silent players',
+    note: 'Picking several friends makes it a group bet and shows the deadline option.',
+    as: 'alice',
+    url: '/bets/new',
+    act: async (page) => {
+      for (const name of ['Cara Cortez', 'Dan Dubois']) await page.getByRole('checkbox', { name }).check();
+      await page.getByLabel(/If someone never answers/).selectOption('7');
+    },
+  });
 
   console.log('Setting up bets');
   const bet = (as, opponent, question, kind, params, guess) => call(as, 'POST', '/bets', { opponentId: myId[opponent], question, kind, params, guess });
+  const groupBet = (as, opponents, question, kind, params, guess, settleDays = null) =>
+    call(as, 'POST', '/bets', { opponentIds: opponents.map((o) => myId[o]), question, kind, params, guess, settleDays });
   const guess = (as, b, g) => call(as, 'POST', `/bets/${b.id}/guess`, { guess: g });
 
   // Alice and Bob
@@ -197,7 +214,8 @@ async function scenarios() {
   // Alice and Cara
   const freeform = await bet('alice', 'cara', 'What will the coach say first after the final whistle?', 'text', {}, '"We go again"');
   await guess('cara', freeform, '"Great fighting spirit"');
-  await call('alice', 'POST', `/bets/${freeform.id}/propose`, { outcome: '"Great fighting spirit"', winner: 'them' });
+  // Alice says she was right, so Cara (who would pay) is asked. Conceding to Cara would have settled it on the spot.
+  await call('alice', 'POST', `/bets/${freeform.id}/propose`, { outcome: '"We go again, lads"', winners: [myId.alice] });
 
   const future = await bet('alice', 'cara', 'When is the new office opening?', 'instant', { precision: 'day', allowPast: false, minLeadMinutes: 0 }, day(20));
   await guess('cara', future, day(60));
@@ -210,6 +228,28 @@ async function scenarios() {
 
   const cancelled = await bet('alice', 'cara', 'Does it snow in June?', 'yesno', {}, 'no');
   await call('alice', 'POST', `/bets/${cancelled.id}/cancel`);
+
+  // Group bets: Alice with everyone
+  const inviting = await groupBet('alice', ['bob', 'cara', 'dan'], 'How many medals does Finland take home?', 'number', { integer: true, min: 0, max: null, minExclusive: false, maxExclusive: false }, '3', 7);
+  await guess('bob', inviting, '5'); // Cara and Dan haven't answered: Alice could start without them
+
+  const groupActive = await groupBet('alice', ['bob', 'cara', 'dan'], 'What time does the sauna hit 100 °C?', 'duration', {}, '0:45');
+  await guess('bob', groupActive, '1:10');
+  await guess('cara', groupActive, '0:50');
+  await call('dan', 'POST', `/bets/${groupActive.id}/cancel`); // Dan declines, so it starts with three
+
+  const groupProposed = await groupBet('alice', ['bob', 'cara', 'dan'], 'How many goals in the opening match?', 'number', { integer: true, min: 0, max: null, minExclusive: false, maxExclusive: false }, '1', 3);
+  await guess('bob', groupProposed, '4');
+  await guess('cara', groupProposed, '6');
+  await guess('dan', groupProposed, '9');
+  await call('alice', 'POST', `/bets/${groupProposed.id}/propose`, { outcome: '5' }); // Bob and Cara win; Alice proposed, so only Dan is asked
+  await call('dan', 'POST', `/bets/${groupProposed.id}/confirm`); // ...and that settles it
+  const groupPending = await groupBet('alice', ['bob', 'cara', 'dan'], 'How many lonkeros do we get through at midsummer?', 'number', { integer: true, min: 0, max: null, minExclusive: false, maxExclusive: false }, '12', 3);
+  await guess('bob', groupPending, '20');
+  await guess('cara', groupPending, '24');
+  await guess('dan', groupPending, '30');
+  await call('bob', 'POST', `/bets/${groupPending.id}/propose`, { outcome: '21' }); // Bob wins: Alice, Cara and Dan are asked
+  await call('cara', 'POST', `/bets/${groupPending.id}/confirm`);
 
   console.log('Lists');
   for (const p of people) await shot({ group: 'Bets', title: 'Bets list', as: p, url: '/' });
@@ -232,6 +272,21 @@ async function scenarios() {
     for (const p of who) await shot({ group: 'Bet details', title, as: p, url: `/bets/${b.id}` });
   }
 
+  console.log('Group bets');
+  const groupDetails = [
+    [inviting, 'Invitations out: the creator can start without those who have not answered', ['alice']],
+    [inviting, 'Invited to a group bet', ['cara']],
+    [inviting, 'Joined, waiting for the others', ['bob']],
+    [groupActive, 'In play with three players (one declined)', ['alice', 'dan']],
+    [groupPending, 'Result proposed: the players who would pay are asked', ['bob', 'alice', 'cara']],
+    [groupProposed, 'Settled: two joint winners collect from the other two', ['alice', 'bob']],
+  ];
+  for (const [b, title, who] of groupDetails) {
+    for (const p of who) await shot({ group: 'Group bets', title, as: p, url: `/bets/${b.id}` });
+  }
+  await shot({ group: 'Group bets', title: 'Bets list with group bets', as: 'dan', url: '/' });
+  await shot({ group: 'Group bets', title: 'Friends made through a group bet', as: 'dan', url: '/friends' });
+
   // Finish a couple so the settled states (win, loss, draw) are visible too.
   console.log('Settling');
   await call('bob', 'POST', `/bets/${choice.id}/confirm`);
@@ -239,7 +294,7 @@ async function scenarios() {
   await call('alice', 'POST', `/bets/${tie.id}/confirm`);
   for (const [b, title, who] of [
     [choice, 'Settled: multiple choice', ['alice', 'bob']],
-    [freeform, 'Settled: freeform, Cara was right', ['alice', 'cara']],
+    [freeform, 'Settled: freeform, Alice was right', ['alice', 'cara']],
     [tie, 'Settled: called off as a tie', ['alice', 'cara']],
   ]) {
     for (const p of who) await shot({ group: 'Bet details', title, as: p, url: `/bets/${b.id}` });

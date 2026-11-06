@@ -6,6 +6,9 @@ export { formatValue, formatMoment } from '../shared/format';
 // The one place that decides how a count of Gin & Tonics reads ("1 GT", "3 GTs").
 export const gts = (n: number) => `${n} ${n === 1 ? 'GT' : 'GTs'}`;
 
+/** "Ann", "Ann and Bob", "Ann, Bob and Cara". */
+export const listNames = (names: string[]): string => (names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
+
 export function balanceText(name: string, balance: number): string {
   if (balance === 0) return `You and ${name} are even`;
   return balance > 0 ? `${name} owes you ${gts(balance)}` : `You owe ${name} ${gts(-balance)}`;

@@ -171,59 +171,75 @@ function scalar(kind: BetKind, v: string): number {
   return Number(v);
 }
 
-export type Verdict = 'creator' | 'opponent' | 'draw';
+export interface Guesser {
+  id: string;
+  guess: string;
+}
 
 /**
- * Whose guess was closer (or, for yes/no and multiple choice, right)? Equal distance is a draw, and so is
- * both or neither being right. Freeform bets can't be decided by a computer: the players say who won.
+ * Who won: everyone whose guess was closest to the outcome (or, for yes/no and multiple choice, right).
+ * Several players at the same distance all win; nobody being right means nobody wins. Freeform bets
+ * can't be decided by a computer: the players say who won.
  */
-export function decide(kind: BetKind, creatorGuess: string, opponentGuess: string, outcome: string): Verdict {
+export function winners(kind: BetKind, guessers: Guesser[], outcome: string): string[] {
   if (kind === 'text') throw new Error('Freeform bets are decided by the players');
-  if (EXACT_KINDS.includes(kind)) {
-    const c = sameText(creatorGuess, outcome);
-    return c === sameText(opponentGuess, outcome) ? 'draw' : c ? 'creator' : 'opponent';
-  }
+  if (EXACT_KINDS.includes(kind)) return guessers.filter((g) => sameText(g.guess, outcome)).map((g) => g.id);
   const o = scalar(kind, outcome);
   // Rounded so decimal noise (0.1 + 0.2) can't turn a tie into a win.
   const dist = (g: string) => Math.round(Math.abs(scalar(kind, g) - o) * 1e9);
-  const dc = dist(creatorGuess);
-  const dop = dist(opponentGuess);
-  if (dc === dop) return 'draw';
-  return dc < dop ? 'creator' : 'opponent';
+  const best = Math.min(...guessers.map((g) => dist(g.guess)));
+  return guessers.filter((g) => dist(g.guess) === best).map((g) => g.id);
 }
 
 // ---------- tipping point ----------
 
 /**
  * For a bet about a future event, the moment after which the winner is certain even though nothing
- * has happened: the outcome can only be later than "now", so once now is past the midpoint of the
- * two guesses, the later guess is closer whatever the outcome turns out to be.
+ * has happened: the outcome can only be later than "now", so once now is past the midpoint between the
+ * latest guess and the next-latest different one, the latest guess is closer whatever the outcome turns
+ * out to be. (Only the top rank matters, since winners collect from everyone else.)
  * Null for bets where the event may already have happened.
  */
-export function tippingPoint(kind: BetKind, params: BetParams, guessA: string, guessB: string): number | null {
+export function tippingPoint(kind: BetKind, params: BetParams, guesses: string[]): number | null {
   const p = params as InstantParams;
-  if (kind !== 'instant' || p.allowPast) return null;
-  const mid = (scalar(kind, guessA) + scalar(kind, guessB)) / 2;
+  if (kind !== 'instant' || p.allowPast || guesses.length === 0) return null;
+  const times = [...new Set(guesses.map((g) => scalar(kind, g)))].sort((a, b) => b - a);
+  // Everyone guessed the same: a draw whatever happens, and the "midpoint" is that guess itself
+  const mid = times.length === 1 ? times[0] : (times[0] + times[1]) / 2;
   // Day answers: the event could still happen today, so the midpoint must be before today starts.
   // Minute answers: a minute of slack for rounding.
   return p.precision === 'day' ? floorDay(mid) + DAY_MS : Math.floor(mid) + MIN_MS;
 }
 
-/** At the tipping point the later guess wins (identical guesses draw). */
-export function tippingVerdict(kind: BetKind, creatorGuess: string, opponentGuess: string): Verdict {
-  const c = scalar(kind, creatorGuess);
-  const o = scalar(kind, opponentGuess);
-  return c === o ? 'draw' : c > o ? 'creator' : 'opponent';
+/** At the tipping point the latest guess wins; identical latest guesses share the win. */
+export function latestGuessers(kind: BetKind, guessers: Guesser[]): string[] {
+  const latest = Math.max(...guessers.map((g) => scalar(kind, g.guess)));
+  return guessers.filter((g) => scalar(kind, g.guess) === latest).map((g) => g.id);
 }
 
-// ---------- balances ----------
+// ---------- settling and balances ----------
 
-export interface SettledBetLike {
-  winnerId: string | null;
-  stake: number;
+export interface Transfer {
+  payerId: string;
+  payeeId: string;
+  amount: number;
+}
+
+/**
+ * Winners collect: every player who didn't win owes each winner the stake. No winners (a draw, or nobody
+ * right) moves nothing. With two players this is the plain "the loser owes the winner".
+ */
+export function transfers(playerIds: string[], winnerIds: string[], stake: number): Transfer[] {
+  const won = new Set(winnerIds);
+  const out: Transfer[] = [];
+  for (const payerId of playerIds) {
+    if (won.has(payerId)) continue;
+    for (const payeeId of winnerIds) out.push({ payerId, payeeId, amount: stake });
+  }
+  return out;
 }
 
 /** GTs `other` owes `me` across settled bets (negative: I owe them). */
-export function balanceFor(me: string, bets: SettledBetLike[]): number {
-  return bets.reduce((sum, b) => (b.winnerId === null ? sum : sum + (b.winnerId === me ? b.stake : -b.stake)), 0);
+export function balanceWith(me: string, other: string, settled: Transfer[]): number {
+  return settled.reduce((sum, t) => (t.payeeId === me && t.payerId === other ? sum + t.amount : t.payerId === me && t.payeeId === other ? sum - t.amount : sum), 0);
 }

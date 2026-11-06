@@ -8,7 +8,6 @@ import { useFetch } from '../hooks';
 export default function Bets() {
   const bets = useFetch<Bet[]>('/bets');
   const friends = useFetch<Friend[]>('/friends');
-  const byId = new Map(friends.data?.map((f) => [f.id, f]));
   const list = bets.data ?? [];
   const yourMove = list.filter((b) => b.needsMyAction);
   const headsUp = list.filter((b) => b.tippingSoon && !b.needsMyAction);
@@ -21,7 +20,7 @@ export default function Bets() {
         <h2>{title}</h2>
         <div className="stack">
           {items.map((b) => (
-            <BetCard key={b.id} bet={b} friend={byId.get(b.otherUserId)} />
+            <BetCard key={b.id} bet={b} />
           ))}
         </div>
       </section>
