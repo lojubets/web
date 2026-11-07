@@ -1,27 +1,75 @@
-import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react';
-import type { Me } from '../shared/types';
-import { getEntry, revalidate, subscribe, type Entry } from './cache';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import type { Bet, Friend, Me } from '../shared/types';
+import { api } from './api';
+import { getState, involves, refresh, show, subscribe, type Invitations, type Model, type Resource } from './store';
 
-const NONE: Entry = {};
-const noop = () => () => {};
+/** A one-off GET, not kept anywhere: for things that aren't part of the user's model (settings, a merge preview). */
+export function useFetch<T>(path: string | null) {
+  const [data, setData] = useState<T | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const load = useCallback(async () => {
+    if (!path) return;
+    try {
+      setData(await api<T>(path));
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }, [path]);
+  useEffect(() => {
+    setLoading(true);
+    load();
+  }, [load]);
+  return { data, error, loading, reload: load };
+}
+
+// ---------- the user's model (see store.ts) ----------
+
+const useModelState = () => useSyncExternalStore(subscribe, getState);
 
 /**
- * Data from a GET endpoint. What was fetched before (on this or another screen) shows at once and is refreshed from the
- * server in the background. `placeholder` can stand in on the first visit, worked out from other cached data.
+ * Shows what the model knows about `resource` at once and asks the server for the latest; when the answer arrives,
+ * every screen showing it updates. `reload` asks again after the user changed something.
  */
-export function useFetch<T>(path: string | null, placeholder?: () => T | undefined) {
-  const entry = useSyncExternalStore(
-    useCallback((cb: () => void) => (path ? subscribe(path, cb) : noop()), [path]),
-    () => (path ? getEntry(path) : NONE),
-  );
+function useModel<T>(resource: Resource | null, select: (m: Model) => T | undefined) {
+  const { model, errors } = useModelState();
   useEffect(() => {
-    if (path) revalidate(path);
-  }, [path]);
-  const reload = useCallback(() => (path ? revalidate(path, true) : Promise.resolve()), [path]);
-  const data = (entry.data ?? (path ? placeholder?.() : undefined) ?? null) as T | null;
-  const error = entry.error ?? null;
+    if (!resource) return;
+    const hide = show(resource);
+    refresh(resource);
+    return hide;
+  }, [resource]);
+  const reload = useCallback(() => (resource ? refresh(resource, true) : Promise.resolve()), [resource]);
+  const data = select(model) ?? null;
+  const error = (resource && errors[resource]) || null;
   return { data, error, loading: data === null && error === null, reload };
 }
+
+export const useFriends = () => useModel<Friend[]>('friends', (m) => m.friends);
+
+export const useInvitations = () => useModel<Invitations>('invitations', (m) => m.invitations);
+
+/** The user's bets, newest first. `enabled: false` reads nothing (the profile page while the email is unverified). */
+export function useMyBets(enabled = true) {
+  const r = useModel<string[]>(enabled ? 'bets' : null, (m) => m.betIds);
+  const bets = useModelState().model.bets;
+  const data = useMemo(() => r.data?.map((id) => bets[id]).filter(Boolean) ?? null, [r.data, bets]);
+  return { ...r, data };
+}
+
+/** The user's bets with one friend (they are in it, or invited). */
+export function useBetsWith(friendId: string) {
+  const r = useMyBets();
+  const data = useMemo(() => r.data?.filter((b) => involves(b, friendId)) ?? null, [r.data, friendId]);
+  return { ...r, data };
+}
+
+export const useBet = (id: string) => useModel<Bet>(`bet:${id}`, (m) => m.bets[id]);
+
+// ---------- the signed-in user and actions ----------
 
 export const MeContext = createContext<{ me: Me; reload: () => void } | null>(null);
 export const useMe = () => useContext(MeContext)!;

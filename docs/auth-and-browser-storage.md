@@ -30,14 +30,15 @@ Section 7 onwards is assessment and recommendation; sections 1–6 are descripti
 
 ## 1. Browser storage inventory
 
-**The client keeps one `localStorage` key, `lojubets:cache:v1`, and uses no `sessionStorage`, IndexedDB, Cache API or
+**The client keeps one `localStorage` key, `lojubets:model:v1`, and uses no `sessionStorage`, IndexedDB, Cache API or
 service worker.** `public/manifest.webmanifest` makes the app installable as a PWA but registers no service worker.
 
-*(Added after this audit.)* `src/cache.ts` keeps the signed-in user's `/me`, `/friends`, `/invitations`, `/bets` and
-`/bets?with=…` responses under that key, tagged with the user id, so screens render at once and then refresh from the
-server (stale while revalidate). It is emptied when `/me` answers with an error (signed out, session expired), when a
-different user signs in, on "Sign out" and after account deletion. It holds no credentials or tokens; the session stays in
-the HttpOnly cookie. Anyone with access to the browser profile can read it until then, which the privacy policy states.
+*(Added after this audit.)* `src/store.ts` keeps the signed-in user's model under that key, tagged with their user id:
+their `Me`, friends, invitations and bets (each bet once, by id, plus the ids of the bets they are in). Screens render
+from it at once and then refresh it from the server. It is emptied when `/me` answers 401 (signed out, session expired),
+when a different user signs in, on "Sign out" and after account deletion. It holds no credentials or tokens; the session
+stays in the HttpOnly cookie. Anyone with access to the browser profile can read it until then, which the privacy
+policy states.
 
 Apart from that key, the persistent browser state is the three cookies below. The client never reads
 cookies (`document.cookie` is unused; they are HttpOnly) and `src/api.ts` just calls `fetch(..., { credentials: 'same-origin' })`.

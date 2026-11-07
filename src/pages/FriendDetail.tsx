@@ -1,19 +1,14 @@
 import { Link, useParams } from 'react-router-dom';
-import type { Bet, Friend } from '../../shared/types';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import BetSections from '../components/BetSections';
 import { balanceText } from '../format';
-import { peek } from '../cache';
-import { useFetch } from '../hooks';
+import { useBetsWith, useFriends } from '../hooks';
 
 export default function FriendDetail() {
   const { id } = useParams();
-  const friends = useFetch<Friend[]>('/friends');
-  // On a first visit, start from the bets list (if it's been loaded) while this friend's own list loads
-  const bets = useFetch<Bet[]>(`/bets?with=${id}`, () =>
-    peek<Bet[]>('/bets')?.filter((b) => b.participants.some((p) => p.id === id && (p.status === 'joined' || p.status === 'invited'))),
-  );
+  const friends = useFriends();
+  const bets = useBetsWith(id!);
   const friend = friends.data?.find((f) => f.id === id);
   if (friends.loading) return <p className="center muted">Loading…</p>;
   if (!friend) return <p className="error">Friend not found.</p>;

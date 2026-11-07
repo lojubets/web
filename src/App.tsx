@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Me } from '../shared/types';
 import { api, ApiError } from './api';
-import { cachedMe, setCacheOwner } from './cache';
+import { cachedMe, setOwner } from './store';
 import Layout from './components/Layout';
 import { MeContext } from './hooks';
 import BetDetail from './pages/BetDetail';
@@ -32,14 +32,14 @@ export default function App() {
   const load = () =>
     api<Me>('/me')
       .then((m) => {
-        setCacheOwner(m);
+        setOwner(m);
         setMe(m);
       })
       .catch((e) => {
         // Signed out (401): forget the previous user's friends and bets. A network hiccup or a server error keeps them,
         // and whoever was signed in.
         if (e instanceof ApiError && e.status === 401) {
-          setCacheOwner(null);
+          setOwner(null);
           setMe(null);
         } else setMe((m) => m ?? null);
       });

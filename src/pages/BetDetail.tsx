@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Bet, Friend, Participant } from '../../shared/types';
+import type { Bet, Participant } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { describeRules, formatMoment, formatValue, gts, listNames } from '../format';
-import { peek } from '../cache';
-import { useAction, useFetch } from '../hooks';
+import { useAction, useBet, useFriends } from '../hooks';
+import { dropBet, putBet } from '../store';
 
 const names = (ps: Participant[]) => listNames(ps.map((p) => (p.isMe ? 'you' : p.name)));
 const Names = ({ of }: { of: Participant[] }) => <>{names(of)}</>;
@@ -16,8 +16,8 @@ const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: 'nume
 export default function BetDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const bet = useFetch<Bet>(`/bets/${id}`, () => peek<Bet[]>('/bets')?.find((x) => x.id === id));
-  const friends = useFetch<Friend[]>('/friends');
+  const bet = useBet(id!);
+  const friends = useFriends();
   const act = useAction();
   const [value, setValue] = useState('');
   const [countering, setCountering] = useState(false);
@@ -29,14 +29,16 @@ export default function BetDetail() {
 
   const post = (path: string, body?: unknown) =>
     act.run(async () => {
-      await api(`/bets/${b.id}${path}`, 'POST', body ?? {});
-      await bet.reload();
+      // The answer is the bet as it is now: every screen showing it updates. Balances may have changed too.
+      const updated = await api<Bet | null>(`/bets/${b.id}${path}`, 'POST', body ?? {});
+      if (updated?.id) putBet(updated);
+      else await bet.reload();
       await friends.reload();
       setValue('');
       setWinners([]);
       setCountering(false);
     });
-  const leave = (path: string) => act.run(async () => { await api(`/bets/${b.id}${path}`, 'POST'); nav('/'); });
+  const leave = (path: string) => act.run(async () => { await api(`/bets/${b.id}${path}`, 'POST'); dropBet(b.id); nav('/'); });
 
   const fv = (v: string | null) => formatValue(b.kind, b.params, v);
   const me = b.participants.find((p) => p.isMe)!;

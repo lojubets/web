@@ -1,17 +1,16 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Friend, Invitation } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import { balanceText } from '../format';
-import { useAction, useFetch, useMe } from '../hooks';
+import { useAction, useFriends, useInvitations, useMe } from '../hooks';
 
 export default function Friends() {
   const { me } = useMe();
   const canInvite = me.emailVerified;
-  const friends = useFetch<Friend[]>('/friends');
-  const invites = useFetch<{ sent: Invitation[]; received: Invitation[] }>('/invitations');
+  const friends = useFriends();
+  const invites = useInvitations();
   const [email, setEmail] = useState('');
   const [result, setResult] = useState<{ link: string; emailSent: boolean; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
