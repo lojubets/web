@@ -174,7 +174,9 @@ async function scenarios() {
 
   console.log('Creating a bet');
   const FORM = `${FRIENDS} Alice taps "New bet".`;
-  await shot({ group: 'Creating a bet', title: 'New bet form', as: 'alice', url: '/bets/new', story: FORM, expect: 'The form with a "Bet with" list of friends to tick (Bob Berg ticked, Cara Cortez not) and a hint that ticking several makes a group bet, the question field and six answer types with "A number" selected. Below are the number rules (whole numbers only, minimum, maximum), the optional guess field ("hidden until they answer") and the "Propose bet · 1 GT" button.' });
+  await shot({ group: 'Creating a bet', title: 'New bet form', as: 'alice', url: '/bets/new', story: FORM, expect: 'The form with a "Bet with" list of friends to tick (neither Bob Berg nor Cara Cortez ticked, since Alice has more than one friend and the app doesn’t guess which she means) and a hint that ticking several makes a group bet, the question field and six answer types with "A number" selected. Below are the number rules (whole numbers only, minimum, maximum), the optional guess field ("hidden until they answer") and the "Propose bet · 1 GT" button, disabled until a friend is ticked.' });
+  await shot({ group: 'Creating a bet', title: 'New bet from a friend’s page', as: 'alice', url: `/bets/new?with=${myId.bob}`, story: `${FRIENDS} Alice opens Bob’s page and taps "New bet with Bob Berg".`, expect: 'The same form, but Bob Berg is already ticked (Cara Cortez is not) and the "Propose bet · 1 GT" button is enabled.' });
+  await shot({ group: 'Creating a bet', title: 'New bet with only one friend', as: 'bob', url: '/bets/new', story: `${FRIENDS} Bob, whose only friend is Alice, taps "New bet".`, expect: 'The form with Alice Aaltonen as the only friend in the "Bet with" list, already ticked because there is nobody else to bet with, and the "Propose bet · 1 GT" button enabled.' });
   const KINDS = [
     ['Duration', 'A duration', 'a "How to write a duration" help box and a duration guess field'],
     ['Date or time', 'A date or time', 'date rules (date or date and time, allowing past dates, a minimum lead time before guesses) and a date guess field'],
@@ -200,9 +202,10 @@ async function scenarios() {
     title: 'New bet: a group of three, with a deadline for silent players',
     as: 'alice',
     url: '/bets/new',
-    story: `${FORM} She ticks Cara as well as Bob, which makes it a group bet, and picks a 7-day deadline for players who never answer a proposed result.`,
+    story: `${FORM} She ticks both Bob and Cara, which makes it a group bet, and picks a 7-day deadline for players who never answer a proposed result.`,
     expect: 'Both Bob Berg and Cara Cortez ticked, the hint "A 3-way bet. Everyone who doesn\'t win owes each winner 1 GT; a sole winner collects 2 GTs. Joining makes the players friends with each other.", the guess field labelled "hidden until the bet starts", a new "If someone never answers a proposed result" select showing "Count their silence as confirmation after 7 days" with an explanation, and the button "Propose 3-way bet".',
     act: async (page) => {
+      await page.getByRole('checkbox', { name: 'Bob Berg' }).check();
       await page.getByRole('checkbox', { name: 'Cara Cortez' }).check();
       await page.getByLabel(/If someone never answers/).selectOption('7');
     },

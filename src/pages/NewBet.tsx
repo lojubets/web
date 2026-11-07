@@ -7,6 +7,7 @@ import RulesEditor, { EMPTY_RULES, draftToParams, type RulesDraft } from '../com
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { useAction, useFetch } from '../hooks';
+import { initialPick } from './newBetPick';
 
 const KINDS: { kind: BetKind; title: string; hint: string }[] = [
   { kind: 'number', title: 'A number', hint: 'How many goals?' },
@@ -21,8 +22,8 @@ export default function NewBet() {
   const [params] = useSearchParams();
   const nav = useNavigate();
   const { data: friends } = useFetch<Friend[]>('/friends');
-  // null until the user touches the list: then a single friend is picked for you, as before
-  const [picked, setPicked] = useState<string[] | null>(params.get('with') ? [params.get('with')!] : null);
+  // null until the user touches the list; until then `initialPick` decides who starts out ticked
+  const [picked, setPicked] = useState<string[] | null>(null);
   const [kind, setKind] = useState<BetKind>('number');
   const [question, setQuestion] = useState('');
   const [guess, setGuess] = useState('');
@@ -31,7 +32,7 @@ export default function NewBet() {
   const betParams = draftToParams(kind, rules);
   const { busy, error, run } = useAction();
   const available = friends?.filter((f) => !f.deleted) ?? [];
-  const chosen = picked === null ? available.slice(0, 1).map((f) => f.id) : picked.filter((id) => available.some((f) => f.id === id));
+  const chosen = picked === null ? initialPick(available.map((f) => f.id), params.get('with')) : picked.filter((id) => available.some((f) => f.id === id));
   const group = chosen.length >= 2;
   const toggle = (id: string) => setPicked(chosen.includes(id) ? chosen.filter((x) => x !== id) : [...chosen, id]);
   const full = chosen.length + 1 >= MAX_PLAYERS;
