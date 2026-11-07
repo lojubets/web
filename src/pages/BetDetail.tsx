@@ -6,6 +6,7 @@ import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { describeRules, formatMoment, formatValue, gts, listNames } from '../format';
+import { peek } from '../cache';
 import { useAction, useFetch } from '../hooks';
 
 const names = (ps: Participant[]) => listNames(ps.map((p) => (p.isMe ? 'you' : p.name)));
@@ -15,7 +16,7 @@ const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: 'nume
 export default function BetDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const bet = useFetch<Bet>(`/bets/${id}`);
+  const bet = useFetch<Bet>(`/bets/${id}`, () => peek<Bet[]>('/bets')?.find((x) => x.id === id));
   const friends = useFetch<Friend[]>('/friends');
   const act = useAction();
   const [value, setValue] = useState('');

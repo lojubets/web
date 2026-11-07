@@ -1,27 +1,26 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, useSyncExternalStore } from 'react';
 import type { Me } from '../shared/types';
-import { api } from './api';
+import { getEntry, revalidate, subscribe, type Entry } from './cache';
 
-export function useFetch<T>(path: string | null) {
-  const [data, setData] = useState<T | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const load = useCallback(async () => {
-    if (!path) return;
-    try {
-      setData(await api<T>(path));
-      setError(null);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }, [path]);
+const NONE: Entry = {};
+const noop = () => () => {};
+
+/**
+ * Data from a GET endpoint. What was fetched before (on this or another screen) shows at once and is refreshed from the
+ * server in the background. `placeholder` can stand in on the first visit, worked out from other cached data.
+ */
+export function useFetch<T>(path: string | null, placeholder?: () => T | undefined) {
+  const entry = useSyncExternalStore(
+    useCallback((cb: () => void) => (path ? subscribe(path, cb) : noop()), [path]),
+    () => (path ? getEntry(path) : NONE),
+  );
   useEffect(() => {
-    setLoading(true);
-    load();
-  }, [load]);
-  return { data, error, loading, reload: load };
+    if (path) revalidate(path);
+  }, [path]);
+  const reload = useCallback(() => (path ? revalidate(path, true) : Promise.resolve()), [path]);
+  const data = (entry.data ?? (path ? placeholder?.() : undefined) ?? null) as T | null;
+  const error = entry.error ?? null;
+  return { data, error, loading: data === null && error === null, reload };
 }
 
 export const MeContext = createContext<{ me: Me; reload: () => void } | null>(null);

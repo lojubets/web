@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Me } from '../shared/types';
-import { api } from './api';
+import { api, ApiError } from './api';
+import { setCacheOwner } from './cache';
 import Layout from './components/Layout';
 import { MeContext } from './hooks';
 import BetDetail from './pages/BetDetail';
@@ -29,8 +30,15 @@ export default function App() {
 
   const load = () =>
     api<Me>('/me')
-      .then(setMe)
-      .catch(() => setMe(null));
+      .then((m) => {
+        setCacheOwner(m.id);
+        setMe(m);
+      })
+      .catch((e) => {
+        // Signed out: forget the previous user's friends and bets. A network hiccup keeps them.
+        if (e instanceof ApiError) setCacheOwner(null);
+        setMe(null);
+      });
   useEffect(() => {
     load();
     // Verifying happens in another tab; pick it up when the user comes back.
