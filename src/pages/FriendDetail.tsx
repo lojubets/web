@@ -20,7 +20,7 @@ export default function FriendDetail() {
       <div className="profile-head">
         <Avatar user={friend} size={72} />
         <h1>{friend.name}</h1>
-        <p className="balance"><span className={friend.balance > 0 ? 'owed' : friend.balance < 0 ? 'owe' : 'muted'}>{balanceText(friend.name, friend.balance)}</span></p>
+        <p className="balance"><span className={friend.balance > 0 ? 'owed' : friend.balance < 0 ? 'owe' : 'muted'}>{balanceText(friend.balance)}</span></p>
         <Link className="btn" to={`/bets/new?with=${friend.id}`}>New bet with {friend.name}</Link>
       </div>
       {bets.error && <p className="error">{bets.error}</p>}

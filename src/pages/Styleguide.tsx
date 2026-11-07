@@ -110,7 +110,7 @@ export default function Styleguide() {
         <div className="tags">
           <span className="pill">Neutral</span><span className="pill pill-cherry">Your move</span><span className="pill pill-positive">Verified</span><span className="pill pill-dare"><Icon name="flame" size={14} />All-in 3 GTs</span>
         </div>
-        <p><span className="owed">Sam owes you 3 GTs</span> · <span className="owe">You owe Sam 2 GTs</span> · <span className="muted">You're even</span></p>
+        <p><span className="owed">They owe you 3 GTs</span> · <span className="owe">You owe them 2 GTs</span> · <span className="muted">You're even</span></p>
         <div className="row"><Avatar user={demoUser} size={48} /><Avatar user={{ ...demoUser, name: 'lkoskela@reaktor.fi' }} size={48} /></div>
       </section>
 
