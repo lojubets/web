@@ -36,8 +36,9 @@ export default function App() {
         setMe(m);
       })
       .catch((e) => {
-        // Signed out: forget the previous user's friends and bets. A network hiccup keeps them, and whoever was signed in.
-        if (e instanceof ApiError) {
+        // Signed out (401): forget the previous user's friends and bets. A network hiccup or a server error keeps them,
+        // and whoever was signed in.
+        if (e instanceof ApiError && e.status === 401) {
           setCacheOwner(null);
           setMe(null);
         } else setMe((m) => m ?? null);

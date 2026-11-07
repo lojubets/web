@@ -1,5 +1,5 @@
 import type { Me } from '../shared/types';
-import { api } from './api';
+import { api, ApiError } from './api';
 
 /**
  * A cache of GET responses, so a screen the user has seen before (friends, bets) renders at once and is then brought up
@@ -79,13 +79,20 @@ function adopt(s: Stored | null) {
   new Set([...before, ...entries.keys()]).forEach(notify);
 }
 
+/** Another tab changed what is stored: take it in, and fetch what open screens now lack (another user signed in there). */
+function adoptFromOtherTab() {
+  const before = owner;
+  adopt(read());
+  if (owner && owner !== before) refetchShown();
+}
+
 function ensureLoaded() {
   if (loaded) return;
   loaded = true;
   adopt(read());
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', (e) => {
-      if (e.key === STORAGE_KEY || e.key === null) adopt(read());
+      if (e.key === STORAGE_KEY || e.key === null) adoptFromOtherTab();
     });
   }
 }
@@ -100,12 +107,20 @@ export function cachedMe(): Me | undefined {
 export function setCacheOwner(user: Me | null) {
   ensureLoaded();
   const id = user?.id ?? null;
-  if (id !== owner) {
+  const switched = id !== owner;
+  if (switched) {
     adopt(null);
     owner = id;
   }
   me = user ?? undefined;
   write();
+  // Screens already open (the page, the tab badge) keep their paths, so their own fetch won't run again: refetch for them
+  if (switched && id) refetchShown();
+}
+
+/** Fetches every path a screen is showing that has nothing cached (after the cache was emptied or replaced). */
+function refetchShown() {
+  for (const path of listeners.keys()) if (getEntry(path).data === undefined) revalidate(path);
 }
 
 /** Forgets everything, in memory and in localStorage (signing out). */
@@ -157,7 +172,8 @@ export function revalidate(path: string, force = false): Promise<void> {
   const promise = api(path)
     .then(
       (data) => current() && store(path, { data }),
-      (e: Error) => current() && store(path, { ...getEntry(path), error: e.message }),
+      // A 404 means what was cached is gone (a finished merge, a deleted bet); other failures may pass, so keep the data
+      (e: Error) => current() && store(path, e instanceof ApiError && e.status === 404 ? { error: e.message } : { ...getEntry(path), error: e.message }),
     )
     .finally(() => {
       if (latest.get(path)?.seq === mine) latest.delete(path);

@@ -99,6 +99,31 @@ describe('cache', () => {
     expect(cache.getEntry('/friends')).toEqual({ data: ['bob'], error: 'failed 500' });
   });
 
+  it('drops the data when the server says it is gone (404)', async () => {
+    await answer('/merge/preview', { a: 1 });
+    const second = cache.revalidate('/merge/preview');
+    pending[1].reject(404);
+    await second;
+    expect(cache.getEntry('/merge/preview')).toEqual({ error: 'failed 404' });
+  });
+
+  it('refetches what open screens show when another user signs in', async () => {
+    await answer('/bets', ['alice']);
+    cache.subscribe('/bets', () => {});
+    cache.setCacheOwner(user('carol'));
+    expect(pending.map((p) => p.path)).toEqual(['/bets', '/bets']);
+    pending[1].resolve(['carol']);
+    await cache.revalidate('/bets');
+    expect(cache.peek('/bets')).toEqual(['carol']);
+  });
+
+  it('does not refetch when the same user is confirmed again', async () => {
+    await answer('/bets', ['alice']);
+    cache.subscribe('/bets', () => {});
+    cache.setCacheOwner(user('alice'));
+    expect(pending).toHaveLength(1);
+  });
+
   it('forgets everything when another user signs in, and ignores answers meant for the previous one', async () => {
     await answer('/friends', ['bob']);
     const late = cache.revalidate('/bets');
