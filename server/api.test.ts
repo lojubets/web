@@ -152,9 +152,20 @@ describe('bets between friends', () => {
     await settle(await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' }), '3'); // back to +1 for the tests below
   });
 
-  it('all-in: only the debtor, double or nothing', async () => {
-    // Bob owes Ann 1 GT. Make it 3 by winning two more for Ann.
-    for (let i = 0; i < 2; i++) await settle(await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' }), '3');
+  it('all-in: only the debtor, at least 2 GTs behind, double or nothing', async () => {
+    // Bob owes Ann 1 GT: no all-in yet, since doubling 1 GT is just the regular bet (#36)
+    expect(await balanceOnAnn()).toBe(1);
+    const oneBehind = await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' });
+    const oneBehindView = (await bob.get(`/api/bets/${oneBehind}`)).body;
+    expect(oneBehindView.canAllIn).toBe(false);
+    expect(oneBehindView.allInStake).toBe(1);
+    await bob.post(`/api/bets/${oneBehind}/all-in`).expect(409);
+    await settle(oneBehind, '3'); // Bob owes 2
+
+    // Two behind is enough
+    const twoBehind = await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' });
+    expect((await bob.get(`/api/bets/${twoBehind}`)).body).toMatchObject({ canAllIn: true, allInStake: 2 });
+    await settle(twoBehind, '3'); // Bob owes 3
     expect(await balanceOnAnn()).toBe(3);
 
     const id = await playBet({ annGuess: '2', bobGuess: '5', outcome: '3' });
@@ -843,12 +854,13 @@ describe('cancelling and calling a bet off', () => {
   });
 
   it('leaves balances alone, even for an all-in, and frees the all-in slot', async () => {
-    // Lin owes Kai 1 GT
-    const won = await activeBet();
-    await kai.post(`/api/bets/${won}/propose`).send({ outcome: '2' }).expect(200);
-    await lin.post(`/api/bets/${won}/confirm`).expect(200);
+    // Lin owes Kai at least 2 GTs, enough to go all-in
+    while ((await balance()) < 2) {
+      const won = await activeBet();
+      await kai.post(`/api/bets/${won}/propose`).send({ outcome: '2' }).expect(200);
+      await lin.post(`/api/bets/${won}/confirm`).expect(200);
+    }
     const before = await balance();
-    expect(before).toBeGreaterThan(0);
 
     const allIn = await activeBet();
     await lin.post(`/api/bets/${allIn}/all-in`).expect(200);

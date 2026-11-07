@@ -218,9 +218,23 @@ async function scenarios() {
   await call('alice', 'POST', `/bets/${settled.id}/propose`, { outcome: '2:30' });
   await call('bob', 'POST', `/bets/${settled.id}/confirm`);
 
+  // A second loss for Bob: going all-in takes at least 2 GTs of debt (a 1 GT all-in would just be the regular bet).
+  const settled2 = await bet('alice', 'bob', 'Will it rain on Vappu?', 'yesno', {}, 'yes');
+  await guess('bob', settled2, 'no');
+  await call('alice', 'POST', `/bets/${settled2.id}/propose`, { outcome: 'yes' });
+  await call('bob', 'POST', `/bets/${settled2.id}/confirm`);
+
   const yesno = await bet('alice', 'bob', "Will Kane win the Ballon d'Or?", 'yesno', {}, 'yes');
   await guess('bob', yesno, 'no');
-  await call('bob', 'POST', `/bets/${yesno.id}/all-in`); // Bob lost the first bet, so he's in the red
+  await shot({
+    group: 'Bet details',
+    title: 'In play, with the all-in offer',
+    as: 'bob',
+    url: `/bets/${yesno.id}`,
+    story: 'Alice and Bob bet on whether Kane wins the Ballon d’Or. Alice guessed yes, Bob guessed no, so the bet is in play. Bob owes Alice 2 GTs from the hockey and Vappu bets, so he is offered to go all-in. (He would not be after a single loss: a 1 GT all-in would be no different from the regular bet.)',
+    expect: 'Both guesses (his No, Alice’s Yes), the result form, "Propose a tie", and the offer card "You’re in the red. Feeling lucky?" explaining that the bet would be worth 2 GTs instead of 1 (win and he is back to even, lose and he owes 4 GTs) with a "Go all-in" button.',
+  });
+  await call('bob', 'POST', `/bets/${yesno.id}/all-in`); // Bob lost the first two bets, so he's 2 GTs in the red
 
   const choice = await bet('alice', 'bob', 'What happens to the project manager?', 'choice', { options: ['Quits', 'Gets fired', 'Gets reassigned'] }, 'Gets fired');
   await guess('bob', choice, 'Quits');
@@ -249,7 +263,8 @@ async function scenarios() {
   // What has happened, in order, shared by every screen below that follows this setup.
   const HISTORY =
     'Alice and Bob: (1) Alice bet Bob on the length of the hockey final, guessing 2:15; Bob guessed 3 hours; Alice proposed the result 2:30 and Bob confirmed it, so Alice won and Bob owes her 1 GT. ' +
-    '(2) Alice bet on whether Kane wins the Ballon d’Or (she said yes, Bob said no); Bob, being in the red, went all-in on it. ' +
+    '(1b) Alice bet on whether it rains on Vappu (she said yes, Bob no); Alice proposed "yes" and Bob confirmed, so Bob owes her 2 GTs in all. ' +
+    '(2) Alice bet on whether Kane wins the Ballon d’Or (she said yes, Bob said no); Bob, being 2 GTs in the red, went all-in on it. ' +
     '(3) Alice bet on what happens to the project manager (she said "Gets fired", Bob "Quits") and proposed the outcome "Gets fired", which Bob has not confirmed yet. ' +
     '(4) Alice started a bet about the sauna cooler, guessing 48; Bob has not guessed. ' +
     'Alice and Cara: (5) both guessed on the coach’s first words, and Alice proposed the result "We go again, lads" and that she herself was right, awaiting Cara’s confirmation. ' +
@@ -259,14 +274,14 @@ async function scenarios() {
     '(9) Alice started and then cancelled a snow-in-June bet, which is not shown anywhere. Dan is friends with nobody yet and has no bets.';
 
   console.log('Lists');
-  await shot({ group: 'Bets', title: 'Bets list', as: 'alice', url: '/', story: HISTORY, expect: 'Alice’s Bets tab. "Your move": the opening-match tie ("Agree to call it off?") and the midsummer bet ("Your guess is needed"). "In play": the office opening, the coach bet ("Waiting for Cara Cortez to confirm"), the sauna cooler ("Waiting for Bob Berg to guess"), the project manager ("Waiting for Bob Berg to confirm") and the all-in Kane bet. "Settled": the hockey bet. The cancelled bet is absent.' });
-  await shot({ group: 'Bets', title: 'Bets list', as: 'bob', url: '/', story: HISTORY, expect: 'Bob’s Bets tab. "Your move": the sauna cooler ("Your guess is needed") and the project manager ("Alice Aaltonen proposed a result: confirm?"). "In play": the Kane bet with an "All-in 1 GT" tag. "Settled": the hockey bet, "Alice Aaltonen won". The Bets tab badge shows 2. Bob has no bets with Cara.' });
+  await shot({ group: 'Bets', title: 'Bets list', as: 'alice', url: '/', story: HISTORY, expect: 'Alice’s Bets tab. "Your move": the opening-match tie ("Agree to call it off?") and the midsummer bet ("Your guess is needed"). "In play": the office opening, the coach bet ("Waiting for Cara Cortez to confirm"), the sauna cooler ("Waiting for Bob Berg to guess"), the project manager ("Waiting for Bob Berg to confirm") and the all-in Kane bet. "Settled": the Vappu bet and the hockey bet. The cancelled bet is absent.' });
+  await shot({ group: 'Bets', title: 'Bets list', as: 'bob', url: '/', story: HISTORY, expect: 'Bob’s Bets tab. "Your move": the sauna cooler ("Your guess is needed") and the project manager ("Alice Aaltonen proposed a result: confirm?"). "In play": the Kane bet with an "All-in 2 GTs" tag. "Settled": the Vappu and hockey bets, both "Alice Aaltonen won". The Bets tab badge shows 2. Bob has no bets with Cara.' });
   await shot({ group: 'Bets', title: 'Bets list', as: 'cara', url: '/', story: HISTORY, expect: 'Cara’s Bets tab. "Your move": the midsummer bet ("Your guess is needed") and the coach bet ("Alice Aaltonen proposed a result: confirm?"). "In play": the opening-match tie ("Waiting for Alice Aaltonen to agree to a tie") and the office opening. The Bets tab badge shows 2. She has no bets with Bob.' });
-  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'alice', url: '/friends', story: HISTORY, expect: 'Alice’s Friends tab: "Bob Berg owes you 1 GT" with 3 open bets, and "You and Cara Cortez are even" with 4 open bets. The Bets tab badge shows Alice’s pending actions.' });
-  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'bob', url: '/friends', story: HISTORY, expect: 'Bob’s Friends tab with only Alice: "You owe Alice Aaltonen 1 GT", 3 open bets.' });
+  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'alice', url: '/friends', story: HISTORY, expect: 'Alice’s Friends tab: "Bob Berg owes you 2 GTs" with 3 open bets, and "You and Cara Cortez are even" with 4 open bets. The Bets tab badge shows Alice’s pending actions.' });
+  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'bob', url: '/friends', story: HISTORY, expect: 'Bob’s Friends tab with only Alice: "You owe Alice Aaltonen 2 GTs", 3 open bets.' });
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'cara', url: '/friends', story: HISTORY, expect: 'Cara’s Friends tab with only Alice: "You and Alice Aaltonen are even", 4 open bets.' });
-  await shot({ group: 'Friends', title: 'Friend with open and settled bets', as: 'alice', url: `/friends/${myId.bob}`, story: HISTORY, expect: 'Alice’s page for Bob: "Bob Berg owes you 1 GT", the three open bets with their status lines, and the hockey bet marked "You won".' });
-  await shot({ group: 'Friends', title: 'Friend who is ahead on the tab', as: 'bob', url: `/friends/${myId.alice}`, story: HISTORY, expect: 'Bob’s page for Alice from the other side: "You owe Alice Aaltonen 1 GT" and the same four bets, the hockey one marked "Alice Aaltonen won".' });
+  await shot({ group: 'Friends', title: 'Friend with open and settled bets', as: 'alice', url: `/friends/${myId.bob}`, story: HISTORY, expect: 'Alice’s page for Bob: "Bob Berg owes you 2 GTs", the three open bets with their status lines, and the Vappu and hockey bets marked "You won".' });
+  await shot({ group: 'Friends', title: 'Friend who is ahead on the tab', as: 'bob', url: `/friends/${myId.alice}`, story: HISTORY, expect: 'Bob’s page for Alice from the other side: "You owe Alice Aaltonen 2 GTs" and the same five bets, the Vappu and hockey ones marked "Alice Aaltonen won".' });
 
   console.log('Bet details');
   const details = [
@@ -279,8 +294,8 @@ async function scenarios() {
     {
       bet: yesno,
       title: 'In play, with an all-in stake',
-      story: 'Alice and Bob bet on whether Kane wins the Ballon d’Or. Alice guessed yes, Bob guessed no, so the bet is in play. Bob owed Alice 1 GT from the hockey bet, so he went all-in on this one: the stake is his whole debt.',
-      expect: { alice: 'Both guesses (hers Yes, Bob’s No), the line "All-in: double or nothing for 1 GT", the Yes/No result form ("It happened! What was the actual result?") with "Propose result", and "Propose a tie".', bob: 'Both guesses (his No, Alice’s Yes), the all-in line, the same result form and "Propose a tie".' },
+      story: 'Alice and Bob bet on whether Kane wins the Ballon d’Or. Alice guessed yes, Bob guessed no, so the bet is in play. Bob owed Alice 2 GTs from the hockey and Vappu bets, so he went all-in on this one: the stake is his whole debt.',
+      expect: { alice: 'Both guesses (hers Yes, Bob’s No), the line "All-in: double or nothing for 2 GTs", the Yes/No result form ("It happened! What was the actual result?") with "Propose result", and "Propose a tie".', bob: 'Both guesses (his No, Alice’s Yes), the all-in line, the same result form, "Propose a tie" and no all-in offer, since he has already gone all-in.' },
     },
     {
       bet: choice,
@@ -356,8 +371,8 @@ async function scenarios() {
     }
   }
   const AFTER = `${HISTORY} Afterwards Bob confirmed the result of bet 3, Cara confirmed the result of bet 5 and Alice agreed to the tie in bet 8, so those three are now settled.`;
-  await shot({ group: 'Bets', title: 'Bets list, after settling', as: 'alice', url: '/', story: AFTER, expect: 'Alice’s Bets tab: "Your move" now only has the midsummer bet; "In play" has the office opening, sauna cooler and Kane bet; "Settled" gains the opening match ("Called off by agreement"), the coach bet ("You won") and the project manager ("You won"), above the hockey bet.' });
-  await shot({ group: 'Bets', title: 'Bets list, after settling', as: 'bob', url: '/', story: AFTER, expect: 'Bob’s Bets tab: "Your move" holds only the sauna cooler; "In play" the Kane bet; "Settled" now has the project manager ("Alice Aaltonen won") above the hockey bet. The Bets tab badge shows 1.' });
+  await shot({ group: 'Bets', title: 'Bets list, after settling', as: 'alice', url: '/', story: AFTER, expect: 'Alice’s Bets tab: "Your move" now only has the midsummer bet; "In play" has the office opening, sauna cooler and Kane bet; "Settled" gains the opening match ("Called off by agreement"), the coach bet ("You won") and the project manager ("You won"), above the Vappu and hockey bets.' });
+  await shot({ group: 'Bets', title: 'Bets list, after settling', as: 'bob', url: '/', story: AFTER, expect: 'Bob’s Bets tab: "Your move" holds only the sauna cooler; "In play" the Kane bet; "Settled" now has the project manager ("Alice Aaltonen won") above the Vappu and hockey bets. The Bets tab badge shows 1.' });
 
   // ---------- group bets ----------
   // Last, so the screens above are unaffected: Dan becomes Alice's friend, and Alice starts bets with everyone.

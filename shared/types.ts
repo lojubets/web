@@ -173,6 +173,7 @@ export interface Bet {
   needsMyAction: boolean;
   /** The creator may start the bet now, leaving out whoever hasn't answered. */
   canStart: boolean;
+  /** I may go double or nothing on this bet: in play, two players, and I'm at least 2 GTs in the red against the other. */
   canAllIn: boolean;
   /** GTs I'd put on the line if I went all-in now. */
   allInStake: number;

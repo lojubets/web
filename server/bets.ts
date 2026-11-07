@@ -371,7 +371,8 @@ export function serializeBet(lb: LoadedBet, v: Viewer, now = Date.now()): Bet {
     tippingPassed,
     needsMyAction,
     canStart,
-    canAllIn: b.status === 'active' && !b.all_in && players.length === 2 && debt > 0 && !anotherAllInOpen,
+    // Going all-in on a 1 GT debt would be no different from the regular 1 GT bet, so it takes at least 2 GTs of debt.
+    canAllIn: b.status === 'active' && !b.all_in && players.length === 2 && debt >= 2 && !anotherAllInOpen,
     allInStake: Math.max(debt, 0),
     createdAt: b.created_at,
     startedAt: b.started_at,
