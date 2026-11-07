@@ -1,13 +1,12 @@
 import { Link } from 'react-router-dom';
-import type { Bet, Friend } from '../../shared/types';
 import BetSections from '../components/BetSections';
 import CancelRequests from '../components/CancelRequests';
 import Icon from '../components/Icon';
-import { useFetch } from '../hooks';
+import { useFriends, useMyBets } from '../hooks';
 
 export default function Bets() {
-  const bets = useFetch<Bet[]>('/bets');
-  const friends = useFetch<Friend[]>('/friends');
+  const bets = useMyBets();
+  const friends = useFriends();
   const list = bets.data ?? [];
 
   return (

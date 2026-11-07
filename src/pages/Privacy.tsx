@@ -60,11 +60,16 @@ export default function Privacy() {
         </section>
 
         <section className="stack">
-          <h2>Cookies</h2>
+          <h2>Cookies and storage on your device</h2>
           <p>
             We use only essential first-party cookies: one keeps you signed in (it stays valid while you keep using the app, up to 180 days after you last signed in), and short-lived ones carry a sign-in or
-            account-merge step through to the end. There are no analytics, no tracking or advertising cookies, and we don't use
-            localStorage. That is why there is no cookie banner.
+            account-merge step through to the end. There are no analytics, no tracking or advertising cookies.
+          </p>
+          <p>
+            So that your screens open without waiting for the server, the app keeps a copy of your own profile, friends, invitations and
+            bets in this browser's local storage. It stays on your device and is checked against the server every time you open a
+            screen. Signing out on this device deletes it, and so does the app if it finds you are no longer signed in. That is why
+            there is no cookie banner.
           </p>
         </section>
 

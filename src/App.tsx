@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Me } from '../shared/types';
-import { api } from './api';
+import { api, ApiError } from './api';
+import { cachedMe, setOwner } from './store';
 import Layout from './components/Layout';
 import { MeContext } from './hooks';
 import BetDetail from './pages/BetDetail';
@@ -20,7 +21,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
-  const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = loading
+  // Start from the user as last seen on this device (so cached friends and bets show at once); /me confirms it
+  const [me, setMe] = useState<Me | null | undefined>(() => cachedMe()); // undefined = loading
   const location = useLocation();
   // A new screen starts at the top, as on a native app.
   useEffect(() => {
@@ -29,8 +31,18 @@ export default function App() {
 
   const load = () =>
     api<Me>('/me')
-      .then(setMe)
-      .catch(() => setMe(null));
+      .then((m) => {
+        setOwner(m);
+        setMe(m);
+      })
+      .catch((e) => {
+        // Signed out (401): forget the previous user's friends and bets. A network hiccup or a server error keeps them,
+        // and whoever was signed in.
+        if (e instanceof ApiError && e.status === 401) {
+          setOwner(null);
+          setMe(null);
+        } else setMe((m) => m ?? null);
+      });
   useEffect(() => {
     load();
     // Verifying happens in another tab; pick it up when the user comes back.
