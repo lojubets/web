@@ -59,7 +59,7 @@ export default function Friends() {
               <Avatar user={f} size={44} />
               <div className="grow">
                 <strong>{f.name}</strong>
-                <div className="small"><span className={f.balance > 0 ? 'owed' : f.balance < 0 ? 'owe' : 'muted'}>{balanceText(f.name, f.balance)}</span></div>
+                <div className="small"><span className={f.balance > 0 ? 'owed' : f.balance < 0 ? 'owe' : 'muted'}>{balanceText(f.balance)}</span></div>
               </div>
               {f.openBets > 0 && <span className="pill">{f.openBets} open</span>}
             </Link>
