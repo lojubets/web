@@ -610,19 +610,43 @@ a.card::after {
   color: var(--text-danger);
   font-weight: 500;
 }
-.owed {
-  color: var(--text-positive);
-  font-weight: 600;
-}
+/* Balances are highlighted like a marker pen: lime when you're owed, lemon when you owe.
+   Owing is part of the game, not an error. Plum text keeps both readable on light and dark alike. */
+.owed,
 .owe {
-  /* Owing is part of the game, not an error: a lemon marker with plum text, readable on light and dark alike. */
   padding: 0 0.35em;
   border-radius: var(--radius-sm);
-  background: var(--lemon-500);
-  color: var(--plum-900);
   font-weight: 600;
   -webkit-box-decoration-break: clone;
   box-decoration-break: clone;
+}
+.owed {
+  background: var(--positive-bg);
+  color: var(--positive-fg);
+}
+.owe {
+  background: var(--negative-bg);
+  color: var(--negative-fg);
+}
+
+/* Friends page: the net total in large type, with what you're owed and what you owe as its detail. */
+.tally {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.tally-total {
+  font: 700 var(--text-h1) / 1.15 var(--font-display);
+}
+.tally-total .owed,
+.tally-total .owe {
+  padding: 0 0.2em;
+  font-weight: inherit;
+}
+.tally b {
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* ---------- Avatar ---------- */
@@ -813,7 +837,7 @@ a.card::after {
   gap: var(--space-2);
 }
 .accept-list .ok {
-  color: var(--positive-fg, inherit);
+  color: var(--text-positive);
 }
 .rules {
   margin-top: calc(var(--space-2) * -1);

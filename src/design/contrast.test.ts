@@ -51,7 +51,8 @@ const RULES: [string, string, number, string][] = [
   ['--on-brand', '--surface-brand', TEXT, 'text on masthead/hero/tab bar'],
   ['--on-brand-muted', '--surface-brand', TEXT, 'muted text on masthead/hero/tab bar'],
   ['--accent-on-brand', '--surface-brand', TEXT, 'yellow on navy (wordmark, active tab)'],
-  ['--positive-fg', '--positive-bg', TEXT, 'positive chip/banner'],
+  ['--text-positive', '--surface-tint', TEXT, 'green text on tinted panels'],
+  ['--positive-fg', '--positive-bg', TEXT, 'positive marker/chip/banner'],
   ['--negative-fg', '--negative-bg', TEXT, 'owing marker/banner'],
   ['--danger-fg', '--danger-bg', TEXT, 'error banner'],
   ['--neutral-fg', '--neutral-bg', TEXT, 'neutral chip'],
@@ -82,6 +83,10 @@ describe('forbidden pairings really are forbidden', () => {
   it('lemon is unusable as text or edge on light surfaces', () => {
     expect(ratio(p('--lemon-500'), p('--surface-card'))).toBeLessThan(UI);
     expect(ratio(p('--lemon-500'), p('--surface-page'))).toBeLessThan(UI);
+  });
+  it('lime is unusable as text or edge on light surfaces; Lime 800 passes', () => {
+    expect(ratio(p('--lime-500'), p('--surface-card'))).toBeLessThan(UI);
+    expect(ratio(p('--lime-800'), p('--surface-tint'))).toBeGreaterThanOrEqual(TEXT);
   });
   it('muted mauve is too faint for small text on ivory; Mauve 700 passes', () => {
     expect(ratio(p('--mauve-500'), p('--surface-page'))).toBeLessThan(TEXT);
