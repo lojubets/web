@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import type { Me } from '../shared/types';
 import { api, ApiError } from './api';
-import { setCacheOwner } from './cache';
+import { cachedMe, setCacheOwner } from './cache';
 import Layout from './components/Layout';
 import { MeContext } from './hooks';
 import BetDetail from './pages/BetDetail';
@@ -21,7 +21,8 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 
 export default function App() {
-  const [me, setMe] = useState<Me | null | undefined>(undefined); // undefined = loading
+  // Start from the user as last seen on this device (so cached friends and bets show at once); /me confirms it
+  const [me, setMe] = useState<Me | null | undefined>(() => cachedMe()); // undefined = loading
   const location = useLocation();
   // A new screen starts at the top, as on a native app.
   useEffect(() => {
@@ -31,13 +32,15 @@ export default function App() {
   const load = () =>
     api<Me>('/me')
       .then((m) => {
-        setCacheOwner(m.id);
+        setCacheOwner(m);
         setMe(m);
       })
       .catch((e) => {
-        // Signed out: forget the previous user's friends and bets. A network hiccup keeps them.
-        if (e instanceof ApiError) setCacheOwner(null);
-        setMe(null);
+        // Signed out: forget the previous user's friends and bets. A network hiccup keeps them, and whoever was signed in.
+        if (e instanceof ApiError) {
+          setCacheOwner(null);
+          setMe(null);
+        } else setMe((m) => m ?? null);
       });
   useEffect(() => {
     load();

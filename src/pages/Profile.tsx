@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
+import { clearCache } from '../cache';
 import { api, ApiError } from '../api';
 import Avatar from '../components/Avatar';
 import AvatarCropper from '../components/AvatarCropper';
@@ -353,6 +354,7 @@ export default function Profile() {
         className="btn btn-secondary"
         onClick={async () => {
           await api('/auth/logout', 'POST');
+          clearCache();
           location.href = '/login';
         }}
       >
@@ -364,6 +366,7 @@ export default function Profile() {
           if (!confirm('Sign out on every device, including this one?')) return;
           await api('/auth/logout-everywhere', 'POST');
           await api('/auth/logout', 'POST');
+          clearCache();
           location.href = '/login';
         }}
       >

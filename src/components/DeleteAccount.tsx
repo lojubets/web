@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DeletionStatus } from '../../shared/types';
 import { api } from '../api';
+import { clearCache } from '../cache';
 import { useAction, useFetch, useMe } from '../hooks';
 import Icon from './Icon';
 
@@ -26,6 +27,7 @@ export default function DeleteAccount() {
     act.run(async () => {
       const r = await api<{ deleted: boolean }>('/me/deletion', 'POST', { confirm, password: hasPassword ? password : undefined });
       if (r.deleted) {
+        clearCache();
         location.href = '/login';
         return;
       }
