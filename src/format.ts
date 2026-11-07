@@ -9,9 +9,13 @@ export const gts = (n: number) => `${n} ${n === 1 ? 'GT' : 'GTs'}`;
 /** "Ann", "Ann and Bob", "Ann, Bob and Cara". */
 export const listNames = (names: string[]): string => (names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`);
 
-export function balanceText(name: string, balance: number): string {
-  if (balance === 0) return `You and ${name} are even`;
-  return balance > 0 ? `${name} owes you ${gts(balance)}` : `You owe ${name} ${gts(-balance)}`;
+/**
+ * The tab with a friend, shown next to their name. Pronouns rather than the name: names can be long, and this line
+ * must not wrap on a phone.
+ */
+export function balanceText(balance: number): string {
+  if (balance === 0) return "You're even";
+  return balance > 0 ? `They owe you ${gts(balance)}` : `You owe them ${gts(-balance)}`;
 }
 
 /** The rules of a bet as short phrases, e.g. ["Whole numbers only", "At least 0 and less than 10"]. */
