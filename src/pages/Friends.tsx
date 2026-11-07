@@ -32,6 +32,8 @@ export default function Friends() {
 
   return (
     <>
+      {friends.data?.length ? <Tally friends={friends.data} /> : null}
+
       <header className="header"><h1>Friends</h1></header>
 
       {invites.data?.received.length ? (
@@ -51,8 +53,6 @@ export default function Friends() {
           </div>
         </section>
       ) : null}
-
-      {friends.data?.length ? <Tally friends={friends.data} /> : null}
 
       <section>
         <div className="stack">
@@ -115,27 +115,18 @@ export default function Friends() {
   );
 }
 
-/** What you owe and are owed across all friends, and where that leaves you. */
+/** Where you stand with all your friends together: the net total, with what you're owed and what you owe as its detail. */
 function Tally({ friends }: { friends: Friend[] }) {
   const owe = friends.reduce((sum, f) => sum + Math.max(0, -f.balance), 0);
   const owed = friends.reduce((sum, f) => sum + Math.max(0, f.balance), 0);
   const net = owed - owe;
   return (
     <div className="card tally" role="group" aria-label="Your tally">
-      <div>
-        <span className="eyebrow muted">You owe</span>
-        <span className="tally-value">{gts(owe)}</span>
-      </div>
-      <div>
-        <span className="eyebrow muted">Owed to you</span>
-        <span className="tally-value">{gts(owed)}</span>
-      </div>
-      <div>
-        <span className="eyebrow muted">Overall</span>
-        <span className="tally-value">
-          <span className={net > 0 ? 'owed' : net < 0 ? 'owe' : 'muted'}>{net === 0 ? 'Even' : `${net > 0 ? '+' : '−'}${gts(Math.abs(net))}`}</span>
-        </span>
-      </div>
+      <span className="eyebrow muted">Overall</span>
+      <span className="tally-total">
+        {net === 0 ? 'All even' : <span className={net > 0 ? 'owed' : 'owe'}>{net > 0 ? '+' : '−'}{gts(Math.abs(net))}</span>}
+      </span>
+      <span className="small muted">Owed to you <b>{gts(owed)}</b> · You owe <b>{gts(owe)}</b></span>
     </div>
   );
 }
