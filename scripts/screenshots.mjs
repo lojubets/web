@@ -268,8 +268,8 @@ async function scenarios() {
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'alice', url: '/friends', story: HISTORY, expect: 'Alice’s Friends tab: "They owe you 1 GT" with 3 open bets, and "You’re even" with 4 open bets. The Bets tab badge shows Alice’s pending actions.' });
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'bob', url: '/friends', story: HISTORY, expect: 'Bob’s Friends tab with only Alice: "You owe them 1 GT", 3 open bets.' });
   await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'cara', url: '/friends', story: HISTORY, expect: 'Cara’s Friends tab with only Alice: "You’re even", 4 open bets.' });
-  await shot({ group: 'Friends', title: 'Friend with open and settled bets', as: 'alice', url: `/friends/${myId.bob}`, story: HISTORY, expect: 'Alice’s page for Bob: "They owe you 1 GT", the three open bets with their status lines, and the hockey bet marked "You won".' });
-  await shot({ group: 'Friends', title: 'Friend who is ahead on the tab', as: 'bob', url: `/friends/${myId.alice}`, story: HISTORY, expect: 'Bob’s page for Alice from the other side: "You owe them 1 GT" and the same four bets, the hockey one marked "Alice Aaltonen won".' });
+  await shot({ group: 'Friends', title: 'Friend with open and settled bets', as: 'alice', url: `/friends/${myId.bob}`, story: HISTORY, expect: 'Alice’s page for Bob: "They owe you 1 GT", then the bets grouped like the Bets tab. "In play": the sauna cooler ("Waiting for Bob Berg to guess"), the project manager ("Waiting for Bob Berg to confirm") and the all-in Kane bet. "Settled": the hockey bet marked "You won".' });
+  await shot({ group: 'Friends', title: 'Friend who is ahead on the tab', as: 'bob', url: `/friends/${myId.alice}`, story: HISTORY, expect: 'Bob’s page for Alice from the other side: "You owe them 1 GT" and the same four bets in Bob’s groups. "Your move": the sauna cooler ("Your guess is needed") and the project manager ("Alice Aaltonen proposed a result: confirm?"). "In play": the Kane bet. "Settled": the hockey bet, "Alice Aaltonen won".' });
 
   console.log('Bet details');
   const details = [
