@@ -24,7 +24,7 @@ export default function Bets() {
         </div>
       )}
       {!bets.loading && friends.data?.length ? list.length === 0 && <div className="empty"><img className="empty-glass" src="/glass-256.png" width="80" height="80" alt="" /><p>No bets yet. Start one!</p></div> : null}
-      <CancelRequests onAnswered={bets.reload} />
+      <CancelRequests />
       <BetSections bets={list} />
     </>
   );

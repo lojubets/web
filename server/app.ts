@@ -209,10 +209,14 @@ async function connect(a: string, b: string) {
 
 // ---------- profile ----------
 
+/** The signed-in user as the client sees them. Changes to the account answer with this too, so the client needn't ask again. */
+async function meOf(id: string): Promise<Me> {
+  const u = (await getUser(id))!;
+  return { deletionRequestedAt: u.deletionRequestedAt, deleted: false, id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails, logins: u.logins };
+}
+
 app.get('/api/me', async (_req, res) => {
-  const u = (await getUser(uid(res)))!;
-  const me: Me = { deletionRequestedAt: u.deletionRequestedAt, deleted: false, id: u.id, name: u.name, profileName: u.profileName, hasAvatar: u.hasAvatar, avatarVersion: u.avatarVersion, email: u.email, emailVerified: u.emailVerified, emails: u.emails, logins: u.logins };
-  res.json(me);
+  res.json(await meOf(uid(res)));
 });
 
 // Everything we hold about the signed-in user that is theirs to take along (Art. 20), as a download. No password hashes.
@@ -268,7 +272,7 @@ app.post('/api/me/emails', rateLimit('add-email', { perIp: 30, perUser: 10, wind
   if (taken) return res.status(409).json({ error: 'That address already belongs to another LoJuBets account. If both are yours, you can merge the accounts.' });
   await db.execute({ sql: 'INSERT INTO user_emails (user_id, email, verified, created_at) VALUES (?, ?, 0, ?)', args: [me.id, email, Date.now()] });
   const result = await sendVerification(me.id, email);
-  res.status(201).json({ result });
+  res.status(201).json({ result, me: await meOf(uid(res)) });
 });
 
 // Mail the confirmation link for one of the account's unverified addresses again.
@@ -287,7 +291,7 @@ app.post('/api/me/emails/:email/primary', async (req, res) => {
   if (!entry) return res.status(404).json({ error: 'That address is not on your account' });
   if (!entry.verified) return res.status(409).json({ error: 'Verify this address before making it your primary one.' });
   if (!entry.primary) await db.execute({ sql: 'UPDATE users SET email = ?, email_verified = 1 WHERE id = ?', args: [email, me.id] });
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 // Remove an email address from the account. Never the last verified one (or the only way to sign in).
@@ -315,7 +319,7 @@ app.delete('/api/me/emails/:email', async (req, res) => {
     ],
     'write',
   );
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 // Change the account's password. Each password login (email) has its own stored copy of the hash, and an account that
@@ -340,7 +344,7 @@ app.post('/api/me/password', rateLimit('change-password', { perIp: 60, perUser: 
     'write',
   );
   await revokeSessions(res, me.id);
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 // Add a password as another way of signing in, for an account that has none (it signs in with a provider only). The
@@ -366,7 +370,7 @@ app.post('/api/me/password/add', rateLimit('add-password', { perIp: 60, perUser:
     ],
     'write',
   );
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 // First step of connecting another provider account: the same proof as for deleting the account (password, or a recent
@@ -375,7 +379,7 @@ app.post('/api/me/connect', rateLimit('connect', { perIp: 60, perUser: 10 }), as
   const auth = await reauthenticate(req, uid(res), 'connect the sign-in');
   if (!auth.ok) return res.status(auth.status).json({ error: auth.error, code: auth.code });
   await issueConnectTicket(res, uid(res));
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 // Remove a way of signing in. The account keeps its email addresses; only the login goes (and a password with it).
@@ -397,7 +401,7 @@ app.delete('/api/me/logins/:provider/:subject', async (req, res) => {
     ],
     'write',
   );
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 app.put('/api/me', async (req, res) => {
@@ -405,7 +409,7 @@ app.put('/api/me', async (req, res) => {
   const body = z.object({ name: z.string().trim().max(60) }).safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Display name can be at most 60 characters' });
   await db.execute({ sql: 'UPDATE users SET name = ? WHERE id = ?', args: [body.data.name, uid(res)] });
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 app.put('/api/me/avatar', async (req, res) => {
@@ -416,12 +420,12 @@ app.put('/api/me/avatar', async (req, res) => {
           ON CONFLICT(user_id) DO UPDATE SET mime = excluded.mime, data = excluded.data, updated_at = excluded.updated_at`,
     args: [uid(res), m[1], m[2], Date.now()],
   });
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 app.delete('/api/me/avatar', async (_req, res) => {
   await db.execute({ sql: 'DELETE FROM avatars WHERE user_id = ?', args: [uid(res)] });
-  res.json({ ok: true });
+  res.json({ ok: true, me: await meOf(uid(res)) });
 });
 
 /** Two people share a bet: they're both in it, or one invited the other to it. */
@@ -482,11 +486,12 @@ app.post('/api/invitations', async (req, res) => {
   }
   const link = `${env.appUrl}/invite/${inv.token}`;
   const emailSent = await sendInviteEmail(email, me.name, link);
-  res.status(201).json({ link, emailSent });
+  res.status(201).json({ link, emailSent, ...(await relationsOf(me.id)) });
 });
 
-app.get('/api/invitations', async (_req, res) => {
-  const me = (await getUser(uid(res)))!;
+/** The user's open invitations, sent and received. */
+async function invitationsOf(id: string): Promise<{ sent: Invitation[]; received: Invitation[] }> {
+  const me = (await getUser(id))!;
   const sent = await db.execute({ sql: `${INVITE_SQL} WHERE i.inviter_id = ? AND i.status = 'pending' ORDER BY i.created_at DESC`, args: [me.id] });
   // Invitations to any address this account has verified (a merged account has several)
   const mine = verifiedAddresses(me);
@@ -496,12 +501,19 @@ app.get('/api/invitations', async (_req, res) => {
         args: [...mine, me.id],
       })
     : { rows: [] };
-  res.json({
+  return {
     sent: sent.rows.map(toInvitation),
     // The token stays private to the inviter.
     received: received.rows.map((r) => ({ ...toInvitation(r), token: '' })),
-  });
+  };
+}
+
+app.get('/api/invitations', async (_req, res) => {
+  res.json(await invitationsOf(uid(res)));
 });
+
+/** Changes to invitations answer with the user's friends and invitations as they are now, so the client needn't ask again. */
+const relationsOf = async (id: string) => ({ friends: await friendsOf(id), invitations: await invitationsOf(id) });
 
 async function acceptInvitation(res: Response, where: string, arg: string, checkEmail: boolean) {
   const me = (await getUser(uid(res)))!;
@@ -511,7 +523,7 @@ async function acceptInvitation(res: Response, where: string, arg: string, check
   if (inv.inviter_id === me.id) return res.status(400).json({ error: "You can't accept your own invitation" });
   await connect(me.id, inv.inviter_id);
   await db.execute({ sql: `UPDATE invitations SET status = 'accepted' WHERE id = ?`, args: [inv.id] });
-  res.json({ friendId: inv.inviter_id });
+  res.json({ friendId: inv.inviter_id, ...(await relationsOf(me.id)) });
 }
 
 // The token itself proves the recipient got the link (works for any email on the account).
@@ -527,12 +539,12 @@ app.post('/api/invitations/:id/decline', async (req, res) => {
       args: [String(req.params.id), ...mine],
     });
   }
-  res.json({ ok: true });
+  res.json({ ok: true, ...(await relationsOf(me.id)) });
 });
 
 app.delete('/api/invitations/:id', async (req, res) => {
   await db.execute({ sql: `UPDATE invitations SET status = 'revoked' WHERE id = ? AND inviter_id = ? AND status = 'pending'`, args: [String(req.params.id), uid(res)] });
-  res.json({ ok: true });
+  res.json({ ok: true, ...(await relationsOf(uid(res))) });
 });
 
 // ---------- bets ----------
@@ -552,8 +564,8 @@ async function viewerFor(me: string, bets: LoadedBet[]): Promise<Viewer> {
 /** The bets `other` shares with me (in, or invited). */
 const involves = (lb: LoadedBet, other: string) => lb.participants.some((p) => p.user_id === other && (p.status === 'joined' || p.status === 'invited'));
 
-app.get('/api/friends', async (_req, res) => {
-  const me = uid(res);
+/** The user's friends, with balances and how many bets with each are open or waiting for the user. */
+async function friendsOf(me: string): Promise<Friend[]> {
   const conns = await db.execute({
     sql: `SELECT ${SUMMARY_SQL} FROM connections c
           JOIN users u ON u.id = CASE WHEN c.user_a = ? THEN c.user_b ELSE c.user_a END
@@ -574,7 +586,11 @@ app.get('/api/friends', async (_req, res) => {
       needsMyAction: theirs.filter((b) => b.needsMyAction).length,
     };
   });
-  res.json(friends);
+  return friends;
+}
+
+app.get('/api/friends', async (_req, res) => {
+  res.json(await friendsOf(uid(res)));
 });
 
 app.get('/api/bets', async (req, res) => {

@@ -5,7 +5,7 @@ import { api, ApiError } from '../api';
 import Avatar from '../components/Avatar';
 import AvatarCropper from '../components/AvatarCropper';
 import Icon from '../components/Icon';
-import type { AppConfig, OwnEmailAddress, OwnLogin } from '../../shared/types';
+import type { AppConfig, Me, OwnEmailAddress, OwnLogin } from '../../shared/types';
 import DeleteAccount from '../components/DeleteAccount';
 import VerifyEmailBanner from '../components/VerifyEmailBanner';
 import { useAction, useFetch, useMe } from '../hooks';
@@ -13,7 +13,13 @@ import { useAction, useFetch, useMe } from '../hooks';
 const PROVIDER_NAMES = { google: 'Google', microsoft: 'Microsoft', apple: 'Apple' } as const;
 
 export default function Profile() {
-  const { me, reload } = useMe();
+  const { me, setMe } = useMe();
+  // Changes to the account answer with the account as it is now
+  const change = async <T = object,>(path: string, method: string, body?: unknown) => {
+    const r = await api<T & { me: Me }>(path, method, body);
+    setMe(r.me);
+    return r;
+  };
   const [name, setName] = useState(me.profileName);
   // Follow the account's name when it changes underneath us (after a merge, for instance)
   useEffect(() => {
@@ -34,16 +40,16 @@ export default function Profile() {
     connect.run(async () => {
       await api('/me/connect', 'POST', { password: connectPw });
       location.href = `/api/auth/${provider}?connect=1`; // a full page load: the provider's sign-in follows
-    });
+    }, provider);
   const rm = useAction();
+  const signOut = useAction();
 
   const makePrimary = (e: OwnEmailAddress) => {
     const note = me.profileName ? '' : ' Until you set a display name, your friends will see this address instead of the old one.';
     if (!window.confirm(`Make ${e.email} your primary address?${note}`)) return;
     rm.run(async () => {
-      await api(`/me/emails/${encodeURIComponent(e.email)}/primary`, 'POST');
-      reload();
-    });
+      await change(`/me/emails/${encodeURIComponent(e.email)}/primary`, 'POST');
+    }, `primary:${e.email}`);
   };
 
   const [newEmail, setNewEmail] = useState('');
@@ -62,10 +68,9 @@ export default function Profile() {
     ev.preventDefault();
     const email = newEmail.trim();
     addMail.run(async () => {
-      note(await api<{ result: string }>('/me/emails', 'POST', { email }), email.toLowerCase());
+      note(await change<{ result: string }>('/me/emails', 'POST', { email }), email.toLowerCase());
       setNewEmail('');
-      reload();
-    });
+    }, 'add');
   };
   const resend = (e: OwnEmailAddress) =>
     addMail.run(async () => {
@@ -75,7 +80,7 @@ export default function Profile() {
         if (err instanceof ApiError && err.status === 429) note({ result: 'throttled' }, e.email);
         else throw err;
       }
-    });
+    }, `resend:${e.email}`);
 
   const removeEmail = (e: OwnEmailAddress) => {
     const lines = [`Remove ${e.email} from your account?`];
@@ -84,18 +89,16 @@ export default function Profile() {
     if (e.primary) lines.push('Another verified address becomes your primary one.');
     if (!window.confirm(lines.join('\n\n'))) return;
     rm.run(async () => {
-      await api(`/me/emails/${encodeURIComponent(e.email)}`, 'DELETE');
-      reload();
-    });
+      await change(`/me/emails/${encodeURIComponent(e.email)}`, 'DELETE');
+    }, `remove:${e.email}`);
   };
 
   const removeLogin = (l: OwnLogin) => {
     const what = l.email ? `the email and password login for ${l.email}` : `your ${l.label} login${l.account ? ` (${l.account})` : ''}`;
     if (!window.confirm(`Remove ${what}?\n\nYou will no longer be able to sign in this way. Your email addresses stay on your account.`)) return;
     rm.run(async () => {
-      await api(`/me/logins/${encodeURIComponent(l.provider)}/${encodeURIComponent(l.subject)}`, 'DELETE');
-      reload();
-    });
+      await change(`/me/logins/${encodeURIComponent(l.provider)}/${encodeURIComponent(l.subject)}`, 'DELETE');
+    }, `login:${l.provider}:${l.subject}`);
   };
 
   const passwordLogins = me.logins.filter((l) => l.provider === 'password');
@@ -121,9 +124,9 @@ export default function Profile() {
   const addPassword = (e: React.FormEvent) => {
     e.preventDefault();
     addPw.run(async () => {
-      await api('/me/password/add', 'POST', { email: pwEmail || verifiedAddresses[0].email, newPassword: addedPw });
+      // The account now has a password login, so this form gives way to "Change password"
+      await change('/me/password/add', 'POST', { email: pwEmail || verifiedAddresses[0].email, newPassword: addedPw });
       setAddedPw('');
-      reload(); // the account now has a password login, so this form gives way to "Change password"
     });
   };
 
@@ -160,10 +163,9 @@ export default function Profile() {
           onCancel={() => setPicked(null)}
           onSave={(dataUrl) =>
             act.run(async () => {
-              await api('/me/avatar', 'PUT', { dataUrl });
+              await change('/me/avatar', 'PUT', { dataUrl });
               setPicked(null);
-              reload();
-            })
+            }, 'avatar')
           }
         />
       )}
@@ -183,7 +185,7 @@ export default function Profile() {
           }}
         />
         {me.hasAvatar && (
-          <button className="link" onClick={() => act.run(async () => { await api('/me/avatar', 'DELETE'); reload(); })}>Remove picture</button>
+          <button className="link" disabled={act.busy} aria-busy={act.busyOn('remove-avatar')} onClick={() => act.run(() => change('/me/avatar', 'DELETE'), 'remove-avatar')}>Remove picture</button>
         )}
       </div>
       <form
@@ -191,11 +193,10 @@ export default function Profile() {
         onSubmit={(e) => {
           e.preventDefault();
           act.run(async () => {
-            await api('/me', 'PUT', { name });
-            reload();
+            await change('/me', 'PUT', { name });
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);
-          });
+          }, 'name');
         }}
       >
         <label className="field">
@@ -203,7 +204,7 @@ export default function Profile() {
           <input value={name} maxLength={60} placeholder={me.email ?? 'Your name'} onChange={(e) => setName(e.target.value)} />
           {!me.profileName && <small className="muted">Until you set one, your friends see {me.email ? 'your email address' : 'you as "Friend"'}.</small>}
         </label>
-        <button className="btn" disabled={act.busy || name.trim() === me.profileName}>{saved ? <><Icon name="check" size={18} />Saved</> : 'Save'}</button>
+        <button className="btn" disabled={act.busy || name.trim() === me.profileName} aria-busy={act.busyOn('name')}>{saved ? <><Icon name="check" size={18} />Saved</> : 'Save'}</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>
       <section className="stack">
@@ -220,16 +221,16 @@ export default function Profile() {
                 </div>
                 <div className="item-actions">
                   {!e.verified && (
-                    <button className="btn btn-icon btn-secondary" aria-label={`Send verification email to ${e.email}`} title="Send verification email" disabled={addMail.busy} onClick={() => resend(e)}>
+                    <button className="btn btn-icon btn-secondary" aria-label={`Send verification email to ${e.email}`} title="Send verification email" disabled={addMail.busy} aria-busy={addMail.busyOn(`resend:${e.email}`)} onClick={() => resend(e)}>
                       <Icon name="mail" size={22} />
                     </button>
                   )}
                   {!e.primary && e.verified && (
-                    <button className="btn btn-icon btn-secondary" aria-label={`Make ${e.email} primary`} title="Make primary" disabled={rm.busy} onClick={() => makePrimary(e)}>
+                    <button className="btn btn-icon btn-secondary" aria-label={`Make ${e.email} primary`} title="Make primary" disabled={rm.busy} aria-busy={rm.busyOn(`primary:${e.email}`)} onClick={() => makePrimary(e)}>
                       <Icon name="star" size={22} />
                     </button>
                   )}
-                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${e.email}`} title="Remove" disabled={rm.busy || !!e.removeBlocked} onClick={() => removeEmail(e)}>
+                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${e.email}`} title="Remove" disabled={rm.busy || !!e.removeBlocked} aria-busy={rm.busyOn(`remove:${e.email}`)} onClick={() => removeEmail(e)}>
                     <Icon name="trash" size={22} />
                   </button>
                 </div>
@@ -244,7 +245,7 @@ export default function Profile() {
               <label htmlFor="new-email">Add an email address</label>
               <div className="field-row">
                 <input id="new-email" type="email" autoComplete="email" required value={newEmail} placeholder="you@example.com" onChange={(e) => setNewEmail(e.target.value)} />
-                <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()}>Add</button>
+                <button className="btn btn-secondary" disabled={addMail.busy || !newEmail.trim()} aria-busy={addMail.busyOn('add')}>Add</button>
               </div>
               <small className="muted">We'll email a link to confirm it. Once it's confirmed you can make it your primary address and remove the old one.</small>
             </div>
@@ -263,7 +264,7 @@ export default function Profile() {
                   {(l.email ?? l.account) && <span className="muted small">{l.email ?? l.account}</span>}
                 </div>
                 <div className="item-actions">
-                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${l.label}`} title="Remove" disabled={rm.busy || !!l.removeBlocked} onClick={() => removeLogin(l)}>
+                  <button className="btn btn-icon btn-secondary" aria-label={`Remove ${l.label}`} title="Remove" disabled={rm.busy || !!l.removeBlocked} aria-busy={rm.busyOn(`login:${l.provider}:${l.subject}`)} onClick={() => removeLogin(l)}>
                     <Icon name="trash" size={22} />
                   </button>
                 </div>
@@ -289,7 +290,7 @@ export default function Profile() {
           )}
           <div className="row row-wrap">
             {config.providers.map((p) => (
-              <button key={p} className="btn btn-small btn-secondary" disabled={connect.busy || (passwordLogins.length > 0 && !connectPw)} onClick={() => connectProvider(p)}>
+              <button key={p} className="btn btn-small btn-secondary" disabled={connect.busy || (passwordLogins.length > 0 && !connectPw)} aria-busy={connect.busyOn(p)} onClick={() => connectProvider(p)}>
                 {PROVIDER_NAMES[p]}
               </button>
             ))}
@@ -314,7 +315,7 @@ export default function Profile() {
             <input type="password" autoComplete="new-password" required minLength={8} maxLength={200} value={addedPw} onChange={(e) => setAddedPw(e.target.value)} />
             <small className="muted">At least 8 characters.</small>
           </label>
-          <button className="btn" disabled={addPw.busy || addedPw.length < 8}>
+          <button className="btn" disabled={addPw.busy || addedPw.length < 8} aria-busy={addPw.busy}>
             Add password
           </button>
           {addPw.error && <p className="error"><Icon name="alert" size={20} />{addPw.error}</p>}
@@ -332,7 +333,7 @@ export default function Profile() {
             <input type="password" autoComplete="new-password" required minLength={8} maxLength={200} value={newPw} onChange={(e) => setNewPw(e.target.value)} />
             <small className="muted">At least 8 characters. Your other devices will be signed out.</small>
           </label>
-          <button className="btn" disabled={pw.busy || !currentPw || newPw.length < 8}>
+          <button className="btn" disabled={pw.busy || !currentPw || newPw.length < 8} aria-busy={pw.busy}>
             {pwChanged ? <><Icon name="check" size={18} />Password changed</> : 'Change password'}
           </button>
           {pw.error && <p className="error"><Icon name="alert" size={20} />{pw.error}</p>}
@@ -352,26 +353,35 @@ export default function Profile() {
       <h2>Sign out</h2>
       <button
         className="btn btn-secondary"
-        onClick={async () => {
-          await api('/auth/logout', 'POST');
-          clearStore();
-          location.href = '/login';
-        }}
+        disabled={signOut.busy}
+        aria-busy={signOut.busyOn('here')}
+        onClick={() =>
+          signOut.run(async () => {
+            await api('/auth/logout', 'POST');
+            clearStore();
+            location.href = '/login';
+          }, 'here')
+        }
       >
         Sign out on this device
       </button>
       <button
         className="btn btn-secondary"
-        onClick={async () => {
-          if (!confirm('Sign out on every device, including this one?')) return;
-          await api('/auth/logout-everywhere', 'POST');
-          await api('/auth/logout', 'POST');
-          clearStore();
-          location.href = '/login';
-        }}
+        disabled={signOut.busy}
+        aria-busy={signOut.busyOn('everywhere')}
+        onClick={() =>
+          confirm('Sign out on every device, including this one?') &&
+          signOut.run(async () => {
+            await api('/auth/logout-everywhere', 'POST');
+            await api('/auth/logout', 'POST');
+            clearStore();
+            location.href = '/login';
+          }, 'everywhere')
+        }
       >
         Sign out everywhere
       </button>
+      {signOut.error && <p className="error">{signOut.error}</p>}
       </section>
       {me.emailVerified && <DeleteAccount />}
       <p className="muted small center"><Link to="/privacy">Privacy policy</Link></p>

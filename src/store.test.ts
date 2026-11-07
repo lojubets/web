@@ -107,6 +107,14 @@ describe('the model', () => {
     expect(myBets()).toEqual(['Q b4', 'Q b3', 'Q b2', 'Q b1']);
   });
 
+  it('putRelations takes friends and invitations from the answer to an invitation change', async () => {
+    await answer('friends', [{ id: 'bob' }]);
+    store.putRelations({ friends: [{ id: 'bob' }, { id: 'cara' }] as never, invitations: { sent: [], received: [] } });
+    expect(model().friends).toEqual([{ id: 'bob' }, { id: 'cara' }]);
+    expect(model().invitations).toEqual({ sent: [], received: [] });
+    expect(saved().model.friends).toHaveLength(2);
+  });
+
   it('dropBet takes a bet the user left out of their list', async () => {
     await answer('bets', [bet('b1')]);
     store.dropBet('b1');

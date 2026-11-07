@@ -34,16 +34,14 @@ export default function DeleteAccount() {
       setOpen(false);
       setConfirm('');
       setPassword('');
-      reloadMe();
-      status.reload();
-    });
+      await Promise.all([reloadMe(), status.reload()]);
+    }, 'start');
 
   const withdraw = () =>
     act.run(async () => {
       await api('/me/deletion', 'DELETE');
-      reloadMe();
-      status.reload();
-    });
+      await Promise.all([reloadMe(), status.reload()]);
+    }, 'withdraw');
 
   if (d.requestedAt) {
     return (
@@ -60,7 +58,7 @@ export default function DeleteAccount() {
           </div>
         ))}
         <p className="muted small">A friend who refuses keeps the bet going: settle it together, or ask again after you withdraw and restart the deletion.</p>
-        <button className="btn btn-secondary" disabled={act.busy} onClick={withdraw}>Keep my account</button>
+        <button className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('withdraw')} onClick={withdraw}>Keep my account</button>
         {sent ? (
           <p className="small">Message sent. We'll reply by email.</p>
         ) : (
@@ -78,7 +76,7 @@ export default function DeleteAccount() {
               <span>Stuck? Tell us</span>
               <textarea value={message} rows={3} maxLength={2000} onChange={(e) => setMessage(e.target.value)} />
             </label>
-            <button className="btn btn-secondary" disabled={help.busy || message.trim().length < 5}>Send</button>
+            <button className="btn btn-secondary" disabled={help.busy || message.trim().length < 5} aria-busy={help.busy}>Send</button>
             {help.error && <p className="error">{help.error}</p>}
           </form>
         )}
@@ -130,7 +128,7 @@ export default function DeleteAccount() {
           <span>Type DELETE to confirm</span>
           <input value={confirm} autoComplete="off" onChange={(e) => setConfirm(e.target.value)} />
         </label>
-        <button className="btn btn-danger" disabled={act.busy || confirm !== 'DELETE' || (hasPassword && !password)}>Delete my account</button>
+        <button className="btn btn-danger" disabled={act.busy || confirm !== 'DELETE' || (hasPassword && !password)} aria-busy={act.busyOn('start')}>Delete my account</button>
         <button type="button" className="btn btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
         {act.error && <p className="error">{act.error}</p>}
       </form>

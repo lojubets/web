@@ -83,6 +83,7 @@ export default function Styleguide() {
         <button className="btn btn-secondary">Secondary</button>
         <button className="btn btn-danger"><Icon name="flame" size={20} />Danger: go all-in</button>
         <button className="btn" disabled>Disabled</button>
+        <button className="btn" disabled aria-busy="true">Busy: waiting for the server</button>
         <div className="row row-wrap"><button className="btn btn-small">Accept</button><button className="btn btn-small btn-secondary">Decline</button></div>
         <button className="link">Text link</button>
       </section>

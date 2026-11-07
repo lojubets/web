@@ -264,3 +264,12 @@ export function dropBet(id: string) {
   const m = state.model;
   if (m.betIds?.includes(id)) update({ ...m, betIds: m.betIds.filter((x) => x !== id) }, state.errors);
 }
+
+/** Friends and invitations as the server returned them after a change to an invitation (sent, accepted, declined, revoked). */
+export function putRelations({ friends, invitations }: { friends?: Friend[]; invitations?: Invitations }) {
+  ensureLoaded();
+  let m = state.model;
+  if (friends) m = apply(m, 'friends', friends);
+  if (invitations) m = apply(m, 'invitations', invitations);
+  update(m, state.errors);
+}

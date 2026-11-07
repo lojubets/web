@@ -29,12 +29,14 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  // The signed-in user, from /me or as a change to the account returned it
+  const takeMe = (m: Me) => {
+    setOwner(m);
+    setMe(m);
+  };
   const load = () =>
     api<Me>('/me')
-      .then((m) => {
-        setOwner(m);
-        setMe(m);
-      })
+      .then(takeMe)
       .catch((e) => {
         // Signed out (401): forget the previous user's friends and bets. A network hiccup or a server error keeps them,
         // and whoever was signed in.
@@ -71,7 +73,7 @@ export default function App() {
             locked && location.pathname !== '/profile' ? (
               <Navigate to="/profile" replace />
             ) : (
-              <MeContext.Provider value={{ me, reload: load }}>
+              <MeContext.Provider value={{ me, reload: load, setMe: takeMe }}>
                 <Layout locked={locked} />
               </MeContext.Provider>
             )

@@ -7,7 +7,7 @@ import RulesEditor, { EMPTY_RULES, draftToParams, type RulesDraft } from '../com
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { useAction, useFriends } from '../hooks';
-import { putBet } from '../store';
+import { putBet, refresh } from '../store';
 import { initialPick } from './newBetPick';
 
 const KINDS: { kind: BetKind; title: string; hint: string }[] = [
@@ -50,7 +50,8 @@ export default function NewBet() {
           e.preventDefault();
           run(async () => {
             const bet = await api<Bet>('/bets', 'POST', { opponentIds: chosen, question, kind, params: betParams, guess, settleDays: group ? settleDays : null });
-            putBet(bet);
+            putBet(bet); // the bets list and the friend's page have it at once
+            refresh('friends', true); // open-bet counts changed
             nav(`/bets/${bet.id}`);
           });
         }}
@@ -101,7 +102,7 @@ export default function NewBet() {
           </label>
         )}
         {error && <p className="error">{error}</p>}
-        <button className="btn" disabled={busy || chosen.length === 0 || (kind === 'choice' && (betParams as { options: string[] }).options.length < 2)}>
+        <button className="btn" aria-busy={busy} disabled={busy || chosen.length === 0 || (kind === 'choice' && (betParams as { options: string[] }).options.length < 2)}>
           {group ? `Propose ${chosen.length + 1}-way bet` : 'Propose bet · 1 GT'}
         </button>
       </form>

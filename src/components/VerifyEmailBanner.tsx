@@ -33,7 +33,7 @@ export default function VerifyEmailBanner() {
     <div className="card accent stack">
       <strong className="row"><Icon name="mail" size={22} />Verify your email</strong>
       <span className="muted small">We sent a confirmation link to {me.email}. Open it, then come back here.</span>
-      <button className="btn btn-secondary" disabled={busy} onClick={send}>Send verification email</button>
+      <button className="btn btn-secondary" disabled={busy} aria-busy={busy} onClick={send}>Send verification email</button>
       {msg && <span className="small">{msg}</span>}
     </div>
   );

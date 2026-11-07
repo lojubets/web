@@ -35,7 +35,7 @@ export default function ResetPassword() {
             }}
           >
             <input type="password" aria-label="New password" placeholder="New password" autoComplete="new-password" minLength={8} value={password} onChange={(e) => setPassword(e.target.value)} required />
-            <button className="btn" disabled={busy || !token}>Change password</button>
+            <button className="btn" disabled={busy || !token} aria-busy={busy}>Change password</button>
             {error && <p className="error">{error}</p>}
             <Link className="link center" to="/forgot-password">Send me a new link</Link>
           </form>

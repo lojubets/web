@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Bet, Friend, Me } from '../shared/types';
 import { api } from './api';
 import { getState, involves, refresh, show, subscribe, type Invitations, type Model, type Resource } from './store';
@@ -23,7 +23,7 @@ export function useFetch<T>(path: string | null) {
     setLoading(true);
     load();
   }, [load]);
-  return { data, error, loading, reload: load };
+  return { data, error, loading, reload: load, set: setData };
 }
 
 // ---------- the user's model (see store.ts) ----------
@@ -71,23 +71,33 @@ export const useBet = (id: string) => useModel<Bet>(`bet:${id}`, (m) => m.bets[i
 
 // ---------- the signed-in user and actions ----------
 
-export const MeContext = createContext<{ me: Me; reload: () => void } | null>(null);
+/** The signed-in user. `setMe` takes the user as a change to the account returned it; `reload` asks the server. */
+export const MeContext = createContext<{ me: Me; reload: () => Promise<unknown>; setMe: (me: Me) => void } | null>(null);
 export const useMe = () => useContext(MeContext)!;
 
-/** Runs an async action, exposing busy/error state for buttons and forms. */
+/**
+ * Runs an async action (a request that changes something), exposing busy/error state for buttons and forms.
+ * `run(fn, key)` names which button started it: `busyOn(key)` is true for that button only, so it can show a spinner
+ * (`aria-busy`), while `busy` disables the buttons that share the action. A second run while one is pending is ignored.
+ */
 export function useAction() {
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const run = useCallback(async <T,>(fn: () => Promise<T>): Promise<T | undefined> => {
-    setBusy(true);
+  const running = useRef(false);
+  const run = useCallback(async <T,>(fn: () => Promise<T>, key = 'default'): Promise<T | undefined> => {
+    if (running.current) return;
+    running.current = true;
+    setPending(key);
     setError(null);
     try {
       return await fn();
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      running.current = false;
+      setPending(null);
     }
   }, []);
-  return { busy, error, run };
+  const busyOn = useCallback((key = 'default') => pending === key, [pending]);
+  return { busy: pending !== null, busyOn, error, run };
 }
