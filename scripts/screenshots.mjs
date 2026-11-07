@@ -169,8 +169,8 @@ async function scenarios() {
   for (const p of everyone) myId[p] = (await call(p, 'GET', '/me')).id;
 
   const FRIENDS = 'Bob and Cara have accepted Alice’s invitations, so Alice is friends with both. No bets exist yet.';
-  await shot({ group: 'Friends', title: 'Friends list, no bets yet', as: 'alice', url: '/friends', story: FRIENDS, expect: 'Alice’s Friends tab listing Bob Berg and Cara Cortez, each marked "You and … are even". No pending invitations remain.' });
-  await shot({ group: 'Friends', title: 'A friend with no bets', as: 'alice', url: `/friends/${myId.bob}`, story: FRIENDS, expect: 'Alice’s page for Bob: "You and Bob Berg are even", a "New bet with Bob Berg" button and "No bets yet."' });
+  await shot({ group: 'Friends', title: 'Friends list, no bets yet', as: 'alice', url: '/friends', story: FRIENDS, expect: 'Alice’s Friends tab listing Bob Berg and Cara Cortez, each marked "You’re even". No pending invitations remain.' });
+  await shot({ group: 'Friends', title: 'A friend with no bets', as: 'alice', url: `/friends/${myId.bob}`, story: FRIENDS, expect: 'Alice’s page for Bob: "You’re even", a "New bet with Bob Berg" button and "No bets yet."' });
 
   console.log('Creating a bet');
   const FORM = `${FRIENDS} Alice taps "New bet".`;
@@ -262,11 +262,11 @@ async function scenarios() {
   await shot({ group: 'Bets', title: 'Bets list', as: 'alice', url: '/', story: HISTORY, expect: 'Alice’s Bets tab. "Your move": the opening-match tie ("Agree to call it off?") and the midsummer bet ("Your guess is needed"). "In play": the office opening, the coach bet ("Waiting for Cara Cortez to confirm"), the sauna cooler ("Waiting for Bob Berg to guess"), the project manager ("Waiting for Bob Berg to confirm") and the all-in Kane bet. "Settled": the hockey bet. The cancelled bet is absent.' });
   await shot({ group: 'Bets', title: 'Bets list', as: 'bob', url: '/', story: HISTORY, expect: 'Bob’s Bets tab. "Your move": the sauna cooler ("Your guess is needed") and the project manager ("Alice Aaltonen proposed a result: confirm?"). "In play": the Kane bet with an "All-in 1 GT" tag. "Settled": the hockey bet, "Alice Aaltonen won". The Bets tab badge shows 2. Bob has no bets with Cara.' });
   await shot({ group: 'Bets', title: 'Bets list', as: 'cara', url: '/', story: HISTORY, expect: 'Cara’s Bets tab. "Your move": the midsummer bet ("Your guess is needed") and the coach bet ("Alice Aaltonen proposed a result: confirm?"). "In play": the opening-match tie ("Waiting for Alice Aaltonen to agree to a tie") and the office opening. The Bets tab badge shows 2. She has no bets with Bob.' });
-  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'alice', url: '/friends', story: HISTORY, expect: 'Alice’s Friends tab: "Bob Berg owes you 1 GT" with 3 open bets, and "You and Cara Cortez are even" with 4 open bets. The Bets tab badge shows Alice’s pending actions.' });
-  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'bob', url: '/friends', story: HISTORY, expect: 'Bob’s Friends tab with only Alice: "You owe Alice Aaltonen 1 GT", 3 open bets.' });
-  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'cara', url: '/friends', story: HISTORY, expect: 'Cara’s Friends tab with only Alice: "You and Alice Aaltonen are even", 4 open bets.' });
-  await shot({ group: 'Friends', title: 'Friend with open and settled bets', as: 'alice', url: `/friends/${myId.bob}`, story: HISTORY, expect: 'Alice’s page for Bob: "Bob Berg owes you 1 GT", the three open bets with their status lines, and the hockey bet marked "You won".' });
-  await shot({ group: 'Friends', title: 'Friend who is ahead on the tab', as: 'bob', url: `/friends/${myId.alice}`, story: HISTORY, expect: 'Bob’s page for Alice from the other side: "You owe Alice Aaltonen 1 GT" and the same four bets, the hockey one marked "Alice Aaltonen won".' });
+  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'alice', url: '/friends', story: HISTORY, expect: 'Alice’s Friends tab: "They owe you 1 GT" with 3 open bets, and "You’re even" with 4 open bets. The Bets tab badge shows Alice’s pending actions.' });
+  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'bob', url: '/friends', story: HISTORY, expect: 'Bob’s Friends tab with only Alice: "You owe them 1 GT", 3 open bets.' });
+  await shot({ group: 'Friends', title: 'Friends list, with bets', as: 'cara', url: '/friends', story: HISTORY, expect: 'Cara’s Friends tab with only Alice: "You’re even", 4 open bets.' });
+  await shot({ group: 'Friends', title: 'Friend with open and settled bets', as: 'alice', url: `/friends/${myId.bob}`, story: HISTORY, expect: 'Alice’s page for Bob: "They owe you 1 GT", the three open bets with their status lines, and the hockey bet marked "You won".' });
+  await shot({ group: 'Friends', title: 'Friend who is ahead on the tab', as: 'bob', url: `/friends/${myId.alice}`, story: HISTORY, expect: 'Bob’s page for Alice from the other side: "You owe them 1 GT" and the same four bets, the hockey one marked "Alice Aaltonen won".' });
 
   console.log('Bet details');
   const details = [
@@ -441,7 +441,7 @@ async function scenarios() {
   }
   const GROUPS = `${INVITING} ${ACTIVE} ${SETTLED} ${PENDING}`;
   await shot({ group: 'Group bets', title: 'Bets list with group bets', as: 'dan', url: '/', story: GROUPS, expect: 'Dan’s Bets tab, each card with a stack of three small avatars and "with Alice Aaltonen, Bob Berg and Cara Cortez". "Your move": the midsummer lonkeros bet ("Bob Berg proposed a result: confirm?", with "Your move" and "Settles in … d" tags) and the medals bet ("Your guess is needed"). "Settled": the opening match ("Bob Berg and Cara Cortez won · 5"). The sauna bet he declined is absent.' });
-  await shot({ group: 'Group bets', title: 'Friends made through a group bet', as: 'dan', url: '/friends', story: GROUPS, expect: 'Dan’s Friends tab listing Alice Aaltonen ("You and Alice Aaltonen are even"), Bob Berg and Cara Cortez ("You owe … 1 GT" each), each with "2 open" bets. Bob and Cara became his friends when the opening-match bet started.' });
+  await shot({ group: 'Group bets', title: 'Friends made through a group bet', as: 'dan', url: '/friends', story: GROUPS, expect: 'Dan’s Friends tab listing Alice Aaltonen ("You’re even"), Bob Berg and Cara Cortez ("You owe them 1 GT" each), each with "2 open" bets. Bob and Cara became his friends when the opening-match bet started.' });
 }
 
 // ---------- gallery ----------
