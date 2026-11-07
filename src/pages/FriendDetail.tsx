@@ -2,7 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import type { Bet, Friend } from '../../shared/types';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
-import BetCard from '../components/BetCard';
+import BetSections from '../components/BetSections';
 import { balanceText } from '../format';
 import { useFetch } from '../hooks';
 
@@ -23,10 +23,9 @@ export default function FriendDetail() {
         <p className="balance"><span className={friend.balance > 0 ? 'owed' : friend.balance < 0 ? 'owe' : 'muted'}>{balanceText(friend.name, friend.balance)}</span></p>
         <Link className="btn" to={`/bets/new?with=${friend.id}`}>New bet with {friend.name}</Link>
       </div>
-      <div className="stack">
-        {bets.data?.map((b) => <BetCard key={b.id} bet={b} />)}
-        {bets.data?.length === 0 && <p className="muted center">No bets yet.</p>}
-      </div>
+      {bets.error && <p className="error">{bets.error}</p>}
+      {bets.data?.length === 0 && <p className="muted center">No bets yet.</p>}
+      <BetSections bets={bets.data ?? []} />
     </>
   );
 }
