@@ -625,6 +625,32 @@ a.card::after {
   box-decoration-break: clone;
 }
 
+/* Friends page: total owed, owing and net, side by side. */
+.tally {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+.tally > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  justify-content: space-between; /* a label that wraps on a phone doesn't push its value out of line */
+  min-width: 0;
+}
+.tally > div + div {
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border);
+}
+.tally-value {
+  font: 400 var(--text-h2) / 1.2 var(--font-display);
+  white-space: nowrap;
+}
+.tally-value .owed,
+.tally-value .owe {
+  font-weight: inherit;
+}
+
 /* ---------- Avatar ---------- */
 
 .avatar {
