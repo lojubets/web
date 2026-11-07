@@ -637,7 +637,7 @@ a.card::after {
   gap: var(--space-2);
 }
 .tally-total {
-  font: 700 var(--text-display) / 1.1 var(--font-display);
+  font: 700 var(--text-h1) / 1.15 var(--font-display);
 }
 .tally-total .owed,
 .tally-total .owe {
