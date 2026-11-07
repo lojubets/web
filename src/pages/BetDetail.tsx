@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Bet, Friend } from '../../shared/types';
+import type { Bet, Friend, Participant } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
-import { describeRules, formatMoment, formatValue, gts } from '../format';
+import { describeRules, formatMoment, formatValue, gts, listNames } from '../format';
 import { useAction, useFetch } from '../hooks';
+
+const names = (ps: Participant[]) => listNames(ps.map((p) => (p.isMe ? 'you' : p.name)));
+const Names = ({ of }: { of: Participant[] }) => <>{names(of)}</>;
+const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 
 export default function BetDetail() {
   const { id } = useParams();
@@ -16,12 +20,11 @@ export default function BetDetail() {
   const act = useAction();
   const [value, setValue] = useState('');
   const [countering, setCountering] = useState(false);
-  const [winner, setWinner] = useState<'me' | 'them' | 'draw' | ''>('');
+  const [winners, setWinners] = useState<string[]>([]);
   const b = bet.data;
-  const friend = friends.data?.find((f) => f.id === b?.otherUserId);
 
   if (bet.error) return <p className="error">{bet.error}</p>;
-  if (!b || !friend) return <p className="center muted">Loading…</p>;
+  if (!b || !friends.data) return <p className="center muted">Loading…</p>;
 
   const post = (path: string, body?: unknown) =>
     act.run(async () => {
@@ -29,32 +32,55 @@ export default function BetDetail() {
       await bet.reload();
       await friends.reload();
       setValue('');
-      setWinner('');
+      setWinners([]);
       setCountering(false);
     });
+  const leave = (path: string) => act.run(async () => { await api(`/bets/${b.id}${path}`, 'POST'); nav('/'); });
 
   const fv = (v: string | null) => formatValue(b.kind, b.params, v);
-  const later = b.kind === 'instant' && b.myGuess !== null && b.theirGuess !== null ? (b.myGuess > b.theirGuess ? 'me' : b.myGuess < b.theirGuess ? 'them' : 'both') : null;
+  const me = b.participants.find((p) => p.isMe)!;
+  const started = b.status !== 'awaiting_guess';
+  const inGame = me.status === 'joined';
+  const inBet = (p: Participant) => p.status === 'joined' || (p.status === 'invited' && !started);
+  const players = b.participants.filter((p) => p.status === 'joined');
+  const shown = b.participants.filter((p) => inBet(p) || (!started && p.status === 'declined'));
+  // The other people in the bet: players, and before the start those still deciding
+  const them = b.participants.filter((p) => inBet(p) && !p.isMe);
+  const inBetCount = b.participants.filter(inBet).length;
+  const two = inBetCount === 2 && inGame;
+  const friendOf = (p: Participant) => friends.data!.find((f) => f.id === p.id);
+  const creator = b.participants.find((p) => p.isCreator)!;
+  const proposer = b.participants.find((p) => p.id === b.outcomeProposedBy);
+  const winnersNow = b.participants.filter((p) => p.winner);
+  const waitingOn = b.participants.filter((p) => p.mustAccept && !p.accepted);
+  const iWon = me.winner;
+  // Future-dated bets: whose guess is latest (and so certain to be closest once the tipping point passes)
+  const latestGuess = b.kind === 'instant' && players.every((p) => p.guess !== null) ? players.map((p) => p.guess!).sort().at(-1)! : null;
+  const latest = latestGuess === null ? [] : players.filter((p) => p.guess === latestGuess);
+  const allSame = latest.length === players.length && players.length > 0;
   const byTipping = b.settledBy === 'tipping_point';
-  const iWon = b.winnerId !== null && b.winnerId !== b.otherUserId;
+  const deleted = them.length > 0 && them.every((p) => p.deleted);
 
   const withdraw = (
     <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/withdraw')}>Withdraw my proposal</button>
   );
 
   const proposeForm = (
-    <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/propose', { outcome: value, winner }); }}>
+    <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/propose', { outcome: value, winners }); }}>
       <ValueInput kind={b.kind} params={b.params} role="outcome" value={value} onChange={setValue} label={b.status === 'active' ? 'It happened! What was the actual result?' : 'What was the actual result?'} />
       {b.kind === 'text' && (
         <fieldset className="field choices">
-          <legend>Who was right?</legend>
-          {([['me', 'I was'], ['them', `${friend.name} was`], ['draw', 'Neither, or both']] as const).map(([v, label]) => (
-            <label key={v} className="check"><input type="radio" name="winner" checked={winner === v} onChange={() => setWinner(v)} required />{label}</label>
+          <legend>Who was right? {players.length > 2 && <span className="muted">(tick everyone who was, or nobody)</span>}</legend>
+          {players.map((p) => (
+            <label key={p.id} className="check">
+              <input type="checkbox" checked={winners.includes(p.id)} onChange={() => setWinners(winners.includes(p.id) ? winners.filter((x) => x !== p.id) : [...winners, p.id])} />
+              {p.isMe ? 'I was' : `${p.name} was`}
+            </label>
           ))}
         </fieldset>
       )}
       <button className="btn" disabled={act.busy}>Propose result</button>
-      {b.status === 'active' && b.tippingPassed && later !== 'both' && (
+      {b.status === 'active' && b.tippingPassed && !allSame && (
         <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => post('/not-happened')}>
           It hasn't happened yet
         </button>
@@ -62,38 +88,85 @@ export default function BetDetail() {
     </form>
   );
 
+  const acceptance = (
+    <ul className="accept-list">
+      {b.participants.filter((p) => p.status === 'joined' && !p.isMe && p.id !== b.outcomeProposedBy).map((p) => (
+        <li key={p.id} className={p.accepted ? 'ok' : p.mustAccept ? 'pending' : 'muted'}>
+          <Icon name={p.accepted ? 'check' : p.mustAccept ? 'clock' : 'trophy'} size={16} />
+          {p.name}: {p.accepted ? 'confirmed' : p.mustAccept ? 'not answered yet' : 'wins outright, so not asked'}
+        </li>
+      ))}
+    </ul>
+  );
+
+  const deadlineNote = b.settleDeadline && waitingOn.length > 0 && (
+    <p className="muted small">
+      If {names(waitingOn)} {waitingOn.length === 1 && !waitingOn[0].isMe ? "hasn't" : "haven't"} answered by {when(b.settleDeadline)}, that counts as confirming.
+    </p>
+  );
+
+  const settledText = () => {
+    if (winnersNow.length === 0) return 'Dead heat, nobody owes anything.';
+    const owed = them.filter((p) => p.owesMe > 0);
+    const owing = them.filter((p) => p.owesMe < 0);
+    if (iWon) return `You won ${gts(b.myNet)}! ${listNames(owed.map((p) => p.name))} owe${owed.length === 1 ? 's' : ''} you${two || owed.length === 1 ? '' : ` ${gts(-owing[0]?.owesMe || owed[0].owesMe)} each`}.`;
+    const w = winnersNow;
+    return `${listNames(w.map((p) => p.name))} won. You owe ${w.length === 1 ? gts(-b.myNet) : `${gts(-b.myNet)}, ${gts(-owing[0].owesMe)} each`}.`;
+  };
+
   return (
     <>
       <header className="header">
         <Link to="/" className="back"><Icon name="chevron-left" size={22} />Bets</Link>
       </header>
       <h1 className="question">{b.question}</h1>
-      <Link to={`/friends/${friend.id}`} className="versus">
-        <Avatar user={friend} size={28} /> vs {friend.name}
-      </Link>
+      {two && friendOf(them[0]) ? (
+        <Link to={`/friends/${them[0].id}`} className="versus">
+          <Avatar user={them[0]} size={28} /> vs {them[0].name}
+        </Link>
+      ) : (
+        <p className="versus">{inBetCount > 1 ? `${inBetCount}-way bet` : 'Group bet'} · started by {creator.isMe ? 'you' : creator.name}</p>
+      )}
 
       <p className="muted small rules">{describeRules(b.kind, b.params).join(' · ')}</p>
 
-      <div className="guesses">
-        <div className="card guess">
-          <span className="muted small">Your guess</span>
-          <strong>{fv(b.myGuess)}</strong>
-        </div>
-        <div className="card guess">
-          <span className="muted small">{friend.name}</span>
-          {b.theirGuess === null ? <span className="hidden-guess"><Icon name="lock" size={18} />Hidden</span> : <strong>{fv(b.theirGuess)}</strong>}
-        </div>
+      <div className="players">
+        {shown.map((p) => (
+          <div key={p.id} className={`card player ${p.winner && (b.status === 'settled' || b.status === 'awaiting_confirmation') ? 'player-win' : ''}`}>
+            <Avatar user={p} size={36} />
+            <div className="player-main">
+              <span className="small muted">{p.isMe ? 'You' : friendOf(p) ? <Link to={`/friends/${p.id}`}>{p.name}</Link> : p.name}</span>
+              {p.status === 'invited' ? (
+                <span className="muted">Invited, not answered yet</span>
+              ) : p.status === 'declined' ? (
+                <span className="muted">Declined</span>
+              ) : p.guess !== null ? (
+                <strong>{fv(p.guess)}</strong>
+              ) : p.guessIn ? (
+                <span className="hidden-guess"><Icon name="lock" size={18} />Hidden until the bet starts</span>
+              ) : b.status === 'settled' && p.deleted ? (
+                <span className="muted">Guess removed</span>
+              ) : (
+                <span className="muted">Not guessed yet</span>
+              )}
+            </div>
+            {b.status === 'settled' && p.winner && <span className="pill pill-positive"><Icon name="trophy" size={14} />Won</span>}
+            {b.status === 'settled' && !p.isMe && p.owesMe > 0 && <span className="pill">owes you {gts(p.owesMe)}</span>}
+            {b.status === 'settled' && !p.isMe && p.owesMe < 0 && <span className="pill">you owe {gts(-p.owesMe)}</span>}
+            {b.status === 'awaiting_confirmation' && p.winner && <span className="pill pill-positive">Wins</span>}
+          </div>
+        ))}
       </div>
 
       {b.tippingPoint !== null && b.status === 'active' && (
         <div className={`card stack ${b.tippingSoon || b.tippingPassed ? 'needs-action' : ''}`}>
           <strong className="row"><Icon name="clock" size={22} />{b.tippingPassed ? 'Tipping point passed' : 'Tipping point'}: {formatMoment(b.tippingPoint, b.params)}</strong>
           <span className="muted small">
-            {later === 'both'
-              ? 'You guessed the same, so this ends in a draw whatever happens.'
+            {allSame
+              ? 'You all guessed the same, so this ends in a draw whatever happens.'
               : b.tippingPassed
-                ? `Has the event happened? If it hasn't, ${later === 'me' ? 'your' : `${friend.name}'s`} guess is guaranteed to be closer.`
-                : `If the event still hasn't happened by then, ${later === 'me' ? 'your' : `${friend.name}'s`} guess is guaranteed to be closer. You'll be asked to confirm. If it already happened, enter the result.`}
+                ? `Has the event happened? If it hasn't, ${latest.length === 1 && latest[0].isMe ? 'your guess is' : `the guess of ${names(latest)} is`} guaranteed to be closest.`
+                : `If the event still hasn't happened by then, ${latest.length === 1 && latest[0].isMe ? 'your guess is' : `the guess of ${names(latest)} is`} guaranteed to be closest. You'll be asked to confirm. If it already happened, enter the result.`}
           </span>
         </div>
       )}
@@ -107,110 +180,121 @@ export default function BetDetail() {
 
       {b.allIn && <div className="banner banner-dare"><Icon name="flame" size={22} /><span>All-in: double or nothing for {gts(b.stake)}</span></div>}
 
-      {b.status === 'settled' && b.settledBy === 'tie' && (
+      {started && !inGame && (
+        <div className="banner"><Icon name="alert" size={22} /><span>This bet {me.status === 'declined' ? 'went on' : 'started'} without you.</span></div>
+      )}
+
+      {b.status === 'settled' && inGame && b.settledBy === 'tie' && (
         <div className="banner">
           <Icon name="check" size={22} />
           <span>Called off by agreement. Nobody owes anything.</span>
         </div>
       )}
 
-      {b.status === 'settled' && b.settledBy !== 'tie' && (
-        <div className={`banner ${b.winnerId === null ? '' : iWon ? 'banner-win' : 'banner-owe'}`}>
+      {b.status === 'settled' && inGame && b.settledBy !== 'tie' && (
+        <div className={`banner ${winnersNow.length === 0 ? '' : iWon ? 'banner-win' : 'banner-owe'}`}>
           <Icon name={iWon ? 'trophy' : 'glass'} size={22} />
           <span>
-          {byTipping && "You both confirmed the event hadn't happened by the tipping point. "}
-          {b.winnerId === null
-            ? "Dead heat, nobody owes anything."
-            : iWon
-              ? `You won ${gts(b.stake)}! ${friend.name} owes you.`
-              : `${friend.name} won. You owe ${gts(b.stake)}.`}
+            {byTipping && "Everyone confirmed the event hadn't happened by the tipping point. "}
+            {settledText()}
+            {b.settledByDeadline && ' Settled when the deadline passed.'}
           </span>
         </div>
       )}
 
-      {b.status === 'awaiting_guess' && b.myGuess === null && (
+      {b.status === 'awaiting_guess' && me.status === 'invited' && (
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
-          {b.theirGuessIn && <p className="muted">{friend.name} has locked in their guess.</p>}
+          <p>
+            {creator.name} invites you to {inBetCount > 2 ? `a ${inBetCount}-way bet with ` : 'bet '}<Names of={them.filter((p) => !p.isCreator)} />
+            {inBetCount > 2 ? '. Everyone who doesn\'t win owes each winner 1 GT. Joining makes you friends with the other players.' : '.'}
+          </p>
+          {them.some((p) => p.guessIn) && <p className="muted small">{listNames(them.filter((p) => p.guessIn).map((p) => p.name))} {them.filter((p) => p.guessIn).length === 1 ? 'has' : 'have'} locked in a guess.</p>}
           <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
-          <button className="btn" disabled={act.busy}>Lock in my guess</button>
-          <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/bets/${b.id}/cancel`, 'POST'); nav('/'); })}>
-            {b.iAmCreator ? 'Cancel bet' : 'Decline bet'}
-          </button>
+          <button className="btn" disabled={act.busy}>{them.length > 1 ? 'Join with my guess' : 'Lock in my guess'}</button>
+          <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => leave('/cancel')}>Decline bet</button>
         </form>
       )}
-      {b.status === 'awaiting_guess' && b.myGuess !== null && (
-        <>
-          <p className="muted">Waiting for {friend.name} to guess.</p>
-          <button className="btn btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/bets/${b.id}/cancel`, 'POST'); nav('/'); })}>
-            Cancel bet
-          </button>
-        </>
+      {b.status === 'awaiting_guess' && me.status === 'joined' && b.myGuess === null && (
+        <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
+          {them.some((p) => p.guessIn) && <p className="muted">{listNames(them.filter((p) => p.guessIn).map((p) => p.name))} {them.filter((p) => p.guessIn).length === 1 ? 'has' : 'have'} locked in a guess.</p>}
+          <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
+          <button className="btn" disabled={act.busy}>Lock in my guess</button>
+          <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => leave('/cancel')}>{b.iAmCreator ? 'Cancel bet' : 'Back out'}</button>
+        </form>
       )}
-
-      {b.status === 'active' && proposeForm}
-
-      {b.status === 'active' && (
+      {b.status === 'awaiting_guess' && me.status === 'joined' && b.myGuess !== null && (
         <div className="stack">
-          <p className="muted small">Can't agree who was closer? Propose a tie. If {friend.name} agrees, the bet is called off and nobody owes anything.</p>
+          <p className="muted">Waiting for <Names of={shown.filter((p) => inBet(p) && !p.guessIn)} /> to {shown.filter((p) => p.status === 'invited').length ? 'answer' : 'guess'}.</p>
+          {b.canStart && (
+            <>
+              <p className="muted small">You can start the bet now with the {players.filter((p) => p.guessIn).length} of you who have guessed. Anyone who hasn't answered is left out.</p>
+              <button className="btn" disabled={act.busy} onClick={() => post('/start')}>Start without them</button>
+            </>
+          )}
+          <button className="btn btn-secondary" disabled={act.busy} onClick={() => leave('/cancel')}>{b.iAmCreator ? 'Cancel bet' : 'Back out'}</button>
+        </div>
+      )}
+      {b.status === 'awaiting_guess' && me.status === 'declined' && <p className="muted">You declined this bet.</p>}
+
+      {b.status === 'active' && inGame && proposeForm}
+
+      {b.status === 'active' && inGame && (
+        <div className="stack">
+          <p className="muted small">Can't agree who was closest? Propose a tie. If {two ? them[0].name : 'everyone else'} agrees, the bet is called off and nobody owes anything.</p>
           <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/propose-tie')}>Propose a tie</button>
         </div>
       )}
 
-      {b.status === 'awaiting_confirmation' &&
-        (b.proposalKind === 'tie' ? (
-          b.outcomeProposedByMe ? (
-            <div className="stack">
-              <p className="muted">Waiting for {friend.name} to agree to call the bet off as a tie.</p>
-              {withdraw}
-            </div>
-          ) : (
-            <div className="stack">
-              <p>{friend.name} proposes a tie: call the bet off, and nobody owes anything. Agree?</p>
-              <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>Yes, call it off</button>
-              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>No, keep it going</button>
-            </div>
-          )
-        ) : b.proposalKind === 'not_happened' ? (
-          b.outcomeProposedByMe ? (
-            <div className="stack">
-              <p className="muted">Waiting for {friend.name} to agree that the event hasn't happened yet.</p>
-              {withdraw}
-            </div>
-          ) : (
-            <div className="stack">
-              <p>{friend.name} says the event still hasn't happened. If you agree, the later guess wins. Agree?</p>
-              <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>Yes, it hasn't happened</button>
-              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>No, it has happened</button>
-            </div>
-          )
-        ) : b.outcomeProposedByMe ? (
-          <div className="stack">
-            <p className="muted">Waiting for {friend.name} to confirm the result.</p>
-            {withdraw}
-          </div>
-        ) : (
-          <div className="stack">
-            <p>
-              {friend.name} says the result was <strong>{fv(b.outcome)}</strong>
-              {b.proposedVerdict && ` and that ${b.proposedVerdict === 'me' ? 'you were' : b.proposedVerdict === 'them' ? 'they were' : 'neither of you was'} right`}. Agree?
-            </p>
-            <button className="btn" disabled={act.busy} onClick={() => post('/confirm')}>Confirm result</button>
-            <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>
-            {countering ? (
-              proposeForm
-            ) : (
-              <button className="btn btn-secondary" disabled={act.busy} onClick={() => setCountering(true)}>No, I say…</button>
-            )}
-          </div>
-        ))}
-
-      {b.status === 'settled' && friend.deleted && (
+      {b.status === 'awaiting_confirmation' && inGame && (
         <div className="stack">
-          <p className="muted small">{friend.name} has left. This bet stays in your history until you remove it, which also changes your balance.</p>
+          <p>
+            {b.proposalKind === 'tie' ? (
+              <>{proposer?.isMe ? 'You propose' : `${proposer?.name} proposes`} a tie: call the bet off, and nobody owes anything.</>
+            ) : b.proposalKind === 'not_happened' ? (
+              <>{proposer?.isMe ? 'You say' : `${proposer?.name} says`} the event still hasn't happened, which means <Names of={winnersNow} /> win{winnersNow.length === 1 && !winnersNow[0].isMe ? 's' : ''}.</>
+            ) : (
+              <>
+                {proposer?.isMe ? 'You say' : `${proposer?.name} says`} the result was <strong>{fv(b.outcome)}</strong>
+                {winnersNow.length === 0 ? ', a draw: nobody wins' : <>, which means <Names of={winnersNow} /> win{winnersNow.length === 1 && !winnersNow[0].isMe ? 's' : ''}</>}.
+              </>
+            )}
+          </p>
+          {!two && acceptance}
+          {deadlineNote}
+          {b.outcomeProposedByMe ? (
+            <>
+              <p className="muted">Waiting for <Names of={waitingOn} /> to {b.proposalKind === 'outcome' ? 'confirm the result' : 'agree'}.</p>
+              {withdraw}
+            </>
+          ) : b.iMustAccept && !b.iAccepted ? (
+            <>
+              <button className="btn" disabled={act.busy} onClick={() => post('/confirm', { proposal: b.proposalId })}>
+                {b.proposalKind === 'tie' ? 'Yes, call it off' : b.proposalKind === 'not_happened' ? "Yes, it hasn't happened" : 'Confirm result'}
+              </button>
+              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>
+                {b.proposalKind === 'tie' ? 'No, keep it going' : b.proposalKind === 'not_happened' ? 'No, it has happened' : "That's not right"}
+              </button>
+              {b.proposalKind === 'outcome' && (countering ? proposeForm : <button className="btn btn-secondary" disabled={act.busy} onClick={() => setCountering(true)}>No, I say…</button>)}
+            </>
+          ) : (
+            <>
+              <p className="muted">
+                {b.iAccepted ? 'You confirmed. ' : iWon ? 'You win under this result, so your confirmation isn\'t needed. ' : ''}
+                Waiting for <Names of={waitingOn} />.{b.iAccepted && ' Changed your mind? You can still reject it.'}
+              </p>
+              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>
+            </>
+          )}
+        </div>
+      )}
+
+      {b.status === 'settled' && deleted && (
+        <div className="stack">
+          <p className="muted small">{listNames(them.map((p) => p.name))} {them.length === 1 ? 'has' : 'have'} left. This bet stays in your history until you remove it, which also changes your balance.</p>
           <button
             className="btn btn-secondary"
             disabled={act.busy}
-            onClick={() => window.confirm('Remove this bet from your history? It is gone for good, and your balance changes if it was settled.') && act.run(async () => { await api(`/bets/${b.id}/remove-from-history`, 'POST'); nav('/'); })}
+            onClick={() => window.confirm('Remove this bet from your history? It is gone for good, and your balance changes if it was settled.') && leave('/remove-from-history')}
           >
             Remove from my history
           </button>

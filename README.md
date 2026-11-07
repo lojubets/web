@@ -13,35 +13,48 @@ Bets between friends. Closest guess wins, and the prize is always one Gin & Toni
 
 1. Sign up with just an email and password (or a provider). Optionally set a display name and profile picture on the Profile page; until then you're shown to friends by your email address.
 2. Verify your own email address (automatic for Google/Apple; a confirmation link for email/password and Microsoft accounts), then invite a friend by email. They get a link (emailed if Resend is configured, otherwise you share it). Bets are only possible between connected users.
-3. **Create a bet:** a question, an answer type and, optionally, your guess. Your guess stays hidden until your friend locks in theirs. Not sure yet? Leave your guess empty to record the bet right away and lock in a guess later; the bet starts once you have both guessed. Answer types and their rules (applied to both players' guesses):
+3. **Create a bet:** pick one friend, or several for a [group bet](#group-bets), then a question, an answer type and, optionally, your guess. Guesses stay hidden until the bet starts. Not sure yet? Leave your guess empty to record the bet right away and lock in a guess later; the bet starts once everyone has guessed. Answer types and their rules (applied to every player's guess):
    - **Number:** whole numbers only or decimals too; optional minimum and maximum, each inclusive or exclusive (negatives are allowed unless the minimum forbids them).
    - **Duration:** `3:05` (h:mm), `1:02:03`, or words like `3 hours and 5 minutes`, `25 days`, `12 weeks`, `3 months and 2 days`. A month counts as 30 days and a year as 365; `m` means minutes.
    - **Date or time:** date or date-and-time; whether past dates are allowed; and a minimum lead time ("at least now + 2 hours", checked when each player guesses).
    - **Yes or no:** "Will Kane win the Ballon d'Or?" The right answer wins; if you both picked the same answer (or, with multiple choice, neither of you was right), it's a draw.
    - **Multiple choice:** 2–8 options you write ("quit", "get fired", "get reassigned"). Each of you picks one; the one who picked the actual outcome wins.
-   - **Freeform:** "What will Jose say?" Each of you writes an answer (up to 300 characters). There's nothing to measure, so whoever enters the result also says who was right (you, your friend, or neither), and the other player confirms or rejects that.
-4. When the outcome is known, either of you proposes it and the other confirms (or rejects it). The closer guess wins one GT; equal distance is a draw.
-5. **Cancelling and ties:** a bet can be cancelled by either player only while it is still waiting for a guess (the opponent declining it, or the creator withdrawing it). Once you've both guessed, either of you can **propose a tie**; if the other agrees, the bet is called off with no winner (it stays in the history, and no balance changes, an all-in stake included). If they refuse, the bet carries on.
-6. **All-in:** whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
+   - **Freeform:** "What will Jose say?" Each of you writes an answer (up to 300 characters). There's nothing to measure, so whoever enters the result also says who was right (any of the players, or nobody), and the others confirm or reject that.
+4. When the outcome is known, any player proposes it, and it settles once everyone except the proposer and a sole winner has confirmed it (see [settling](#settling-a-bet) for why that is enough). The closest guess wins one GT; equal distance is a draw.
+5. **Cancelling and ties:** before the bet starts, the creator can cancel it and anyone invited can decline (or back out again). Once it has started, any player can **propose a tie**; if the others agree, the bet is called off with no winner (it stays in the history, and no balance changes, an all-in stake included). If someone refuses, the bet carries on.
+6. **All-in:** in a two-player bet, whoever is in the red against that friend can go double-or-nothing on an in-play bet. The stake becomes their whole debt: win and it's back to even, lose and the debt doubles. Only one all-in can be open per friend at a time.
 7. **Merging accounts:** signed up twice (say with Google and with an email and password)? On the Profile page choose **Merge accounts**, sign in to the other account (you stay signed in as this one), then choose whose email address, display name and photo the merged account keeps. Rules:
    - **Both accounts need a verified email address.** Both addresses stay on record, each with its verification status, and an invitation sent to either one reaches the merged account.
    - **Every login keeps working.** After the merge, the other account's Google, Microsoft, Apple or email/password login signs in to the merged account.
    - **One password.** An account has a single password. If both accounts sign in with a password, you choose a new one during the merge, and it replaces both: after that, either email address plus the new password signs in. If only one has a password, it is kept as it is.
-   - **Friends and bets are combined.** A friend both accounts had appears once, and balances with them add up. Unfinished bets *between* the two accounts block the merge until they're finished or cancelled; finished ones are removed (a bet with yourself is meaningless).
+   - **Friends and bets are combined.** A friend both accounts had appears once, and balances with them add up. Unfinished bets both accounts are in block the merge until they're finished or cancelled; a finished two-player bet between them is removed (a bet with yourself is meaningless), and a group bet both were in keeps going with the merged account as one player.
    - The other account is deleted, and its sessions stop working. The whole merge is one database transaction: it happens completely or not at all.
    - Signing in to the other account through a provider only works for an account that already exists; it never creates one. No new Google/Microsoft/Apple configuration is needed.
 8. **Email addresses:** the Profile page lists every address with its verification status and lets you remove any of them, with two protections: you can never remove your **only verified** address (an account that hasn't verified anything can't remove its address either, which would sidestep verification), and you can never remove the address that is your **only way to sign in**. Removing an address that is also a password login (email + password) removes that login too; the confirmation says so. You can also make any **verified** address the primary one (the one friends see when you haven't set a display name, and where emails go); an unverified address can't be primary, since that would lock the account out. Removing the primary address promotes another verified one, and provider logins (Google, Microsoft, Apple) don't depend on the address staying on your profile.
 
+### Group bets
+
+A bet can have up to 8 players. The creator picks several friends; each of them is invited and joins by locking in a guess (or declines). The bet starts by itself once everyone has answered, or the creator can start it early with whoever has joined, which leaves out those who haven't answered. Fewer than two players left means the bet is off. Starting a bet makes all of its players friends with each other, so the balances between them have somewhere to live. Guesses stay hidden until the start, and a two-player bet is simply a group bet with two players.
+
+**Winners collect.** When the bet settles, every player who didn't win owes each winner one GT. A sole winner in a four-way bet collects three GTs; two joint winners collect one each from the other two (and nothing from each other); a draw, or nobody being right, moves nothing. Every payment is a whole GT between two friends, so the balances between friends stay the same simple tally.
+
+### Settling a bet
+
+Any player can propose a result, "it hasn't happened yet" (see below), or a tie. The proposal settles once **everyone except the proposer and a sole winner has confirmed it**. A sole winner collects the most a player can, so they can't be losing by the result; everyone else could be (paying, paying more, or sharing a win that was really theirs alone), and so is asked. A false result therefore always costs someone who *is* asked: there is no result two players can agree on behind the others' backs. With two players this is simply "the other player confirms". Any player can reject a proposal, which puts the bet back in play (also after confirming it, as long as it hasn't settled); the player being asked can also counter with a result of their own. Two consequences worth knowing:
+
+- A result the proposer loses by (conceding) settles at once.
+- One silent player can hold up a group bet. To avoid that, the creator of a group bet can set a **deadline** of 1–14 days: once a result has been proposed, anyone who hasn't confirmed or rejected it by then counts as having confirmed. The players who are asked get an email when the result is proposed and a reminder before the deadline (if email is configured), and the bet shows the deadline. Without a deadline (the default), the bet waits.
+
 ### Tipping point
 
-For a future-dated bet, once the midpoint of the two guesses has passed and the event still hasn't happened, the later guess is closer whatever happens. But the app never assumes the event hadn't happened; the players might just not have entered the result yet. So after the tipping point both are asked:
+For a future-dated bet, once the midpoint between the latest guess and the next-latest has passed and the event still hasn't happened, the latest guess is closest whatever happens. But the app never assumes the event hadn't happened; the players might just not have entered the result yet. So after the tipping point everyone is asked:
 
-- **It happened:** enter the result as usual (the other player confirms), and the closer guess wins.
-- **It hasn't happened yet:** either player says so and the other confirms, and the later guess wins (identical guesses draw). If the other player disagrees, the bet goes back to in-play and they enter the real result instead.
+- **It happened:** enter the result as usual, and the closest guess wins.
+- **It hasn't happened yet:** any player says so, and once the players who'd lose by it agree, the latest guess wins (identical latest guesses share the win). If someone disagrees, the bet goes back to in-play and they enter the real result instead.
 
 Players see the tipping point on the bet, a heads-up section on the home screen, and (if email is configured) get an email about 2 days before and another when it has passed. It only applies when past dates are *not* allowed; if the event may already have happened, there's nothing to infer.
 
-Balances are derived from settled bets, so there is no separate ledger to keep in sync.
+Balances are derived from settled bets (one row per payment, in `bet_settlements`), so there is no separate ledger to keep in sync.
 
 ## Develop
 
@@ -72,7 +85,7 @@ npx playwright install chromium   # once
 npm run screenshots
 ```
 
-Starts the API and web app on spare ports (3101 and 5273, override with `SCREENSHOTS_API_PORT` / `SCREENSHOTS_WEB_PORT`) with a throwaway database and the dev login, then drives headless Chromium through three users (Alice, Bob, Cara) who become friends and set up bets in every state. Mobile and desktop screenshots are written to `screenshots/` (git-ignored); open `screenshots/index.html` straight from disk to browse them. Each screenshot comes with a description of the scenario (who did what) and what the screen should show. Add scenarios in `scripts/screenshots.mjs`; `AGENTS.md` asks coding agents to keep it up to date with UI changes.
+Starts the API and web app on spare ports (3101 and 5273, override with `SCREENSHOTS_API_PORT` / `SCREENSHOTS_WEB_PORT`) with a throwaway database and the dev login, then drives headless Chromium through four users (Alice, Bob, Cara, Dan) who become friends and set up bets in every state, group bets included. Mobile and desktop screenshots are written to `screenshots/` (git-ignored); open `screenshots/index.html` straight from disk to browse them. Each screenshot comes with a description of the scenario (who did what) and what the screen should show. Add scenarios in `scripts/screenshots.mjs`; `AGENTS.md` asks coding agents to keep it up to date with UI changes.
 
 ## Production
 

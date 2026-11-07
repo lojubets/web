@@ -12,7 +12,7 @@ export default function CancelRequests({ onAnswered }: { onAnswered: () => void 
 
   const answer = (r: CancelRequest, what: 'accept' | 'refuse') =>
     act.run(async () => {
-      await api(`/bets/${r.betId}/cancel-request/${what}`, 'POST');
+      await api(`/bets/${r.betId}/cancel-request/${what}`, 'POST', { from: r.from.id });
       reqs.reload();
       onAnswered();
     });

@@ -34,11 +34,16 @@ export interface ChoiceParams {
 export type BetParams = NumberParams | InstantParams | DurationParams | TextParams | YesNoParams | ChoiceParams;
 
 export type BetStatus =
-  | 'awaiting_guess' // creator has guessed, opponent has not
-  | 'active' // both guessed, waiting for the real outcome
-  | 'awaiting_confirmation' // one side proposed the outcome, the other must confirm
+  | 'awaiting_guess' // not started: invitations are out, and guesses are still being locked in
+  | 'active' // everyone in has guessed, waiting for the real outcome
+  | 'awaiting_confirmation' // someone proposed a result; the players who would pay must accept it
   | 'settled'
   | 'cancelled';
+
+/** The most players a bet can have. */
+export const MAX_PLAYERS = 8;
+/** The longest a bet's "silence counts as acceptance" deadline can be, in days. */
+export const MAX_SETTLE_DAYS = 14;
 
 export interface UserSummary {
   id: string;
@@ -101,36 +106,64 @@ export interface Friend extends UserSummary {
   needsMyAction: number;
 }
 
+/** Someone the creator asked into a bet, and where they stand. */
+export interface Participant extends UserSummary {
+  /** 'joined' players are in; 'invited' ones haven't answered; 'declined' and 'revoked' (started without them) are out. */
+  status: 'invited' | 'joined' | 'declined' | 'revoked';
+  isMe: boolean;
+  isCreator: boolean;
+  /** Whether they have locked in a guess. Before the bet starts the guess itself stays hidden. */
+  guessIn: boolean;
+  /** Their guess, once the bet has started (always visible for yourself). A deleted user's guess is gone. */
+  guess: string | null;
+  /** Under the pending proposal, or the settled result: they win. */
+  winner: boolean;
+  /** Their acceptance of the pending proposal is needed (everyone's is, except the proposer's and a sole winner's). */
+  mustAccept: boolean;
+  accepted: boolean;
+  /** Settled bets: GTs they owe me from this bet (negative: I owe them). */
+  owesMe: number;
+}
+
 export interface Bet {
   id: string;
   question: string;
   kind: BetKind;
   params: BetParams;
   status: BetStatus;
-  otherUserId: string;
+  creatorId: string;
   iAmCreator: boolean;
+  /** Everyone who was asked, the creator included, in the order they were added. */
+  participants: Participant[];
+  /** The other player in a two-player bet (the people you bet "against" in lists), null otherwise. */
+  otherUserId: string | null;
   myGuess: string | null;
-  /** Hidden until both have guessed. */
-  theirGuess: string | null;
-  /** While the bet waits for guesses: whether they have locked theirs in (the guess itself stays hidden). */
-  theirGuessIn: boolean;
   outcome: string | null;
+  outcomeProposedBy: string | null;
   outcomeProposedByMe: boolean | null;
-  /**
-   * Freeform bets only: who the proposer says was right (a person can't compute closeness of free text),
-   * from the viewer's point of view. The other player confirms or rejects it.
-   */
-  proposedVerdict: 'me' | 'them' | 'draw' | null;
-  /** null while unsettled or on a draw */
-  winnerId: string | null;
+  /** What the pending proposal says: a result, "the event hasn't happened yet", or calling the bet off. */
+  proposalKind: 'outcome' | 'not_happened' | 'tie' | null;
+  /** Identifies the pending proposal. Send it back when accepting, so a proposal that was replaced meanwhile isn't accepted by mistake. */
+  proposalId: number | null;
+  /** Who wins under the pending proposal, or the settled result. Empty for a draw or a called-off bet. */
+  winnerIds: string[];
+  /** My acceptance of the pending proposal is needed for it to settle. */
+  iMustAccept: boolean;
+  iAccepted: boolean;
+  /** Days of silence after which a proposal counts as accepted by those who haven't answered; null means never. */
+  settleDays: number | null;
+  /** When the pending proposal settles by itself, if nobody rejects it. */
+  settleDeadline: number | null;
+  /** Settled by a confirmed outcome, by agreeing the event hadn't happened by the tipping point, or by calling it off as a tie. */
+  settledBy: 'outcome' | 'tipping_point' | 'tie' | null;
+  /** The pending proposal (or the settled result) went through because the deadline passed, not because everyone answered. */
+  settledByDeadline: boolean;
+  /** Settled bets: my net GTs from this bet (positive: others owe me). */
+  myNet: number;
   allIn: boolean;
   stake: number;
-  /** Settled by a confirmed outcome, by both players confirming the event hadn't happened by the tipping point, or by both agreeing to call it off as a tie. */
-  settledBy: 'outcome' | 'tipping_point' | 'tie' | null;
-  /** What the pending proposal says: a result, or "the event hasn't happened yet". */
-  proposalKind: 'outcome' | 'not_happened' | 'tie' | null;
   /**
-   * Future-dated bets only: once this moment passes with the event still pending, the later guess
+   * Future-dated bets only: once this moment passes with the event still pending, the latest guess
    * is guaranteed to be closer. The players are asked whether the event has happened; nothing is assumed.
    */
   tippingPoint: number | null;
@@ -138,10 +171,13 @@ export interface Bet {
   /** In play, tipping point passed, nobody has answered "has it happened?" yet. */
   tippingPassed: boolean;
   needsMyAction: boolean;
+  /** The creator may start the bet now, leaving out whoever hasn't answered. */
+  canStart: boolean;
   canAllIn: boolean;
   /** GTs I'd put on the line if I went all-in now. */
   allInStake: number;
   createdAt: number;
+  startedAt: number | null;
   settledAt: number | null;
 }
 

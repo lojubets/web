@@ -78,23 +78,52 @@ const schema = [
     status TEXT NOT NULL DEFAULT 'pending',
     created_at INTEGER NOT NULL
   )`,
+  // A bet between two or more players. Who plays, and their guesses, live in bet_participants; what the settled
+  // bet moved between them in bet_settlements. (Older databases had a two-player shape; `migrate` rebuilds it.)
   `CREATE TABLE IF NOT EXISTS bets (
     id TEXT PRIMARY KEY,
     creator_id TEXT NOT NULL,
-    opponent_id TEXT NOT NULL,
     question TEXT NOT NULL,
     kind TEXT NOT NULL,
+    params TEXT,
     status TEXT NOT NULL,
-    creator_guess TEXT NOT NULL,
-    opponent_guess TEXT,
     outcome TEXT,
     outcome_proposed_by TEXT,
-    winner_id TEXT,
+    proposal TEXT,
+    proposed_winners TEXT,
+    proposed_at INTEGER,
+    settle_days INTEGER,
     all_in INTEGER NOT NULL DEFAULT 0,
     stake INTEGER NOT NULL DEFAULT 1,
     created_at INTEGER NOT NULL,
-    settled_at INTEGER
+    started_at INTEGER,
+    settled_at INTEGER,
+    settled_by TEXT,
+    settled_by_deadline INTEGER NOT NULL DEFAULT 0
   )`,
+  // status: 'invited' (asked, not answered) | 'joined' (in, with a guess once the bet starts) | 'declined' | 'revoked'
+  // (the creator started the bet without them). `accepted` is their answer to the pending proposal.
+  `CREATE TABLE IF NOT EXISTS bet_participants (
+    bet_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    guess TEXT,
+    accepted INTEGER NOT NULL DEFAULT 0,
+    invited_at INTEGER NOT NULL,
+    responded_at INTEGER,
+    PRIMARY KEY (bet_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS bet_participants_user ON bet_participants (user_id)`,
+  // What a settled bet moved: payer owes payee `amount` GTs. Balances between friends are sums over these rows.
+  `CREATE TABLE IF NOT EXISTS bet_settlements (
+    bet_id TEXT NOT NULL,
+    payer_id TEXT NOT NULL,
+    payee_id TEXT NOT NULL,
+    amount INTEGER NOT NULL,
+    PRIMARY KEY (bet_id, payer_id, payee_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS bet_settlements_payer ON bet_settlements (payer_id)`,
+  `CREATE INDEX IF NOT EXISTS bet_settlements_payee ON bet_settlements (payee_id)`,
   // A user who is deleting their account asks the other bettor to cancel an ongoing bet. See docs/account-deletion.md.
   `CREATE TABLE IF NOT EXISTS bet_cancel_requests (
     bet_id TEXT NOT NULL,
@@ -114,15 +143,71 @@ const schema = [
   )`,
 ];
 
-/** Columns added after the first release. SQLite has no ADD COLUMN IF NOT EXISTS, so check first. */
-async function migrate() {
-  const cols = (await db.execute('PRAGMA table_info(bets)')).rows.map((r) => r.name);
+/**
+ * Databases from before group bets hold each bet in one row with two players (creator_id/opponent_id, two guess
+ * columns, winner_id). Their players, guesses and results move to bet_participants and bet_settlements, and the
+ * bets table is rebuilt in its current shape. One transaction; a no-op once done.
+ */
+async function migrateTwoPlayerBets(cols: unknown[]) {
+  if (!cols.includes('opponent_id')) return;
   if (!cols.includes('params')) await db.execute('ALTER TABLE bets ADD COLUMN params TEXT');
   if (!cols.includes('settled_by')) await db.execute('ALTER TABLE bets ADD COLUMN settled_by TEXT');
-  // What a pending proposal says: 'outcome' | 'not_happened' | 'tie' (older rows: inferred from outcome)
   if (!cols.includes('proposal')) await db.execute('ALTER TABLE bets ADD COLUMN proposal TEXT');
-  // Freeform bets: who the proposer says won ('creator' | 'opponent' | 'draw'), pending the other player's confirmation
   if (!cols.includes('proposed_verdict')) await db.execute('ALTER TABLE bets ADD COLUMN proposed_verdict TEXT');
+  await db.execute(`UPDATE bets SET kind = 'instant', params = '{"precision":"day","allowPast":true,"minLeadMinutes":0}' WHERE kind = 'date'`);
+  await db.execute(`UPDATE bets SET settled_by = 'outcome' WHERE status = 'settled' AND settled_by IS NULL`);
+  const S = (sql: string) => ({ sql, args: [] });
+  await db.batch(
+    [
+      // The creator is always in; an empty guess meant "not guessed yet" (or a deleted user's removed guess)
+      S(`INSERT OR IGNORE INTO bet_participants (bet_id, user_id, status, guess, accepted, invited_at, responded_at)
+         SELECT id, creator_id, 'joined', NULLIF(creator_guess, ''), 0, created_at, created_at FROM bets`),
+      // The opponent joined by guessing; one who never answered a cancelled bet had declined it
+      S(`INSERT OR IGNORE INTO bet_participants (bet_id, user_id, status, guess, accepted, invited_at, responded_at)
+         SELECT id, opponent_id,
+                CASE WHEN opponent_guess IS NOT NULL OR status = 'settled' THEN 'joined' WHEN status = 'cancelled' THEN 'declined' ELSE 'invited' END,
+                NULLIF(opponent_guess, ''), 0, created_at, CASE WHEN opponent_guess IS NOT NULL THEN created_at END
+         FROM bets`),
+      S(`INSERT OR IGNORE INTO bet_settlements (bet_id, payer_id, payee_id, amount)
+         SELECT id, CASE WHEN winner_id = creator_id THEN opponent_id ELSE creator_id END, winner_id, stake
+         FROM bets WHERE status = 'settled' AND winner_id IS NOT NULL`),
+      S(`CREATE TABLE bets_v2 (
+           id TEXT PRIMARY KEY, creator_id TEXT NOT NULL, question TEXT NOT NULL, kind TEXT NOT NULL, params TEXT, status TEXT NOT NULL,
+           outcome TEXT, outcome_proposed_by TEXT, proposal TEXT, proposed_winners TEXT, proposed_at INTEGER, settle_days INTEGER,
+           all_in INTEGER NOT NULL DEFAULT 0, stake INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, started_at INTEGER,
+           settled_at INTEGER, settled_by TEXT, settled_by_deadline INTEGER NOT NULL DEFAULT 0)`),
+      // A pending proposal: 'outcome' unless the column says otherwise (rows from before it existed had the outcome set, or
+      // were "not happened" claims); a freeform verdict becomes the list of winners it named. Ids are UUIDs, so no quoting issues.
+      S(`INSERT INTO bets_v2 (id, creator_id, question, kind, params, status, outcome, outcome_proposed_by, proposal, proposed_winners, proposed_at,
+                              settle_days, all_in, stake, created_at, started_at, settled_at, settled_by)
+         SELECT id, creator_id, question, kind, params, status, outcome, outcome_proposed_by,
+                CASE WHEN status != 'awaiting_confirmation' THEN NULL ELSE COALESCE(proposal, CASE WHEN outcome IS NULL THEN 'not_happened' ELSE 'outcome' END) END,
+                CASE proposed_verdict WHEN 'creator' THEN '["' || creator_id || '"]' WHEN 'opponent' THEN '["' || opponent_id || '"]' WHEN 'draw' THEN '[]' END,
+                CASE WHEN status = 'awaiting_confirmation' THEN created_at END,
+                NULL, all_in, stake, created_at, CASE WHEN status != 'awaiting_guess' AND status != 'cancelled' THEN created_at END, settled_at, settled_by
+         FROM bets`),
+      S('DROP TABLE bets'),
+      S('ALTER TABLE bets_v2 RENAME TO bets'),
+    ],
+    'write',
+  );
+}
+
+/**
+ * A pending proposal that needs nobody's acceptance (one from before the rules changed, whose proposer loses by it)
+ * is settled rather than left waiting for a confirmation nobody is asked for. Runs on every start, since it is cheap
+ * and idempotent, so a start that stopped halfway through the rebuild above can't leave one behind.
+ * (Imported here, not at the top: bets.ts needs db.)
+ */
+async function settlePendingProposals() {
+  const { settleIfAccepted } = await import('./bets.js');
+  for (const r of (await db.execute(`SELECT id FROM bets WHERE status = 'awaiting_confirmation'`)).rows) await settleIfAccepted(String(r.id));
+}
+
+/** Columns added after the first release. SQLite has no ADD COLUMN IF NOT EXISTS, so check first. */
+async function migrate() {
+  await migrateTwoPlayerBets((await db.execute('PRAGMA table_info(bets)')).rows.map((r) => r.name));
+  await settlePendingProposals();
   const userCols = (await db.execute('PRAGMA table_info(users)')).rows.map((r) => r.name);
   // Account deletion: a pending request, and the marker on the placeholder that stands in for a deleted user
   if (!userCols.includes('deletion_requested_at')) await db.execute('ALTER TABLE users ADD COLUMN deletion_requested_at INTEGER');
@@ -132,9 +217,6 @@ async function migrate() {
   if (!identityCols.includes('account')) await db.execute('ALTER TABLE identities ADD COLUMN account TEXT');
   // Bumping this signs the account out everywhere: session tokens carry the version they were issued under.
   if (!userCols.includes('session_version')) await db.execute('ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 0');
-  // 'date' bets became 'instant' bets with day precision and no restrictions
-  await db.execute(`UPDATE bets SET kind = 'instant', params = '{"precision":"day","allowPast":true,"minLeadMinutes":0}' WHERE kind = 'date'`);
-  await db.execute(`UPDATE bets SET settled_by = 'outcome' WHERE status = 'settled' AND settled_by IS NULL`);
   // Multi-email and per-login passwords (idempotent: INSERT OR IGNORE never overwrites)
   await db.execute(
     `INSERT OR IGNORE INTO user_emails (user_id, email, verified, created_at)

@@ -133,7 +133,8 @@ describe('settled and cancelled bets of a deleted user', () => {
     expect(friends[0]).toMatchObject({ name: 'Deleted user', deleted: true, balance: -1 });
     const bets = (await bob.a.get('/api/bets')).body;
     expect(bets).toHaveLength(1); // the cancelled one is gone
-    expect(bets[0]).toMatchObject({ question: 'Goals?', status: 'settled', myGuess: '5', theirGuess: null, otherUserId: friends[0].id });
+    expect(bets[0]).toMatchObject({ question: 'Goals?', status: 'settled', myGuess: '5', otherUserId: friends[0].id, myNet: -1 });
+    expect(bets[0].participants.find((p: any) => p.id === friends[0].id)).toMatchObject({ name: 'Deleted user', deleted: true, guess: null, winner: true });
     expect((await db.execute({ sql: 'SELECT * FROM bets WHERE id = ?', args: [cancelled] })).rows).toHaveLength(0);
 
     // Nobody can start something new with the placeholder
@@ -220,7 +221,7 @@ describe('deleting with ongoing bets', () => {
     const id = await newBet(ann, bob);
     await requestDeletion(ann);
     expect(await exists(ann.id)).toBe(true);
-    await settle(bob, ann, id);
+    await settle(ann, bob, id); // Ann (2) wins with an outcome of 3, Bob confirms
     expect(await exists(ann.id)).toBe(false);
     expect((await bob.a.get('/api/bets')).body[0]).toMatchObject({ status: 'settled' });
   });

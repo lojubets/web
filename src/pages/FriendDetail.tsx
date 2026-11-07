@@ -24,7 +24,7 @@ export default function FriendDetail() {
         <Link className="btn" to={`/bets/new?with=${friend.id}`}>New bet with {friend.name}</Link>
       </div>
       <div className="stack">
-        {bets.data?.map((b) => <BetCard key={b.id} bet={b} friend={friend} />)}
+        {bets.data?.map((b) => <BetCard key={b.id} bet={b} />)}
         {bets.data?.length === 0 && <p className="muted center">No bets yet.</p>}
       </div>
     </>

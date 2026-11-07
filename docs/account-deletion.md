@@ -2,6 +2,8 @@
 
 Status: **implemented in this PR** (`server/deletion.ts`, its tests, and the Profile and Bets UI); the rest of this document is the design it follows. Written against the schema in `server/db.ts` and the routes in `server/app.ts`, `server/auth.ts` and `server/merge.ts` as of `main`.
 
+> **Since group bets:** a bet's players and guesses live in `bet_participants` (one row per person asked, with their status and guess) and what a settled bet moved in `bet_settlements` (payer, payee, amount), instead of the `creator_id`/`opponent_id`/`winner_id` columns described below. The design is unchanged: the placeholder takes the deleted user's place in those rows (their guess removed, their payments kept), and settled bets are kept. Where this document says "the counterparty", read "the other players": a cancellation request on a group bet goes to all of them, and any one of them can accept (which cancels the bet) or refuse. Before a bet has started, an invitee who is deleting their account simply drops out of it; the bet is cancelled only if fewer than two players remain. A settled bet can be removed from your history once every other player in it has deleted their account.
+
 ## 1. Goal
 
 A "Delete my account" button on the Profile page that satisfies GDPR Art. 17 (erasure) without wrecking the records of the *other* people who bet with the account holder. The hard part is not deleting the user's own row; it is deciding what happens to `bets` rows that name two people.

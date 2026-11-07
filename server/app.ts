@@ -2,17 +2,20 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import cookieParser from 'cookie-parser';
 import express, { type Request, type Response } from 'express';
 import { z } from 'zod';
-import type { AppConfig, Bet, EmailAddress, Friend, Invitation, Me, OwnEmailAddress, OwnLogin, UserSummary } from '../shared/types.js';
+import { MAX_PLAYERS, MAX_SETTLE_DAYS, type AppConfig, type Bet, type EmailAddress, type Friend, type Invitation, type Me, type OwnEmailAddress, type OwnLogin, type UserSummary } from '../shared/types.js';
 import { authRouter, devLoginAllowed, enabledProviders, hashPassword, issueConnectTicket, reauthenticate, requireAuth, revokeSessions, verifyPassword } from './auth.js';
-import { balanceFor, buildParams, decide, loadParams, normalizeAnswer, tippingVerdict } from './betLogic.js';
-import { proposalOf, tippingPointOf, type BetRow } from './bets.js';
+import { buildParams, loadParams, normalizeAnswer } from './betLogic.js';
+import {
+  balances, cancelBet, clearProposal, isPlayer, loadBet, loadBetFor, loadBetsFor, loadSettlementsFor, participantOf, playersOf, proposalOf, requiredAcceptors,
+  serializeBet, settleIfAccepted, settleInvitations, startBet, tippingPointOf, type LoadedBet, type Viewer,
+} from './bets.js';
 import { db, ensureSchema } from './db.js';
 import { sendInviteEmail } from './email.js';
 import { afterBetEnded, deletionBlock, deletionRouter, runDeletionCron } from './deletion.js';
 import { mergeRouter } from './merge.js';
 import { env } from './env.js';
 import { rateLimit } from './rateLimit.js';
-import { runCron } from './reminders.js';
+import { notifyProposal, runCron } from './reminders.js';
 import { passwordResetRouter } from './passwordReset.js';
 import { sendVerification } from './verification.js';
 
@@ -223,23 +226,24 @@ app.get('/api/me/export', async (_req, res) => {
     return names.get(id)!;
   };
   const friends = await db.execute({ sql: `SELECT CASE WHEN user_a = ? THEN user_b ELSE user_a END AS id, created_at FROM connections WHERE user_a = ? OR user_b = ?`, args: [me, me, me] });
-  const bets = (await db.execute({ sql: 'SELECT * FROM bets WHERE creator_id = ? OR opponent_id = ? ORDER BY created_at', args: [me, me] })).rows as unknown as BetRow[];
-  const bal = balances(me, bets.filter((b) => b.status !== 'cancelled'));
+  // Everything still on record, cancelled bets and declined invitations included (guesses of others stay hidden as usual)
+  const bets = (await loadBetsFor(me, { all: true })).reverse();
+  const viewer = await viewerFor(me, bets);
   const sent = await db.execute({ sql: 'SELECT email, status, created_at FROM invitations WHERE inviter_id = ? ORDER BY created_at', args: [me] });
   res.set('Content-Disposition', 'attachment; filename="lojubets-my-data.json"');
   res.json({
     exportedAt: new Date().toISOString(),
     profile: { name: u.profileName, emails: u.emails.map((e) => ({ email: e.email, verified: e.verified, primary: e.primary })), avatar: avatar ? `data:${avatar.mime};base64,${avatar.data}` : null },
     friends: await Promise.all(friends.rows.map(async (f) => ({ name: await nameOf(String(f.id)), since: new Date(Number(f.created_at)).toISOString() }))),
-    bets: await Promise.all(
-      bets.map(async (b) => {
-        const s = serializeBet(b, me, bal, bets);
-        return {
-          question: s.question, with: await nameOf(s.otherUserId), status: s.status, myGuess: s.myGuess, theirGuess: s.theirGuess, outcome: s.outcome,
-          iWon: s.winnerId === null ? null : s.winnerId === me, stake: s.stake, created: new Date(s.createdAt).toISOString(), settled: s.settledAt ? new Date(s.settledAt).toISOString() : null,
-        };
-      }),
-    ),
+    bets: bets.map((lb) => {
+      const s = serializeBet(lb, viewer);
+      const others = s.participants.filter((p) => !p.isMe && (p.status === 'joined' || p.status === 'invited'));
+      const mine = s.participants.find((p) => p.isMe)!;
+      return {
+        question: s.question, with: others.map((p) => p.name).join(', '), players: others.map((p) => ({ name: p.name, guess: p.guess })), status: s.status, myPart: mine.status, myGuess: s.myGuess, outcome: s.outcome,
+        iWon: s.status !== 'settled' || s.settledBy === 'tie' ? null : s.winnerIds.includes(me), net: s.myNet, stake: s.stake, created: new Date(s.createdAt).toISOString(), settled: s.settledAt ? new Date(s.settledAt).toISOString() : null,
+      };
+    }),
     invitationsSent: sent.rows.map((i) => ({ email: i.email, status: i.status, created: new Date(Number(i.created_at)).toISOString() })),
   });
 });
@@ -420,10 +424,20 @@ app.delete('/api/me/avatar', async (_req, res) => {
   res.json({ ok: true });
 });
 
-// Avatars are visible to yourself and to people you're connected with.
+/** Two people share a bet: they're both in it, or one invited the other to it. */
+async function shareABet(a: string, b: string) {
+  const r = await db.execute({
+    sql: `SELECT 1 FROM bet_participants x JOIN bet_participants y ON y.bet_id = x.bet_id
+          WHERE x.user_id = ? AND y.user_id = ? AND x.status IN ('invited', 'joined') AND y.status IN ('invited', 'joined') LIMIT 1`,
+    args: [a, b],
+  });
+  return r.rows.length > 0;
+}
+
+// Avatars are visible to yourself, to people you're connected with, and to the other people in a bet you were invited to.
 app.get('/api/users/:id/avatar', async (req, res) => {
   const id = String(req.params.id);
-  if (id !== uid(res) && !(await areConnected(uid(res), id))) return res.status(404).end();
+  if (id !== uid(res) && !(await areConnected(uid(res), id)) && !(await shareABet(uid(res), id))) return res.status(404).end();
   const a = row(await db.execute({ sql: 'SELECT mime, data FROM avatars WHERE user_id = ?', args: [id] }));
   if (!a) return res.status(404).end();
   res.set('Cache-Control', 'private, max-age=31536000, immutable'); // URL carries ?v=<version>
@@ -523,78 +537,20 @@ app.delete('/api/invitations/:id', async (req, res) => {
 
 // ---------- bets ----------
 
-async function loadBets(me: string): Promise<BetRow[]> {
-  const r = await db.execute({
-    sql: `SELECT * FROM bets WHERE (creator_id = ? OR opponent_id = ?) AND status != 'cancelled' ORDER BY created_at DESC`,
-    args: [me, me],
-  });
-  return r.rows as unknown as BetRow[];
-}
-
-const otherOf = (b: BetRow, me: string) => (b.creator_id === me ? b.opponent_id : b.creator_id);
-
-/** GTs each friend owes me, derived from settled bets. */
-function balances(me: string, bets: BetRow[]): Map<string, number> {
-  const by = new Map<string, { winnerId: string | null; stake: number }[]>();
-  for (const b of bets) {
-    if (b.status !== 'settled') continue;
-    const o = otherOf(b, me);
-    by.set(o, [...(by.get(o) ?? []), { winnerId: b.winner_id, stake: b.stake }]);
+/** Everything needed to show bets to a user: who's who, and what each friend owes them. */
+async function viewerFor(me: string, bets: LoadedBet[]): Promise<Viewer> {
+  const ids = [...new Set(bets.flatMap((lb) => lb.participants.map((p) => p.user_id)))];
+  const users = new Map<string, UserSummary>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const chunk = ids.slice(i, i + 200);
+    const r = await db.execute({ sql: `SELECT ${SUMMARY_SQL} FROM users u LEFT JOIN avatars a ON a.user_id = u.id WHERE u.id IN (${chunk.map(() => '?').join(',')})`, args: chunk });
+    for (const row of r.rows) users.set(String(row.id), summary(row as Record<string, any>));
   }
-  return new Map([...by].map(([o, list]) => [o, balanceFor(me, list)]));
+  return { id: me, users, balances: balances(me, await loadSettlementsFor(me)), allBets: bets };
 }
 
-function serializeBet(b: BetRow, me: string, bal: Map<string, number>, allBets: BetRow[]): Bet {
-  const iAmCreator = b.creator_id === me;
-  const other = otherOf(b, me);
-  // A creator who hasn't guessed yet has an empty guess (ongoing bets never hold a deleted user's guess, which is also empty)
-  const myGuess = iAmCreator ? b.creator_guess || null : b.opponent_guess;
-  const theirGuess = iAmCreator ? b.opponent_guess : b.creator_guess;
-  const tp = b.status === 'active' ? tippingPointOf(b) : null;
-  const now = Date.now();
-  const tippingPassed = tp !== null && now >= tp;
-  const needsMyAction =
-    (b.status === 'awaiting_guess' && myGuess === null) ||
-    (b.status === 'awaiting_confirmation' && b.outcome_proposed_by !== me) ||
-    tippingPassed; // both players are asked whether the event has happened
-  const debt = -(bal.get(other) ?? 0);
-  const anotherAllInOpen = allBets.some(
-    (x) => x.id !== b.id && x.all_in && otherOf(x, me) === other && (x.status === 'active' || x.status === 'awaiting_confirmation'),
-  );
-  return {
-    id: b.id,
-    question: b.question,
-    kind: b.kind,
-    params: loadParams(b.kind, b.params),
-    status: b.status,
-    otherUserId: other,
-    iAmCreator,
-    myGuess,
-    // Guesses stay secret until both players have locked theirs in. This is the only place guesses leave the
-    // server, and nothing derived from both of them (tipping point, verdicts) is exposed before that either.
-    // (a deleted user's own guess is gone: stored as '')
-    theirGuessIn: b.status === 'awaiting_guess' && theirGuess !== null && theirGuess !== '',
-    theirGuess: b.status === 'awaiting_guess' || b.opponent_guess === null || theirGuess === '' ? null : theirGuess,
-    outcome: b.outcome,
-    proposedVerdict: b.status !== 'awaiting_confirmation' || b.kind !== 'text' || proposalOf(b) !== 'outcome' || !b.proposed_verdict
-      ? null
-      : b.proposed_verdict === 'draw' ? 'draw' : (b.proposed_verdict === 'creator') === iAmCreator ? 'me' : 'them',
-    outcomeProposedByMe: b.outcome_proposed_by ? b.outcome_proposed_by === me : null,
-    winnerId: b.winner_id,
-    allIn: !!b.all_in,
-    stake: b.stake,
-    settledBy: b.status === 'settled' ? (b.settled_by === 'tipping_point' || b.settled_by === 'tie' ? b.settled_by : 'outcome') : null,
-    tippingPoint: tp,
-    tippingSoon: tp !== null && tp > now && tp - now <= 48 * 3_600_000,
-    tippingPassed,
-    proposalKind: proposalOf(b),
-    needsMyAction,
-    canAllIn: b.status === 'active' && !b.all_in && debt > 0 && !anotherAllInOpen,
-    allInStake: Math.max(debt, 0),
-    createdAt: b.created_at,
-    settledAt: b.settled_at,
-  };
-}
+/** The bets `other` shares with me (in, or invited). */
+const involves = (lb: LoadedBet, other: string) => lb.participants.some((p) => p.user_id === other && (p.status === 'joined' || p.status === 'invited'));
 
 app.get('/api/friends', async (_req, res) => {
   const me = uid(res);
@@ -605,17 +561,17 @@ app.get('/api/friends', async (_req, res) => {
           WHERE c.user_a = ? OR c.user_b = ? ORDER BY COALESCE(NULLIF(u.name, ''), u.email, 'Friend') COLLATE NOCASE`,
     args: [me, me, me],
   });
-  const bets = await loadBets(me);
-  const bal = balances(me, bets);
+  const bets = await loadBetsFor(me);
+  const viewer = await viewerFor(me, bets);
+  const views = bets.map((lb) => serializeBet(lb, viewer));
   const friends: Friend[] = conns.rows.map((r) => {
     const s = summary(r);
-    const theirs = bets.filter((b) => otherOf(b, me) === s.id);
-    const open = theirs.filter((b) => b.status !== 'settled');
+    const theirs = views.filter((b, i) => involves(bets[i], s.id));
     return {
       ...s,
-      balance: bal.get(s.id) ?? 0,
-      openBets: open.length,
-      needsMyAction: theirs.filter((b) => serializeBet(b, me, bal, bets).needsMyAction).length,
+      balance: viewer.balances.get(s.id) ?? 0,
+      openBets: theirs.filter((b) => b.status !== 'settled').length,
+      needsMyAction: theirs.filter((b) => b.needsMyAction).length,
     };
   });
   res.json(friends);
@@ -623,38 +579,53 @@ app.get('/api/friends', async (_req, res) => {
 
 app.get('/api/bets', async (req, res) => {
   const me = uid(res);
-  const bets = await loadBets(me);
-  const bal = balances(me, bets);
+  const bets = await loadBetsFor(me);
+  const viewer = await viewerFor(me, bets);
   const w = typeof req.query.with === 'string' ? req.query.with : null;
-  res.json(bets.filter((b) => !w || otherOf(b, me) === w).map((b) => serializeBet(b, me, bal, bets)));
+  res.json(bets.filter((lb) => !w || involves(lb, w)).map((lb) => serializeBet(lb, viewer)));
 });
 
-async function betFor(req: Request, res: Response): Promise<BetRow | undefined> {
-  const b = row(await db.execute({ sql: 'SELECT * FROM bets WHERE id = ? AND (creator_id = ? OR opponent_id = ?)', args: [String(req.params.id), uid(res), uid(res)] })) as BetRow | undefined;
-  if (!b) res.status(404).json({ error: 'Bet not found' });
-  return b;
+async function betFor(req: Request, res: Response): Promise<LoadedBet | undefined> {
+  const lb = await loadBetFor(String(req.params.id), uid(res));
+  if (!lb) res.status(404).json({ error: 'Bet not found' });
+  return lb;
 }
 
 async function respondWithBet(res: Response, id: string, status = 200) {
   const me = uid(res);
-  const bets = await loadBets(me);
-  const b = bets.find((x) => x.id === id);
-  res.status(status).json(b ? serializeBet(b, me, balances(me, bets), bets) : null);
+  const bets = await loadBetsFor(me);
+  const lb = bets.find((x) => x.bet.id === id) ?? (await loadBetFor(id, me));
+  res.status(status).json(lb ? serializeBet(lb, await viewerFor(me, [lb, ...bets])) : null);
 }
 
 app.get('/api/bets/:id', async (req, res) => {
-  const b = await betFor(req, res);
-  if (b) await respondWithBet(res, b.id);
+  const lb = await betFor(req, res);
+  if (lb) await respondWithBet(res, lb.bet.id);
 });
 
 const kindSchema = z.enum(['number', 'duration', 'instant', 'text', 'yesno', 'choice']);
 
+// A bet with one or more friends. Each of them is invited; the bet starts once everyone has answered (or when the
+// creator starts it without those who haven't). With several players, the creator may set a deadline after which a
+// proposed result counts as accepted by anyone who hasn't answered.
 app.post('/api/bets', async (req, res) => {
   const body = z
-    .object({ opponentId: z.string(), question: z.string().trim().min(3).max(200), kind: kindSchema, params: z.unknown().optional(), guess: z.string().optional() })
+    .object({
+      opponentId: z.string().optional(),
+      opponentIds: z.array(z.string()).optional(),
+      question: z.string().trim().min(3).max(200),
+      kind: kindSchema,
+      params: z.unknown().optional(),
+      guess: z.string().optional(),
+      settleDays: z.number().int().min(1).max(MAX_SETTLE_DAYS).nullable().optional(),
+    })
     .safeParse(req.body);
   if (!body.success) return res.status(400).json({ error: 'Give the bet a question (3–200 characters)' });
-  const { opponentId, question, kind } = body.data;
+  const me = uid(res);
+  const { question, kind } = body.data;
+  const invitees = [...new Set([...(body.data.opponentIds ?? []), ...(body.data.opponentId ? [body.data.opponentId] : [])])].filter((id) => id !== me);
+  if (invitees.length === 0) return res.status(400).json({ error: 'Choose at least one friend to bet with' });
+  if (invitees.length + 1 > MAX_PLAYERS) return res.status(400).json({ error: `A bet can have at most ${MAX_PLAYERS} players` });
   const params = buildParams(kind, body.data.params);
   if (!params.ok) return res.status(400).json({ error: params.error });
   // Your own guess is optional: leave it out (or empty) to record the bet now and guess later. A guess made only of
@@ -663,144 +634,199 @@ app.post('/api/bets', async (req, res) => {
   const hasGuess = !!body.data.guess;
   const guess = hasGuess ? normalizeAnswer(kind, params.value, body.data.guess!, { now: Date.now(), role: 'guess' }) : { ok: true as const, value: '' };
   if (!guess.ok) return res.status(400).json({ error: guess.error });
-  if (!(await areConnected(uid(res), opponentId))) return res.status(403).json({ error: 'You can only bet with connected friends' });
-  const blocked = await deletionBlock(uid(res), opponentId);
+  for (const id of invitees) if (!(await areConnected(me, id))) return res.status(403).json({ error: 'You can only bet with connected friends' });
+  const blocked = await deletionBlock(me, ...invitees);
   if (blocked) return res.status(409).json({ error: blocked });
   const id = randomUUID();
-  await db.execute({
-    sql: `INSERT INTO bets (id, creator_id, opponent_id, question, kind, params, status, creator_guess, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, 'awaiting_guess', ?, ?)`,
-    args: [id, uid(res), opponentId, question, kind, JSON.stringify(params.value), guess.value, Date.now()],
-  });
+  const now = Date.now();
+  await db.batch(
+    [
+      {
+        sql: `INSERT INTO bets (id, creator_id, question, kind, params, status, settle_days, created_at) VALUES (?, ?, ?, ?, ?, 'awaiting_guess', ?, ?)`,
+        args: [id, me, question, kind, JSON.stringify(params.value), body.data.settleDays ?? null, now],
+      },
+      { sql: `INSERT INTO bet_participants (bet_id, user_id, status, guess, invited_at, responded_at) VALUES (?, ?, 'joined', ?, ?, ?)`, args: [id, me, hasGuess ? guess.value : null, now, now] },
+      ...invitees.map((u, i) => ({ sql: `INSERT INTO bet_participants (bet_id, user_id, status, invited_at) VALUES (?, ?, 'invited', ?)`, args: [id, u, now + i + 1] })),
+    ],
+    'write',
+  );
   await respondWithBet(res, id, 201);
 });
 
+// Lock in a guess: an invitee joins the bet with theirs, and a creator who left theirs out fills it in.
 app.post('/api/bets/:id/guess', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  const iAmCreator = b.creator_id === uid(res);
-  if (b.status !== 'awaiting_guess' || (iAmCreator ? b.creator_guess !== '' : b.opponent_guess !== null)) return res.status(409).json({ error: "You can't guess on this bet right now" });
-  const guess = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.guess ?? ''), { now: Date.now(), role: 'guess' });
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const me = uid(res);
+  const mine = participantOf(lb, me)!;
+  const can = lb.bet.status === 'awaiting_guess' && (mine.status === 'invited' || (mine.status === 'joined' && mine.guess === null));
+  if (!can) return res.status(409).json({ error: "You can't guess on this bet right now" });
+  const guess = normalizeAnswer(lb.bet.kind, loadParams(lb.bet.kind, lb.bet.params), String(req.body?.guess ?? ''), { now: Date.now(), role: 'guess' });
   if (!guess.ok) return res.status(400).json({ error: guess.error });
-  // The bet starts once both of you have locked in a guess
-  const theirsIn = iAmCreator ? b.opponent_guess !== null : b.creator_guess !== '';
-  await db.execute({
-    sql: `UPDATE bets SET ${iAmCreator ? 'creator_guess' : 'opponent_guess'} = ?, status = ? WHERE id = ?`,
-    args: [guess.value, theirsIn ? 'active' : 'awaiting_guess', b.id],
+  // Checked again in the write itself: the creator may have started the bet (revoking this invitation) meanwhile
+  const r = await db.execute({
+    sql: `UPDATE bet_participants SET status = 'joined', guess = ?, responded_at = ?
+          WHERE bet_id = ? AND user_id = ? AND (status = 'invited' OR (status = 'joined' AND guess IS NULL))
+            AND EXISTS (SELECT 1 FROM bets WHERE id = bet_participants.bet_id AND status = 'awaiting_guess')`,
+    args: [guess.value, Date.now(), lb.bet.id, me],
   });
-  await respondWithBet(res, b.id);
+  if (r.rowsAffected !== 1) return res.status(409).json({ error: "You can't guess on this bet right now" });
+  await settleInvitations(lb.bet.id);
+  await respondWithBet(res, lb.bet.id);
 });
 
+// Before the bet starts: the creator can call it off, and anyone else can decline (or back out of) their invitation.
+// With fewer than two players left, the bet is off by itself.
 app.post('/api/bets/:id/cancel', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  if (b.status !== 'awaiting_guess') return res.status(409).json({ error: 'Only bets that are still waiting for a guess can be cancelled' });
-  await db.execute({ sql: `UPDATE bets SET status = 'cancelled' WHERE id = ?`, args: [b.id] });
-  await afterBetEnded(b.id);
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const me = uid(res);
+  const mine = participantOf(lb, me)!;
+  if (lb.bet.status !== 'awaiting_guess' || mine.status === 'declined' || mine.status === 'revoked') {
+    return res.status(409).json({ error: 'Only bets that are still waiting for guesses can be cancelled' });
+  }
+  if (lb.bet.creator_id === me) {
+    await cancelBet(lb.bet.id);
+    await afterBetEnded(lb.bet.id);
+    return res.json({ ok: true });
+  }
+  await db.execute({ sql: `UPDATE bet_participants SET status = 'declined', guess = NULL, responded_at = ? WHERE bet_id = ? AND user_id = ?`, args: [Date.now(), lb.bet.id, me] });
+  if ((await settleInvitations(lb.bet.id)) === 'cancelled') await afterBetEnded(lb.bet.id);
   res.json({ ok: true });
 });
 
+// The creator starts the bet with whoever has answered, revoking the invitations still open.
+app.post('/api/bets/:id/start', async (req, res) => {
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const me = uid(res);
+  if (lb.bet.creator_id !== me || lb.bet.status !== 'awaiting_guess') return res.status(409).json({ error: "This bet can't be started right now" });
+  const players = playersOf(lb);
+  if (players.find((p) => p.user_id === me)!.guess === null) return res.status(409).json({ error: 'Lock in your own guess first' });
+  if (players.filter((p) => p.guess !== null).length < 2) return res.status(409).json({ error: 'Nobody else has joined yet' });
+  await startBet(lb);
+  await respondWithBet(res, lb.bet.id);
+});
+
+/** After a proposal is made: it settles at once if nobody's acceptance is needed; otherwise those people are told. */
+async function afterProposal(res: Response, id: string) {
+  if (await settleIfAccepted(id)) await afterBetEnded(id);
+  else await notifyProposal(id);
+  await respondWithBet(res, id);
+}
+
 app.post('/api/bets/:id/propose', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  // Besides an in-play bet, the player who is being asked to confirm may answer with a proposal of their own.
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const me = uid(res);
+  const b = lb.bet;
+  if (!isPlayer(lb, me)) return res.status(409).json({ error: "You're not in this bet" });
+  // Besides an in-play bet, a player who is being asked to accept may answer with a proposal of their own.
   // That replaces the pending one and hands the decision back, with no limit on how often this can happen.
-  const countering = b.status === 'awaiting_confirmation' && proposalOf(b) === 'outcome' && b.outcome_proposed_by !== uid(res);
+  const countering = b.status === 'awaiting_confirmation' && proposalOf(b) === 'outcome' && b.outcome_proposed_by !== me;
   if (b.status !== 'active' && !countering) return res.status(409).json({ error: "The outcome can't be proposed right now" });
   const outcome = normalizeAnswer(b.kind, loadParams(b.kind, b.params), String(req.body?.outcome ?? ''), { now: Date.now(), role: 'outcome' });
   if (!outcome.ok) return res.status(400).json({ error: outcome.error });
   // Free text can't be compared by a computer, so the proposer also says who was right.
-  let verdict: 'creator' | 'opponent' | 'draw' | null = null;
+  let proposedWinners: string | null = null;
   if (b.kind === 'text') {
-    const winner = req.body?.winner;
-    if (winner !== 'me' && winner !== 'them' && winner !== 'draw') return res.status(400).json({ error: 'Say who was right' });
-    const iAmCreator = b.creator_id === uid(res);
-    verdict = winner === 'draw' ? 'draw' : (winner === 'me') === iAmCreator ? 'creator' : 'opponent';
+    const w = req.body?.winners;
+    const players = new Set(playersOf(lb).map((p) => p.user_id));
+    if (!Array.isArray(w) || !w.every((x) => typeof x === 'string' && players.has(x))) return res.status(400).json({ error: 'Say who was right' });
+    proposedWinners = JSON.stringify([...new Set(w as string[])]);
   }
-  await db.execute({
-    sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, proposed_verdict = ?, proposal = 'outcome', status = 'awaiting_confirmation' WHERE id = ?`,
-    args: [outcome.value, uid(res), verdict, b.id],
-  });
-  await respondWithBet(res, b.id);
+  await db.batch(
+    [
+      {
+        sql: `UPDATE bets SET outcome = ?, outcome_proposed_by = ?, proposed_winners = ?, proposal = 'outcome', proposed_at = ?, status = 'awaiting_confirmation' WHERE id = ?`,
+        args: [outcome.value, me, proposedWinners, Date.now(), b.id],
+      },
+      { sql: 'UPDATE bet_participants SET accepted = 0 WHERE bet_id = ?', args: [b.id] },
+    ],
+    'write',
+  );
+  await afterProposal(res, b.id);
 });
 
+// Any player other than the proposer can reject a proposal, whether or not their acceptance was needed: a winner
+// who knows the result is wrong may say so too. The bet goes back in play.
 app.post('/api/bets/:id/reject', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by === uid(res)) return res.status(409).json({ error: 'Nothing to reject' });
-  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, proposed_verdict = NULL, proposal = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
-  await respondWithBet(res, b.id);
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const me = uid(res);
+  if (lb.bet.status !== 'awaiting_confirmation' || lb.bet.outcome_proposed_by === me || !isPlayer(lb, me)) return res.status(409).json({ error: 'Nothing to reject' });
+  await clearProposal(lb.bet.id);
+  await respondWithBet(res, lb.bet.id);
 });
 
 // The player who made a proposal (a result, a tie, "it hasn't happened") can take it back; the bet goes back in play.
 app.post('/api/bets/:id/withdraw', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by !== uid(res)) return res.status(409).json({ error: 'You have no proposal to withdraw' });
-  await db.execute({ sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = NULL, proposed_verdict = NULL, proposal = NULL, status = 'active' WHERE id = ?`, args: [b.id] });
-  await respondWithBet(res, b.id);
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  if (lb.bet.status !== 'awaiting_confirmation' || lb.bet.outcome_proposed_by !== uid(res)) return res.status(409).json({ error: 'You have no proposal to withdraw' });
+  await clearProposal(lb.bet.id);
+  await respondWithBet(res, lb.bet.id);
 });
 
+// Accept the pending proposal. It settles once everyone whose acceptance it needs has accepted. The request may name
+// the proposal it accepts (`proposal`, from the bet's `proposalId`); a proposal replaced meanwhile is then not accepted
+// by mistake. The write checks the same, so a counter-proposal racing with this is never accepted either.
 app.post('/api/bets/:id/confirm', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  if (b.status !== 'awaiting_confirmation' || b.outcome_proposed_by === uid(res)) return res.status(409).json({ error: 'Nothing to confirm' });
-  const kind = proposalOf(b);
-  let winner: string | null = null;
-  if (kind !== 'tie') {
-    // "Not happened" = the event hadn't happened by the tipping point, so the later guess wins.
-    const verdict =
-      kind === 'not_happened'
-        ? tippingVerdict(b.kind, b.creator_guess, b.opponent_guess!)
-        : b.kind === 'text'
-          ? (b.proposed_verdict ?? 'draw')
-          : decide(b.kind, b.creator_guess, b.opponent_guess!, b.outcome!);
-    winner = verdict === 'draw' ? null : verdict === 'creator' ? b.creator_id : b.opponent_id;
-  }
-  // A tie is called off by agreement: it ends with no winner, so nobody's balance changes (an all-in stake included).
-  await db.execute({
-    sql: `UPDATE bets SET status = 'settled', winner_id = ?, settled_at = ?, settled_by = ?, proposal = NULL WHERE id = ?`,
-    args: [winner, Date.now(), kind === 'tie' ? 'tie' : kind === 'not_happened' ? 'tipping_point' : 'outcome', b.id],
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const me = uid(res);
+  if (lb.bet.status !== 'awaiting_confirmation' || lb.bet.outcome_proposed_by === me || !isPlayer(lb, me)) return res.status(409).json({ error: 'Nothing to confirm' });
+  const expected = req.body?.proposal;
+  if (expected !== undefined && expected !== null && expected !== lb.bet.proposed_at) return res.status(409).json({ error: 'The proposal has changed meanwhile. Have a look at the new one.' });
+  const r = await db.execute({
+    sql: `UPDATE bet_participants SET accepted = 1 WHERE bet_id = ? AND user_id = ?
+          AND EXISTS (SELECT 1 FROM bets WHERE id = bet_participants.bet_id AND status = 'awaiting_confirmation' AND proposed_at IS ? AND outcome_proposed_by = ?)`,
+    args: [lb.bet.id, me, lb.bet.proposed_at, lb.bet.outcome_proposed_by],
   });
-  await afterBetEnded(b.id);
-  await respondWithBet(res, b.id);
+  if (r.rowsAffected !== 1) return res.status(409).json({ error: 'The proposal has changed meanwhile. Have a look at the new one.' });
+  if (await settleIfAccepted(lb.bet.id)) await afterBetEnded(lb.bet.id);
+  await respondWithBet(res, lb.bet.id);
 });
 
-// Both players have locked in but can't settle it: either may propose calling the bet off, if the other agrees.
+/** A proposal that isn't a result: a tie, or "it hasn't happened". Everyone it costs must agree. */
+async function proposeOther(res: Response, lb: LoadedBet, kind: 'tie' | 'not_happened') {
+  await db.batch(
+    [
+      { sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, proposed_winners = NULL, proposal = ?, proposed_at = ?, status = 'awaiting_confirmation' WHERE id = ?`, args: [uid(res), kind, Date.now(), lb.bet.id] },
+      { sql: 'UPDATE bet_participants SET accepted = 0 WHERE bet_id = ?', args: [lb.bet.id] },
+    ],
+    'write',
+  );
+  await afterProposal(res, lb.bet.id);
+}
+
+// Everyone has locked in but the bet can't be settled: anyone may propose calling it off, if the others agree.
 app.post('/api/bets/:id/propose-tie', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  if (b.status !== 'active') return res.status(409).json({ error: "A tie can only be proposed once you've both locked in your guesses" });
-  await db.execute({
-    sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, proposal = 'tie', status = 'awaiting_confirmation' WHERE id = ?`,
-    args: [uid(res), b.id],
-  });
-  await respondWithBet(res, b.id);
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  if (lb.bet.status !== 'active' || !isPlayer(lb, uid(res))) return res.status(409).json({ error: "A tie can only be proposed once everyone has locked in their guesses" });
+  await proposeOther(res, lb, 'tie');
 });
 
-// "The tipping point has passed and the event still hasn't happened": the other player must agree.
+// "The tipping point has passed and the event still hasn't happened": the players who would lose must agree.
 app.post('/api/bets/:id/not-happened', async (req, res) => {
-  const b = await betFor(req, res);
-  if (!b) return;
-  const tp = b.status === 'active' ? tippingPointOf(b) : null;
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const tp = isPlayer(lb, uid(res)) ? tippingPointOf(lb) : null;
   if (tp === null || Date.now() < tp) return res.status(409).json({ error: "The tipping point hasn't passed yet" });
-  await db.execute({
-    sql: `UPDATE bets SET outcome = NULL, outcome_proposed_by = ?, proposal = 'not_happened', status = 'awaiting_confirmation' WHERE id = ?`,
-    args: [uid(res), b.id],
-  });
-  await respondWithBet(res, b.id);
+  await proposeOther(res, lb, 'not_happened');
 });
 
-// Double or nothing: the one in the red puts their whole debt on this bet.
+// Double or nothing: the one in the red puts their whole debt on this bet (two-player bets only).
 app.post('/api/bets/:id/all-in', async (req, res) => {
   const me = uid(res);
-  const b = await betFor(req, res);
-  if (!b) return;
-  const bets = await loadBets(me);
-  const s = serializeBet(b, me, balances(me, bets), bets);
+  const lb = await betFor(req, res);
+  if (!lb) return;
+  const bets = await loadBetsFor(me);
+  const s = serializeBet(lb, await viewerFor(me, bets));
   if (!s.canAllIn) return res.status(409).json({ error: "You can't go all-in on this bet" });
-  await db.execute({ sql: 'UPDATE bets SET all_in = 1, stake = ? WHERE id = ?', args: [s.allInStake, b.id] });
-  await respondWithBet(res, b.id);
+  await db.execute({ sql: 'UPDATE bets SET all_in = 1, stake = ? WHERE id = ?', args: [s.allInStake, lb.bet.id] });
+  await respondWithBet(res, lb.bet.id);
 });
 
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }));
