@@ -8,6 +8,7 @@ const BRAND = [
   { name: 'Dark Cherry', token: '--cherry-700', hex: '#6A1F3A', ink: '#F5EDE6', use: 'Brand and primary action' },
   { name: 'Champagne', token: '--champagne-500', hex: '#D7B59A', ink: '#1B1218', use: 'Accent' },
   { name: 'Lemon Yellow', token: '--lemon-500', hex: '#F6C600', ink: '#1B1218', use: 'Attention: "you owe"' },
+  { name: 'Lime', token: '--lime-500', hex: '#9FD356', ink: '#1B1218', use: 'Positive: "they owe you", wins' },
   { name: 'Soft Ivory', token: '--ivory-50', hex: '#F5EDE6', ink: '#1B1218', use: 'Main text, light page' },
   { name: 'Deep Plum', token: '--plum-900', hex: '#1B1218', ink: '#F5EDE6', use: 'Dark canvas' },
   { name: 'Muted Mauve', token: '--mauve-500', hex: '#A47E88', ink: '#1B1218', use: 'Secondary accents' },
@@ -23,6 +24,7 @@ const SUPPORT = [
   { name: 'Mauve 600', token: '--mauve-600', hex: '#86656F', ink: '#FFFFFF', use: 'Control border on light' },
   { name: 'Mauve 300', token: '--mauve-300', hex: '#C4B4BA', ink: '#1B1218', use: 'Muted text on dark' },
   { name: 'Champagne 800', token: '--champagne-800', hex: '#724628', ink: '#FFFFFF', use: 'Champagne text on light' },
+  { name: 'Lime 800', token: '--lime-800', hex: '#3D6B1A', ink: '#FFFFFF', use: 'Green text on light' },
   { name: 'Signal 700', token: '--signal-700', hex: '#B3261E', ink: '#FFFFFF', use: 'Errors only' },
   { name: 'Signal 100', token: '--signal-100', hex: '#FBE7E5', ink: '#B3261E', use: 'Error tint' },
 ];

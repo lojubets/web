@@ -38,6 +38,10 @@
   --blush-300: #efc9d8; /* muted text on cherry */
   --paper: #fffafc; /* card on light */
 
+  /* Lime family: not one of the six brand colors. Lemon's partner in the glass, for "good news" markers */
+  --lime-500: #9fd356; /* Lime: "positive" markers only, with plum text; also green text on dark */
+  --lime-800: #3d6b1a; /* lime as text on light surfaces */
+
   /* Plum family */
   --plum-950: #130b10; /* a step below the canvas: masthead and tab bar */
   --plum-800: #292027; /* card on dark */
@@ -66,7 +70,7 @@
 
   --text: var(--plum-900);
   --text-muted: var(--mauve-700);
-  --text-positive: var(--champagne-800);
+  --text-positive: var(--lime-800);
   --text-danger: var(--signal-700);
   --text-link: var(--cherry-700);
 
@@ -81,8 +85,8 @@
   --action-border: var(--cherry-700);
   --action-shadow: var(--cherry-800);
 
-  --positive-bg: var(--champagne-100);
-  --positive-fg: var(--champagne-800);
+  --positive-bg: var(--lime-500); /* winning and being owed: the lemon marker's mirror image */
+  --positive-fg: var(--plum-900);
   --negative-bg: var(--lemon-500); /* owing is "attention", not "error" */
   --negative-fg: var(--plum-900);
   --danger-bg: var(--signal-100);
@@ -143,7 +147,7 @@
 
     --text: var(--ivory-50);
     --text-muted: var(--mauve-300);
-    --text-positive: var(--champagne-500);
+    --text-positive: var(--lime-500);
     --text-danger: var(--signal-300);
     --text-link: var(--champagne-500);
 
@@ -157,8 +161,7 @@
     --action-border: var(--cherry-400);
     --action-shadow: #000;
 
-    --positive-bg: var(--plum-700);
-    --positive-fg: var(--champagne-500);
+    --positive-bg: var(--lime-500);
     --negative-bg: var(--lemon-500);
     --danger-bg: #4a1a1c;
     --danger-fg: var(--signal-300);

@@ -4,7 +4,7 @@ import type { Friend, Invitation } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
-import { balanceText } from '../format';
+import { balanceText, gts } from '../format';
 import { useAction, useFetch, useMe } from '../hooks';
 
 export default function Friends() {
@@ -32,6 +32,8 @@ export default function Friends() {
 
   return (
     <>
+      {friends.data?.length ? <Tally friends={friends.data} /> : null}
+
       <header className="header"><h1>Friends</h1></header>
 
       {invites.data?.received.length ? (
@@ -110,5 +112,21 @@ export default function Friends() {
         {act.error && <p className="error">{act.error}</p>}
       </section>
     </>
+  );
+}
+
+/** Where you stand with all your friends together: the net total, with what you're owed and what you owe as its detail. */
+function Tally({ friends }: { friends: Friend[] }) {
+  const owe = friends.reduce((sum, f) => sum + Math.max(0, -f.balance), 0);
+  const owed = friends.reduce((sum, f) => sum + Math.max(0, f.balance), 0);
+  const net = owed - owe;
+  return (
+    <div className="card tally" role="group" aria-label="Your tally">
+      <span className="eyebrow muted">Overall</span>
+      <span className="tally-total">
+        {net === 0 ? 'All even' : <span className={net > 0 ? 'owed' : 'owe'}>{net > 0 ? '+' : '−'}{gts(Math.abs(net))}</span>}
+      </span>
+      <span className="small muted">Owed to you <b>{gts(owed)}</b> · You owe <b>{gts(owe)}</b></span>
+    </div>
   );
 }
