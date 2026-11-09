@@ -1,0 +1,16 @@
+// Used by Vercel when it compiles the API function (it picks the tsconfig.json
+// nearest to api/index.ts). Same settings as ../tsconfig.server.json, minus
+// "types": Vercel's TypeScript 7 build can't resolve packages named there and
+// logs TS2688 for them. Without "types", @types/node is picked up automatically.
+// `npm run typecheck` still checks server/ and api/ with ../tsconfig.server.json.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["."]
+}
