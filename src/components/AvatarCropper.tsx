@@ -184,7 +184,7 @@ export default function AvatarCropper({ file, busy, onCancel, onSave }: { file: 
         <input type="range" min={1} max={MAX_ZOOM} step={0.01} value={zoom} onChange={(e) => changeZoom(Number(e.target.value))} />
       </label>
       <div className="row-actions">
-        <button className="btn" disabled={busy || !natural} onClick={save}>Save picture</button>
+        <button className="btn" disabled={busy || !natural} aria-busy={busy} onClick={save}>Save picture</button>
         <button className="btn btn-secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
     </div>

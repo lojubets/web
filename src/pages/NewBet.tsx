@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { MAX_PLAYERS, MAX_SETTLE_DAYS, type Bet, type BetKind, type Friend } from '../../shared/types';
+import { MAX_PLAYERS, MAX_SETTLE_DAYS, type Bet, type BetKind } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import RulesEditor, { EMPTY_RULES, draftToParams, type RulesDraft } from '../components/RulesEditor';
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
-import { useAction, useFetch } from '../hooks';
+import { useAction, useFriends } from '../hooks';
+import { putBet, refresh } from '../store';
 import { initialPick } from './newBetPick';
 
 const KINDS: { kind: BetKind; title: string; hint: string }[] = [
@@ -21,7 +22,7 @@ const KINDS: { kind: BetKind; title: string; hint: string }[] = [
 export default function NewBet() {
   const [params] = useSearchParams();
   const nav = useNavigate();
-  const { data: friends } = useFetch<Friend[]>('/friends');
+  const { data: friends } = useFriends();
   // null until the user touches the list; until then `initialPick` decides who starts out ticked
   const [picked, setPicked] = useState<string[] | null>(null);
   const [kind, setKind] = useState<BetKind>('number');
@@ -49,6 +50,8 @@ export default function NewBet() {
           e.preventDefault();
           run(async () => {
             const bet = await api<Bet>('/bets', 'POST', { opponentIds: chosen, question, kind, params: betParams, guess, settleDays: group ? settleDays : null });
+            putBet(bet); // the bets list and the friend's page have it at once
+            refresh('friends', true); // open-bet counts changed
             nav(`/bets/${bet.id}`);
           });
         }}
@@ -99,7 +102,7 @@ export default function NewBet() {
           </label>
         )}
         {error && <p className="error">{error}</p>}
-        <button className="btn" disabled={busy || chosen.length === 0 || (kind === 'choice' && (betParams as { options: string[] }).options.length < 2)}>
+        <button className="btn" aria-busy={busy} disabled={busy || chosen.length === 0 || (kind === 'choice' && (betParams as { options: string[] }).options.length < 2)}>
           {group ? `Propose ${chosen.length + 1}-way bet` : 'Propose bet · 1 GT'}
         </button>
       </form>

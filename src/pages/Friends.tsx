@@ -1,24 +1,29 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Friend, Invitation } from '../../shared/types';
+import type { Friend } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import { balanceText, gts } from '../format';
-import { useAction, useFetch, useMe } from '../hooks';
+import { useAction, useFriends, useInvitations, useMe } from '../hooks';
+import { putRelations, type Invitations } from '../store';
 
 export default function Friends() {
   const { me } = useMe();
   const canInvite = me.emailVerified;
-  const friends = useFetch<Friend[]>('/friends');
-  const invites = useFetch<{ sent: Invitation[]; received: Invitation[] }>('/invitations');
+  const friends = useFriends();
+  const invites = useInvitations();
   const [email, setEmail] = useState('');
   const [result, setResult] = useState<{ link: string; emailSent: boolean; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const invite = useAction();
   const act = useAction();
 
-  const refresh = () => Promise.all([friends.reload(), invites.reload()]);
+  // Invitation changes answer with the friends and invitations as they are now: into the model, then carry on.
+  // The pressed button shows a spinner until then.
+  type Relations = { friends: Friend[]; invitations: Invitations };
+  const change = (key: string, method: string, path: string) =>
+    act.run(async () => putRelations(await api<Relations>(path, method)), key);
 
   const share = async (link: string, to?: string) => {
     const text = `Let's bet a Gin & Tonic on LoJuBets: ${link}`;
@@ -45,8 +50,8 @@ export default function Friends() {
                 <Avatar user={i.inviter} size={44} />
                 <div className="row-text"><strong>{i.inviter.name}</strong><div className="muted small">wants to connect</div></div>
                 <div className="row-actions">
-                  <button className="btn btn-small" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/accept`, 'POST'); await refresh(); })}>Accept</button>
-                  <button className="btn btn-small btn-secondary" disabled={act.busy} onClick={() => act.run(async () => { await api(`/invitations/${i.id}/decline`, 'POST'); await refresh(); })}>Decline</button>
+                  <button className="btn btn-small" disabled={act.busy} aria-busy={act.busyOn(`accept:${i.id}`)} onClick={() => change(`accept:${i.id}`, 'POST', `/invitations/${i.id}/accept`)}>Accept</button>
+                  <button className="btn btn-small btn-secondary" disabled={act.busy} aria-busy={act.busyOn(`decline:${i.id}`)} onClick={() => change(`decline:${i.id}`, 'POST', `/invitations/${i.id}/decline`)}>Decline</button>
                 </div>
               </div>
             ))}
@@ -77,15 +82,15 @@ export default function Friends() {
           onSubmit={(e) => {
             e.preventDefault();
             invite.run(async () => {
-              const r = await api<{ link: string; emailSent: boolean }>('/invitations', 'POST', { email });
-              setResult({ ...r, email });
+              const r = await api<{ link: string; emailSent: boolean } & Relations>('/invitations', 'POST', { email });
+              putRelations(r);
+              setResult({ link: r.link, emailSent: r.emailSent, email });
               setEmail('');
-              await invites.reload();
             });
           }}
         >
           <input type="email" placeholder="friend@example.com" value={email} disabled={!canInvite} onChange={(e) => setEmail(e.target.value)} required />
-          <button className="btn" disabled={invite.busy || !canInvite}>Send invitation</button>
+          <button className="btn" disabled={invite.busy || !canInvite} aria-busy={invite.busy}>Send invitation</button>
           {!canInvite && <p className="muted small">Your account has no email address, so you can't send invitations.</p>}
           {invite.error && <p className="error">{invite.error}</p>}
         </form>
@@ -103,7 +108,7 @@ export default function Friends() {
                 <div className="row-text"><strong>{i.email}</strong></div>
                 <div className="row-actions">
                   <button className="btn btn-small btn-secondary" onClick={() => share(`${location.origin}/invite/${i.token}`)}>Share link</button>
-                  <button className="btn btn-small btn-secondary" onClick={() => act.run(async () => { await api(`/invitations/${i.id}`, 'DELETE'); await invites.reload(); })}>Revoke</button>
+                  <button className="btn btn-small btn-secondary" disabled={act.busy} aria-busy={act.busyOn(`revoke:${i.id}`)} onClick={() => change(`revoke:${i.id}`, 'DELETE', `/invitations/${i.id}`)}>Revoke</button>
                 </div>
               </div>
             ))}

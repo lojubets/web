@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Bet, Friend, Participant } from '../../shared/types';
+import type { Bet, Participant } from '../../shared/types';
 import { api } from '../api';
 import Avatar from '../components/Avatar';
 import Icon from '../components/Icon';
 import ValueInput from '../components/ValueInput';
 import { describeRules, formatMoment, formatValue, gts, listNames } from '../format';
-import { useAction, useFetch } from '../hooks';
+import { useAction, useBet, useFriends } from '../hooks';
+import { dropBet, putBet, refresh } from '../store';
 
 const names = (ps: Participant[]) => listNames(ps.map((p) => (p.isMe ? 'you' : p.name)));
 const Names = ({ of }: { of: Participant[] }) => <>{names(of)}</>;
@@ -15,8 +16,8 @@ const when = (ms: number) => new Date(ms).toLocaleString(undefined, { day: 'nume
 export default function BetDetail() {
   const { id } = useParams();
   const nav = useNavigate();
-  const bet = useFetch<Bet>(`/bets/${id}`);
-  const friends = useFetch<Friend[]>('/friends');
+  const bet = useBet(id!);
+  const friends = useFriends();
   const act = useAction();
   const [value, setValue] = useState('');
   const [countering, setCountering] = useState(false);
@@ -26,16 +27,25 @@ export default function BetDetail() {
   if (bet.error) return <p className="error">{bet.error}</p>;
   if (!b || !friends.data) return <p className="center muted">Loading…</p>;
 
+  // Each button shows a spinner until the server answers. Its answer is the bet as it is now, which goes into the model
+  // (so every screen showing the bet updates) before the page moves on. Balances may have changed: friends refresh behind.
   const post = (path: string, body?: unknown) =>
     act.run(async () => {
-      await api(`/bets/${b.id}${path}`, 'POST', body ?? {});
-      await bet.reload();
-      await friends.reload();
+      const updated = await api<Bet | null>(`/bets/${b.id}${path}`, 'POST', body ?? {});
+      if (updated?.id) putBet(updated);
+      else refresh(`bet:${b.id}`, true);
+      refresh('friends', true);
       setValue('');
       setWinners([]);
       setCountering(false);
-    });
-  const leave = (path: string) => act.run(async () => { await api(`/bets/${b.id}${path}`, 'POST'); nav('/'); });
+    }, path);
+  const leave = (path: string) =>
+    act.run(async () => {
+      await api(`/bets/${b.id}${path}`, 'POST');
+      dropBet(b.id);
+      refresh('friends', true);
+      nav('/');
+    }, path);
 
   const fv = (v: string | null) => formatValue(b.kind, b.params, v);
   const me = b.participants.find((p) => p.isMe)!;
@@ -62,7 +72,7 @@ export default function BetDetail() {
   const deleted = them.length > 0 && them.every((p) => p.deleted);
 
   const withdraw = (
-    <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/withdraw')}>Withdraw my proposal</button>
+    <button className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/withdraw')} onClick={() => post('/withdraw')}>Withdraw my proposal</button>
   );
 
   const proposeForm = (
@@ -79,9 +89,9 @@ export default function BetDetail() {
           ))}
         </fieldset>
       )}
-      <button className="btn" disabled={act.busy}>Propose result</button>
+      <button className="btn" disabled={act.busy} aria-busy={act.busyOn('/propose')}>Propose result</button>
       {b.status === 'active' && b.tippingPassed && !allSame && (
-        <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => post('/not-happened')}>
+        <button type="button" className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/not-happened')} onClick={() => post('/not-happened')}>
           It hasn't happened yet
         </button>
       )}
@@ -210,16 +220,16 @@ export default function BetDetail() {
           </p>
           {them.some((p) => p.guessIn) && <p className="muted small">{listNames(them.filter((p) => p.guessIn).map((p) => p.name))} {them.filter((p) => p.guessIn).length === 1 ? 'has' : 'have'} locked in a guess.</p>}
           <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
-          <button className="btn" disabled={act.busy}>{them.length > 1 ? 'Join with my guess' : 'Lock in my guess'}</button>
-          <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => leave('/cancel')}>Decline bet</button>
+          <button className="btn" disabled={act.busy} aria-busy={act.busyOn('/guess')}>{them.length > 1 ? 'Join with my guess' : 'Lock in my guess'}</button>
+          <button type="button" className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/cancel')} onClick={() => leave('/cancel')}>Decline bet</button>
         </form>
       )}
       {b.status === 'awaiting_guess' && me.status === 'joined' && b.myGuess === null && (
         <form className="stack" onSubmit={(e) => { e.preventDefault(); post('/guess', { guess: value }); }}>
           {them.some((p) => p.guessIn) && <p className="muted">{listNames(them.filter((p) => p.guessIn).map((p) => p.name))} {them.filter((p) => p.guessIn).length === 1 ? 'has' : 'have'} locked in a guess.</p>}
           <ValueInput kind={b.kind} params={b.params} value={value} onChange={setValue} label="Your guess" />
-          <button className="btn" disabled={act.busy}>Lock in my guess</button>
-          <button type="button" className="btn btn-secondary" disabled={act.busy} onClick={() => leave('/cancel')}>{b.iAmCreator ? 'Cancel bet' : 'Back out'}</button>
+          <button className="btn" disabled={act.busy} aria-busy={act.busyOn('/guess')}>Lock in my guess</button>
+          <button type="button" className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/cancel')} onClick={() => leave('/cancel')}>{b.iAmCreator ? 'Cancel bet' : 'Back out'}</button>
         </form>
       )}
       {b.status === 'awaiting_guess' && me.status === 'joined' && b.myGuess !== null && (
@@ -228,10 +238,10 @@ export default function BetDetail() {
           {b.canStart && (
             <>
               <p className="muted small">You can start the bet now with the {players.filter((p) => p.guessIn).length} of you who have guessed. Anyone who hasn't answered is left out.</p>
-              <button className="btn" disabled={act.busy} onClick={() => post('/start')}>Start without them</button>
+              <button className="btn" disabled={act.busy} aria-busy={act.busyOn('/start')} onClick={() => post('/start')}>Start without them</button>
             </>
           )}
-          <button className="btn btn-secondary" disabled={act.busy} onClick={() => leave('/cancel')}>{b.iAmCreator ? 'Cancel bet' : 'Back out'}</button>
+          <button className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/cancel')} onClick={() => leave('/cancel')}>{b.iAmCreator ? 'Cancel bet' : 'Back out'}</button>
         </div>
       )}
       {b.status === 'awaiting_guess' && me.status === 'declined' && <p className="muted">You declined this bet.</p>}
@@ -241,7 +251,7 @@ export default function BetDetail() {
       {b.status === 'active' && inGame && (
         <div className="stack">
           <p className="muted small">Can't agree who was closest? Propose a tie. If {two ? them[0].name : 'everyone else'} agrees, the bet is called off and nobody owes anything.</p>
-          <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/propose-tie')}>Propose a tie</button>
+          <button className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/propose-tie')} onClick={() => post('/propose-tie')}>Propose a tie</button>
         </div>
       )}
 
@@ -268,10 +278,10 @@ export default function BetDetail() {
             </>
           ) : b.iMustAccept && !b.iAccepted ? (
             <>
-              <button className="btn" disabled={act.busy} onClick={() => post('/confirm', { proposal: b.proposalId })}>
+              <button className="btn" disabled={act.busy} aria-busy={act.busyOn('/confirm')} onClick={() => post('/confirm', { proposal: b.proposalId })}>
                 {b.proposalKind === 'tie' ? 'Yes, call it off' : b.proposalKind === 'not_happened' ? "Yes, it hasn't happened" : 'Confirm result'}
               </button>
-              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>
+              <button className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/reject')} onClick={() => post('/reject')}>
                 {b.proposalKind === 'tie' ? 'No, keep it going' : b.proposalKind === 'not_happened' ? 'No, it has happened' : "That's not right"}
               </button>
               {b.proposalKind === 'outcome' && (countering ? proposeForm : <button className="btn btn-secondary" disabled={act.busy} onClick={() => setCountering(true)}>No, I say…</button>)}
@@ -282,7 +292,7 @@ export default function BetDetail() {
                 {b.iAccepted ? 'You confirmed. ' : iWon ? 'You win under this result, so your confirmation isn\'t needed. ' : ''}
                 Waiting for <Names of={waitingOn} />.{b.iAccepted && ' Changed your mind? You can still reject it.'}
               </p>
-              <button className="btn btn-secondary" disabled={act.busy} onClick={() => post('/reject')}>That's not right</button>
+              <button className="btn btn-secondary" disabled={act.busy} aria-busy={act.busyOn('/reject')} onClick={() => post('/reject')}>That's not right</button>
             </>
           )}
         </div>
@@ -293,7 +303,7 @@ export default function BetDetail() {
           <p className="muted small">{listNames(them.map((p) => p.name))} {them.length === 1 ? 'has' : 'have'} left. This bet stays in your history until you remove it, which also changes your balance.</p>
           <button
             className="btn btn-secondary"
-            disabled={act.busy}
+            disabled={act.busy} aria-busy={act.busyOn('/remove-from-history')}
             onClick={() => window.confirm('Remove this bet from your history? It is gone for good, and your balance changes if it was settled.') && leave('/remove-from-history')}
           >
             Remove from my history
@@ -307,7 +317,7 @@ export default function BetDetail() {
           <span className="muted small">
             Go all-in: this bet is worth {gts(b.allInStake)} instead of 1. Win and you're back to even, lose and you owe {gts(b.allInStake * 2)}.
           </span>
-          <button className="btn btn-danger" disabled={act.busy} onClick={() => confirm(`Double or nothing on ${gts(b.allInStake)}?`) && post('/all-in')}>
+          <button className="btn btn-danger" disabled={act.busy} aria-busy={act.busyOn('/all-in')} onClick={() => confirm(`Double or nothing on ${gts(b.allInStake)}?`) && post('/all-in')}>
             <Icon name="flame" size={20} />Go all-in
           </button>
         </div>

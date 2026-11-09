@@ -1,12 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import type { Bet } from '../../shared/types';
-import { useFetch } from '../hooks';
+import { useMyBets } from '../hooks';
 import Icon from './Icon';
 import Rule from './Rule';
 
 export default function Layout({ locked }: { locked: boolean }) {
   // Counted per bet, not per friend: a group bet waiting on you is one thing to do, however many friends are in it
-  const { data: bets } = useFetch<Bet[]>(locked ? null : '/bets');
+  const { data: bets } = useMyBets(!locked);
   const actions = bets?.filter((b) => b.needsMyAction).length ?? 0;
   return (
     <>

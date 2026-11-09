@@ -143,7 +143,7 @@ async function scenarios() {
   await shot({ group: 'Signed out', title: 'Sign in', as: null, url: '/login', story: 'A visitor who is not signed in opens the app.', expect: 'The LoJuBets sign-in form (email and password) with "Forgot your password?" and "Create an account" links, the privacy policy notice and, because the dev login is on, a "Development only" form with name and email fields.' });
   await shot({ group: 'Signed out', title: 'Forgot password', as: null, url: '/forgot-password', story: 'A visitor who is not signed in has followed "forgot password".', expect: 'An explanation, an email field with a "Send reset link" button, and a "Back to sign in" link.' });
   await shot({ group: 'Signed out', title: 'Privacy policy', as: null, url: '/privacy', story: 'Anyone, signed in or not, opens the privacy policy.', expect: 'The privacy policy: who is responsible, what is stored and why.' });
-  await shot({ group: 'Signed out', title: 'Style guide', as: null, url: '/styleguide', story: 'A developer opens the design reference page. It is public and needs no data.', expect: 'The brand colours, supporting colours, spacing scale, icons and component samples.' });
+  await shot({ group: 'Signed out', title: 'Style guide', as: null, url: '/styleguide', story: 'A developer opens the design reference page. It is public and needs no data.', expect: 'The brand colours, supporting colours, spacing scale, icons and component samples, including a busy button with a spinner in place of its icon.' });
 
   console.log('A new user with no friends');
   for (const p of everyone) await session(p); // signs everyone up

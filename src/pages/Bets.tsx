@@ -1,13 +1,12 @@
 import { Link } from 'react-router-dom';
-import type { Bet, Friend } from '../../shared/types';
 import BetSections from '../components/BetSections';
 import CancelRequests from '../components/CancelRequests';
 import Icon from '../components/Icon';
-import { useFetch } from '../hooks';
+import { useFriends, useMyBets } from '../hooks';
 
 export default function Bets() {
-  const bets = useFetch<Bet[]>('/bets');
-  const friends = useFetch<Friend[]>('/friends');
+  const bets = useMyBets();
+  const friends = useFriends();
   const list = bets.data ?? [];
 
   return (
@@ -25,7 +24,7 @@ export default function Bets() {
         </div>
       )}
       {!bets.loading && friends.data?.length ? list.length === 0 && <div className="empty"><img className="empty-glass" src="/glass-256.png" width="80" height="80" alt="" /><p>No bets yet. Start one!</p></div> : null}
-      <CancelRequests onAnswered={bets.reload} />
+      <CancelRequests />
       <BetSections bets={list} />
     </>
   );

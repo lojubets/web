@@ -26,7 +26,7 @@ export default function VerifyEmail() {
           <>
             <h1>Confirm your email</h1>
             <p>One tap and you're in.</p>
-            <button className="btn" disabled={busy || !token} onClick={() => run(async () => { await api('/auth/verify-email', 'POST', { token }); setDone(true); })}>
+            <button className="btn" disabled={busy || !token} aria-busy={busy} onClick={() => run(async () => { await api('/auth/verify-email', 'POST', { token }); setDone(true); })}>
               Confirm email address
             </button>
           </>

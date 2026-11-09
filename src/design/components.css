@@ -264,6 +264,40 @@
   box-shadow: none;
   cursor: not-allowed;
 }
+/* A button whose request is under way: a spinner in place of its icon, and no further presses */
+.btn[aria-busy='true'],
+.link[aria-busy='true'] {
+  opacity: 0.85;
+  cursor: progress;
+}
+.btn[aria-busy='true']::before,
+.link[aria-busy='true']::before {
+  content: '';
+  flex: none;
+  width: 1em;
+  height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+.link[aria-busy='true']::before {
+  margin-right: var(--space-2);
+}
+.btn[aria-busy='true'] > svg {
+  display: none;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn[aria-busy='true']::before,
+  .link[aria-busy='true']::before {
+    animation-duration: 2s;
+  }
+}
 .btn-secondary {
   background: var(--surface-card);
   color: var(--text);

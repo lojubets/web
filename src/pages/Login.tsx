@@ -50,7 +50,7 @@ export default function Login() {
             onChange={(e) => setPassword(e.target.value)}
             required
           />
-          <button className="btn" disabled={pw.busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
+          <button className="btn" disabled={pw.busy} aria-busy={pw.busy}>{mode === 'login' ? 'Sign in' : 'Create account'}</button>
           {pw.error && <p className="error">{pw.error}</p>}
           {mode === 'login' && <Link className="link" to="/forgot-password">Forgot your password?</Link>}
           <button type="button" className="link" onClick={() => setMode(mode === 'login' ? 'register' : 'login')}>
@@ -87,7 +87,7 @@ export default function Login() {
             <p className="eyebrow">Development only</p>
             <input aria-label="Name" placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
             <input type="email" aria-label="Email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <button className="btn btn-secondary" disabled={busy}>Dev login</button>
+            <button className="btn btn-secondary" disabled={busy} aria-busy={busy}>Dev login</button>
             {error && <p className="error">{error}</p>}
           </form>
         )}

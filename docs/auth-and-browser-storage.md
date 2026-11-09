@@ -30,9 +30,17 @@ Section 7 onwards is assessment and recommendation; sections 1–6 are descripti
 
 ## 1. Browser storage inventory
 
-**The client uses no `localStorage`, `sessionStorage`, IndexedDB, Cache API or service worker.** I grepped `src/`,
-`index.html` and `public/`; there are no hits. `public/manifest.webmanifest` makes the app installable as a PWA but
-registers no service worker. The only persistent browser state is the three cookies below. The client never reads
+**The client keeps one `localStorage` key, `lojubets:model:v1`, and uses no `sessionStorage`, IndexedDB, Cache API or
+service worker.** `public/manifest.webmanifest` makes the app installable as a PWA but registers no service worker.
+
+*(Added after this audit.)* `src/store.ts` keeps the signed-in user's model under that key, tagged with their user id:
+their `Me`, friends, invitations and bets (each bet once, by id, plus the ids of the bets they are in). Screens render
+from it at once and then refresh it from the server. It is emptied when `/me` answers 401 (signed out, session expired),
+when a different user signs in, on "Sign out" and after account deletion. It holds no credentials or tokens; the session
+stays in the HttpOnly cookie. Anyone with access to the browser profile can read it until then, which the privacy
+policy states.
+
+Apart from that key, the persistent browser state is the three cookies below. The client never reads
 cookies (`document.cookie` is unused; they are HttpOnly) and `src/api.ts` just calls `fetch(..., { credentials: 'same-origin' })`.
 
 All cookies are set by the Express server (`res.cookie`), are **host-only** (no `Domain` attribute), `Path=/`, `HttpOnly`,

@@ -1,5 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import type { Friend } from '../../shared/types';
 import { api } from '../api';
+import { putRelations, type Invitations } from '../store';
 import Rule from '../components/Rule';
 import { useAction, useFetch } from '../hooks';
 
@@ -33,9 +35,12 @@ export default function InviteLanding({ signedIn, locked }: { signedIn: boolean;
                 <button
                   className="btn"
                   disabled={act.busy}
+                  aria-busy={act.busy}
                   onClick={() => act.run(async () => {
-                    const { friendId } = await api<{ friendId: string }>(`/invitations/token/${token}/accept`, 'POST');
-                    nav(`/friends/${friendId}`);
+                    // The answer includes the new friends list, so the friend's page has them at once
+                    const r = await api<{ friendId: string; friends: Friend[]; invitations: Invitations }>(`/invitations/token/${token}/accept`, 'POST');
+                    putRelations(r);
+                    nav(`/friends/${r.friendId}`);
                   })}
                 >
                   Accept invitation

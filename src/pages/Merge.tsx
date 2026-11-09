@@ -69,7 +69,7 @@ function SignInToOther({ error: urlError, onSignedIn }: { error: string | null; 
         <p className="eyebrow">{config && config.providers.length > 0 ? 'Or with an email and password' : 'Sign in with an email and password'}</p>
         <input type="email" aria-label="Email of the other account" placeholder="Email of the other account" autoComplete="off" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <input type="password" aria-label="Password of the other account" placeholder="Password" autoComplete="off" value={password} onChange={(e) => setPassword(e.target.value)} required />
-        <button className="btn" disabled={pw.busy}>Sign in to the other account</button>
+        <button className="btn" disabled={pw.busy} aria-busy={pw.busy}>Sign in to the other account</button>
         {pw.error && <p className="error"><Icon name="alert" size={20} />{pw.error}</p>}
       </form>
 
@@ -86,7 +86,7 @@ function SignInToOther({ error: urlError, onSignedIn }: { error: string | null; 
         >
           <p className="eyebrow">Development only</p>
           <input type="email" aria-label="Dev account email" placeholder="Email of a dev account" value={devEmail} onChange={(e) => setDevEmail(e.target.value)} required />
-          <button className="btn btn-secondary" disabled={dev.busy}>Dev login to the other account</button>
+          <button className="btn btn-secondary" disabled={dev.busy} aria-busy={dev.busy}>Dev login to the other account</button>
           {dev.error && <p className="error"><Icon name="alert" size={20} />{dev.error}</p>}
         </form>
       )}
@@ -232,12 +232,13 @@ function Choose({ preview }: { preview: MergePreview }) {
       <button
         className="btn"
         disabled={act.busy || blocked || !pwOk}
+        aria-busy={act.busyOn('merge')}
         onClick={() =>
           act.run(async () => {
             await api('/merge/confirm', 'POST', { ...choices, ...(needsPw ? { newPassword: newPw } : {}) });
-            reload();
+            await reload(); // the merged account, before showing it
             nav('/profile?merged=1');
-          })
+          }, 'merge')
         }
       >
         Merge accounts
@@ -245,10 +246,13 @@ function Choose({ preview }: { preview: MergePreview }) {
       <button
         className="btn btn-secondary"
         disabled={act.busy}
-        onClick={async () => {
-          await api('/merge', 'DELETE');
-          nav('/profile');
-        }}
+        aria-busy={act.busyOn('cancel')}
+        onClick={() =>
+          act.run(async () => {
+            await api('/merge', 'DELETE');
+            nav('/profile');
+          }, 'cancel')
+        }
       >
         Cancel
       </button>

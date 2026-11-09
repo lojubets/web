@@ -2,6 +2,10 @@
 
 This file is read by GitHub Copilot and, through `CLAUDE.md`, by Claude Code. See `README.md` for how the app works and how to run it.
 
+## Follow the architecture
+
+Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing code. It describes the frontend, the backend and the API, and the rules to keep: the server decides everything, the client reads the signed-in user's model (`src/store.ts`) and keeps it in localStorage, and a change answers with its new state, which the client puts into the model before moving on. When a change alters one of those rules, update the document in the same change.
+
 ## Keep the UI screenshots in step with the UI
 
 `npm run screenshots` (see [scripts/screenshots.mjs](scripts/screenshots.mjs)) runs the app with a throwaway database, plays out scenarios with three users, and writes screenshots and a gallery page to `screenshots/index.html`. Developers use the gallery to review the UI without deploying it, so it must show what the app actually looks like.

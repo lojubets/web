@@ -37,7 +37,7 @@ export default function ForgotPassword() {
             }}
           >
             <input type="email" aria-label="Email" placeholder="Email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-            <button className="btn" disabled={busy}>Send reset link</button>
+            <button className="btn" disabled={busy} aria-busy={busy}>Send reset link</button>
             {error && <p className="error">{error}</p>}
           </form>
         )}

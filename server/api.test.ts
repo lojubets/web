@@ -58,6 +58,22 @@ describe('bets between friends', () => {
     expect((await ann.get('/api/friends')).body.map((f: any) => f.id)).toEqual([bobId]);
   });
 
+  it('answers changes to invitations with the friends and invitations as they are now', async () => {
+    const cy = await login('Cyrus');
+    const sent = await ann.post('/api/invitations').send({ email: 'someone@example.com' }).expect(201);
+    expect(sent.body.invitations.sent.map((i: any) => i.email)).toContain('someone@example.com');
+    expect(sent.body.friends.map((f: any) => f.id)).toEqual([bobId]);
+    const id = sent.body.invitations.sent.find((i: any) => i.email === 'someone@example.com').id;
+    const revoked = await ann.delete(`/api/invitations/${id}`).expect(200);
+    expect(revoked.body.invitations.sent.map((i: any) => i.email)).not.toContain('someone@example.com');
+
+    const toCy = await ann.post('/api/invitations').send({ email: 'cyrus@example.com' }).expect(201);
+    const accepted = await cy.post(`/api/invitations/token/${toCy.body.link.split('/invite/')[1]}/accept`).expect(200);
+    expect(accepted.body.friends.map((f: any) => f.id)).toEqual([annId]);
+    expect(accepted.body.friendId).toBe(annId);
+    expect(accepted.body.invitations).toEqual({ sent: [], received: [] });
+  });
+
   /** The other player's guess as I see it, and whether they have one. */
   const theirs = (body: any) => {
     const p = body.participants.find((p: any) => !p.isMe);
@@ -474,8 +490,9 @@ describe('email/password accounts', () => {
     await a.post('/api/auth/register').send({ email: 'Dot@Example.com', password: 'correct horse' }).expect(201);
     expect((await a.get('/api/me')).body).toMatchObject({ name: 'dot@example.com', profileName: '' });
 
-    await a.put('/api/me').send({ name: 'Dot' }).expect(200);
-    expect((await a.get('/api/me')).body).toMatchObject({ name: 'Dot', profileName: 'Dot' });
+    const saved = await a.put('/api/me').send({ name: 'Dot' }).expect(200);
+    expect(saved.body.me).toMatchObject({ name: 'Dot', profileName: 'Dot' }); // the account as it is now
+    expect((await a.get('/api/me')).body).toEqual(saved.body.me);
 
     await a.put('/api/me').send({ name: '   ' }).expect(200); // clearing goes back to the email
     expect((await a.get('/api/me')).body).toMatchObject({ name: 'dot@example.com', profileName: '' });
